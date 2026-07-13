@@ -324,7 +324,7 @@ hermes cron create "0 9 * * *" --prompt """
 ├── README.md                               📖 项目文档（本文件）
 ├── .gitignore
 │
-├── skills/                                 🔧 6 个核心 Skill 源码
+├── skills/                                 🔧 7 个核心 Skill 源码
 │   ├── requirement-analysis/               ✅ v1.2.0
 │   │   └── SKILL.md
 │   ├── test-points/                        ✅ v1.1.0
@@ -339,9 +339,12 @@ hermes cron create "0 9 * * *" --prompt """
 │   ├── generate-report/                    ✅ v1.0.0
 │   │   ├── SKILL.md
 │   │   └── scripts/generate_report.py      (报告生成脚本)
-│   └── knowledge-base/                     ✅ v1.0.0
+│   ├── knowledge-base/                     ✅ v1.0.0
+│   │   ├── SKILL.md
+│   │   └── scripts/kb_manager.py           (知识库管理脚本)
+│   └── pipeline/                           ✅ v1.0.0
 │       ├── SKILL.md
-│       └── scripts/kb_manager.py           (知识库管理脚本)
+│       └── scripts/pipeline.py             (全流程串联引擎)
 │
 ├── knowledge-base/                         🧠 本地知识库数据
 │   ├── business-rules/                     (业务规则)
@@ -504,18 +507,18 @@ AI：[自动调用 test-case-review Skill]
 - ✅ 用例评审 Skill (v1.0.0)
 - ✅ 测试报告生成 Skill (v1.0.0)
 - ✅ 知识库 & RAG Skill (v1.0.0)
+- ✅ 全流程自动串联 Skill (v1.0.0)
 - ✅ Mem0 记忆系统集成
 - ✅ 示例数据和文档
 
 ### 计划中
 - 🚧 需求读取 MCP 集成
-- 🚧 全流程自动化
 - 🚧 Web UI 界面
 
 ### 完成度
-- **核心 Skills：** 6/6 (100%) 🎉
-- **辅助功能：** 2/4 (50%)
-- **整体完成度：** ~85%
+- **核心 Skills：** 7/7 (100%) 🎉
+- **辅助功能：** 3/4 (75%)
+- **整体完成度：** ~92%
 
 ---
 
@@ -620,4 +623,4 @@ MIT License
 ---
 
 *最后更新：2026-07-14*
-*当前版本：v0.6.0*
+*当前版本：v0.7.0*
