@@ -23,6 +23,22 @@ created_by: agent
 
 ## 执行步骤
 
+### 0. 知识库检索增强（可选但推荐）
+
+在生成测试点前，先检索知识库获取业务规则和历史坑点：
+
+```bash
+HERMES_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
+KB="$HOME/.hermes/skills/testing/knowledge-base/scripts/kb_manager.py"
+$HERMES_PYTHON "$KB" export "需求关键词" --output knowledge-context.md
+```
+
+将导出的 `knowledge-context.md` 作为额外参考，特别关注：
+- 📋 业务规则：确保测试点覆盖所有字段限制和校验规则
+- ⚠️ 线上坑点：将历史 Bug 对应的场景纳入测试点
+
+> 如果知识库未初始化，跳过此步骤即可。
+
 ### 1. 读取已分析的需求文档
 使用 `read_file` 工具读取 `requirements_analysis.md` 文件。
 

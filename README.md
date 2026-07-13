@@ -32,7 +32,9 @@
 │     ├── 待确认事项清单                                         │
 │     └── 质量报告生成                                           │
 │           ↓                                                   │
-│  3. 知识库 & RAG (Mem0) ✅ 已配置                              │
+│  3. 知识库 & RAG ✅ 已完成                                      │
+│     ├── knowledge-base Skill (v1.0.0)                         │
+│     ├── BM25 检索引擎（纯标准库）                               │
 │     ├── 历史用例检索                                           │
 │     ├── 业务规则匹配                                           │
 │     └── 线上坑点召回                                           │
@@ -322,7 +324,7 @@ hermes cron create "0 9 * * *" --prompt """
 ├── README.md                               📖 项目文档（本文件）
 ├── .gitignore
 │
-├── skills/                                 🔧 5 个核心 Skill 源码
+├── skills/                                 🔧 6 个核心 Skill 源码
 │   ├── requirement-analysis/               ✅ v1.2.0
 │   │   └── SKILL.md
 │   ├── test-points/                        ✅ v1.1.0
@@ -334,9 +336,19 @@ hermes cron create "0 9 * * *" --prompt """
 │   │   └── references/pipeline-overview.md
 │   ├── test-case-review/                   ✅ v1.0.0
 │   │   └── SKILL.md
-│   └── generate-report/                    ✅ v1.0.0
+│   ├── generate-report/                    ✅ v1.0.0
+│   │   ├── SKILL.md
+│   │   └── scripts/generate_report.py      (报告生成脚本)
+│   └── knowledge-base/                     ✅ v1.0.0
 │       ├── SKILL.md
-│       └── scripts/generate_report.py      (报告生成脚本)
+│       └── scripts/kb_manager.py           (知识库管理脚本)
+│
+├── knowledge-base/                         🧠 本地知识库数据
+│   ├── business-rules/                     (业务规则)
+│   ├── historical-cases/                   (历史优质用例)
+│   ├── pitfalls/                           (线上坑点)
+│   ├── templates/                          (用例模板)
+│   └── index.json                          (自动索引)
 │
 ├── examples/                               📁 示例需求文档
 │   ├── demo_requirements.md               (示例需求文档)
@@ -491,6 +503,7 @@ AI：[自动调用 test-case-review Skill]
 - ✅ 测试用例生成 Skill (v1.0.0)
 - ✅ 用例评审 Skill (v1.0.0)
 - ✅ 测试报告生成 Skill (v1.0.0)
+- ✅ 知识库 & RAG Skill (v1.0.0)
 - ✅ Mem0 记忆系统集成
 - ✅ 示例数据和文档
 
@@ -500,9 +513,9 @@ AI：[自动调用 test-case-review Skill]
 - 🚧 Web UI 界面
 
 ### 完成度
-- **核心 Skills：** 5/5 (100%) 🎉
-- **辅助功能：** 1/4 (25%)
-- **整体完成度：** ~75%
+- **核心 Skills：** 6/6 (100%) 🎉
+- **辅助功能：** 2/4 (50%)
+- **整体完成度：** ~85%
 
 ---
 
@@ -607,4 +620,4 @@ MIT License
 ---
 
 *最后更新：2026-07-14*
-*当前版本：v0.5.0*
+*当前版本：v0.6.0*
