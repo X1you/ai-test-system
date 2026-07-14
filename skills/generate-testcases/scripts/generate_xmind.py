@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-生成 XMind 格式测试用例（JSON content + zip）
-读取测试点 Markdown 文件，生成 XMind 脑图文件
+生成 XMind 格式测试用例（v2 — 使用 xmind 库生成正确格式）
 
 用法:
-    python generate_xmind.py <testpoints.md> [--output testcases.xmind]
+    python generate_xmind.py <testpoints.md> [--output testcases.xmind] [--project PROJECT]
+
+依赖:
+    pip install XMind (已在 Hermes venv 中安装)
 """
 
 import argparse
-import json
 import re
 import sys
-import zipfile
 from pathlib import Path
+
+try:
+    import xmind
+except ImportError:
+    print("错误: 缺少依赖库 XMind", file=sys.stderr)
+    print("请运行: pip install XMind", file=sys.stderr)
+    sys.exit(1)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -22,38 +29,30 @@ from pathlib import Path
 class TestPointParser:
     """解析测试点 Markdown 文件"""
 
-    def parse_content(self, content: str) -> list:
+    def parse(self, content: str) -> list:
         test_points = []
         current_module = ""
         current_feature = ""
         current_dimension = ""
-        counter = 0
+        current_number = 0
 
         for line in content.split("\n"):
             line = line.rstrip()
-
-            # 模块
             m = re.match(r"^##\s+模块[一二三四五六七八九十]+[：:]\s*(.+)", line)
             if m:
                 current_module = m.group(1).strip()
                 continue
-
-            # 功能点
             m = re.match(r"^###\s+功能点\s*[\d.]+[：:]\s*(.+)", line)
             if m:
                 current_feature = m.group(1).strip()
                 continue
-
-            # 测试维度
             m = re.match(r"^####\s+测试维度[：:]\s*(.+)", line)
             if m:
                 current_dimension = m.group(1).strip()
                 continue
-
-            # 测试点
             m = re.match(r"^-\s+测试点\s*[\d.]+[：:]\s*(.+)", line)
             if m:
-                counter += 1
+                current_number += 1
                 test_points.append({
                     "module": current_module,
                     "feature": current_feature,
@@ -61,27 +60,20 @@ class TestPointParser:
                     "title": m.group(1).strip(),
                     "test_data": "",
                     "expected": "",
-                    "number": counter,
                 })
                 continue
-
-            # 测试数据
             m = re.match(r"^\s+-\s+测试数据[：:]\s*(.+)", line)
             if m and test_points:
                 test_points[-1]["test_data"] = m.group(1).strip()
-                continue
-
-            # 预期结果
             m = re.match(r"^\s+-\s+预期结果[：:]\s*(.+)", line)
             if m and test_points:
                 test_points[-1]["expected"] = m.group(1).strip()
-                continue
 
         return test_points
 
     def parse_file(self, file_path: str) -> list:
         content = Path(file_path).read_text(encoding="utf-8")
-        return self.parse_content(content)
+        return self.parse(content)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -92,7 +84,6 @@ def assign_priority(tp: dict) -> str:
     title = tp["title"]
     dimension = tp["dimension"]
 
-    # P0: 核心功能正向、高风险安全、关键异常
     if "正向" in dimension:
         if any(k in title for k in ["登录", "注册", "创建", "新增", "提交", "支付",
                                      "核心", "主流程", "关键", "基础", "校验", "验证"]):
@@ -118,157 +109,143 @@ def assign_priority(tp: dict) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-# XMind Writer
+# XMind 生成器
 # ═══════════════════════════════════════════════════════════════
 
-class XMindWriter:
-    """生成 XMind 文件（.xmind 本质是 zip 包含 content.json）"""
+class XMindGenerator:
+    """使用 xmind 库生成标准格式的 .xmind 文件"""
 
-    def build_tree(self, test_points: list) -> dict:
-        """构建树结构: module -> feature -> dimension -> [test_points]"""
+    def generate(self, test_points: list, output_path: str, project_name: str = ""):
+        """生成 XMind 脑图文件"""
+        workbook = xmind.load(output_path)
+
+        sheet = workbook.getPrimarySheet()
+        root = sheet.getRootTopic()
+
+        title = f"{project_name} 测试用例" if project_name else "测试用例"
+        sheet.setTitle(title)
+        root.setTitle(title)
+
+        # 按 模块→功能点→测试维度 构建树
         tree = {}
         for tp in test_points:
-            module = tp["module"]
-            feature = tp["feature"]
-            dimension = tp["dimension"]
-
-            tree.setdefault(module, {})
-            tree[module].setdefault(feature, {})
-            tree[module][feature].setdefault(dimension, [])
-            tree[module][feature][dimension].append(tp)
-        return tree
-
-    def build_content_json(self, tree: dict, test_points: list, project_name: str) -> list:
-        """构建 XMind content.json"""
-        root_children = []
-        tc_counter = 0
-        p0_count = 0
-        p1_count = 0
-        p2_count = 0
+            mod = tp["module"] or "未分类"
+            feat = tp["feature"] or "未分类"
+            dim = tp["dimension"] or "未分类"
+            tree.setdefault(mod, {})
+            tree[mod].setdefault(feat, {})
+            tree[mod][feat].setdefault(dim, [])
+            tree[mod][feat][dim].append(tp)
 
         for module_name, features in tree.items():
-            module_node = {
-                "id": f"mod-{module_name}",
-                "title": module_name,
-                "children": {"attached": []}
-            }
+            mod_topic = root.addSubTopic()
+            mod_topic.setTitle(module_name)
 
-            for feature_name, dimensions in features.items():
-                feature_node = {
-                    "id": f"feat-{feature_name}",
-                    "title": feature_name,
-                    "children": {"attached": []}
-                }
+            for feat_name, dimensions in features.items():
+                feat_topic = mod_topic.addSubTopic()
+                feat_topic.setTitle(feat_name)
 
                 for dim_name, tps in dimensions.items():
-                    dim_node = {
-                        "id": f"dim-{module_name}-{dim_name}",
-                        "title": dim_name,
-                        "children": {"attached": []}
-                    }
+                    dim_topic = feat_topic.addSubTopic()
+                    dim_topic.setTitle(f"[{dim_name}] ({len(tps)} 条)")
 
                     for tp in tps:
-                        tc_counter += 1
-                        tc_id = f"TC-{tc_counter:03d}"
                         priority = assign_priority(tp)
+                        tc_title = f"[{priority}] {tp['title']}"
 
-                        if priority == "P0":
-                            p0_count += 1
-                        elif priority == "P1":
-                            p1_count += 1
-                        else:
-                            p2_count += 1
+                        tc_topic = dim_topic.addSubTopic()
+                        tc_topic.setTitle(tc_title)
 
-                        tc_node = {
-                            "id": tc_id,
-                            "title": f"{tc_id}: {tp['title']} [{priority}]",
-                            "children": {"attached": [
-                                {"id": f"{tc_id}-pre", "title": f"前置条件: {tp.get('precondition', '见测试点')}"},
-                                {"id": f"{tc_id}-data", "title": f"测试数据: {tp['test_data']}" if tp['test_data'] else "测试数据: 无"},
-                                {"id": f"{tc_id}-exp", "title": f"预期结果: {tp['expected']}" if tp['expected'] else "预期结果: 见测试点"},
-                            ]}
-                        }
-                        dim_node["children"]["attached"].append(tc_node)
+                        # 添加测试数据子节点
+                        if tp.get("test_data"):
+                            dt = tc_topic.addSubTopic()
+                            dt.setTitle(f"数据: {tp['test_data'][:60]}")
 
-                    feature_node["children"]["attached"].append(dim_node)
-                module_node["children"]["attached"].append(feature_node)
-
-            root_children.append(module_node)
+                        # 添加预期结果子节点
+                        if tp.get("expected"):
+                            et = tc_topic.addSubTopic()
+                            et.setTitle(f"预期: {tp['expected'][:60]}")
 
         # 统计节点
-        stats_node = {
-            "id": "stats",
-            "title": f"📊 统计（共 {tc_counter} 个用例）",
-            "children": {"attached": [
-                {"id": "stats-p0", "title": f"P0（高）: {p0_count} 个"},
-                {"id": "stats-p1", "title": f"P1（中）: {p1_count} 个"},
-                {"id": "stats-p2", "title": f"P2（低）: {p2_count} 个"},
-            ]}
-        }
-        root_children.append(stats_node)
+        self._add_stats(root, test_points)
 
-        return [{
-            "id": "sheet",
-            "class": "sheet",
-            "title": "测试用例",
-            "rootTopic": {
-                "id": "root",
-                "title": f"{project_name} 测试用例",
-                "children": {"attached": root_children}
-            }
-        }]
+        xmind.save(workbook, output_path)
 
-    def write(self, test_points: list, output_path: str, project_name: str = "测试项目"):
-        tree = self.build_tree(test_points)
-        content_json = self.build_content_json(tree, test_points, project_name)
+    def _add_stats(self, root, test_points: list):
+        """添加统计信息节点"""
+        total = len(test_points)
+        p0 = sum(1 for tp in test_points if assign_priority(tp) == "P0")
+        p1 = sum(1 for tp in test_points if assign_priority(tp) == "P1")
+        p2 = sum(1 for tp in test_points if assign_priority(tp) == "P2")
 
-        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("content.json", json.dumps(content_json, ensure_ascii=False, indent=2))
-            zf.writestr("metadata.json", json.dumps({
-                "creator": {"name": "Hermes Test Case Generator", "version": "1.0.0"},
-            }, ensure_ascii=False, indent=2))
+        dims = {}
+        mods = set()
+        for tp in test_points:
+            dims[tp["dimension"]] = dims.get(tp["dimension"], 0) + 1
+            mods.add(tp["module"])
+
+        stats = root.addSubTopic()
+        stats.setTitle(f"📊 统计")
+
+        stats.addSubTopic().setTitle(f"总用例: {total} 个")
+        stats.addSubTopic().setTitle(f"模块: {len(mods)} 个")
+
+        pri = stats.addSubTopic()
+        pri.setTitle("优先级分布")
+        pri.addSubTopic().setTitle(f"P0: {p0} 个")
+        pri.addSubTopic().setTitle(f"P1: {p1} 个")
+        pri.addSubTopic().setTitle(f"P2: {p2} 个")
+
+        dim = stats.addSubTopic()
+        dim.setTitle("维度分布")
+        for d, c in sorted(dims.items()):
+            dim.addSubTopic().setTitle(f"{d}: {c} 个")
 
 
+# ═══════════════════════════════════════════════════════════════
+# 主函数
 # ═══════════════════════════════════════════════════════════════
 
 def main():
     parser = argparse.ArgumentParser(description="生成 XMind 格式测试用例")
     parser.add_argument("input", help="测试点 Markdown 文件路径")
     parser.add_argument("-o", "--output", default="testcases.xmind", help="输出文件路径")
-    parser.add_argument("-n", "--name", default="测试项目", help="项目名称")
+    parser.add_argument("--project", default="", help="项目名称（可选）")
     args = parser.parse_args()
 
-    # 1. 解析
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"❌ 文件不存在: {args.input}", file=sys.stderr)
+        return 1
+
     print(f"📖 读取测试点文件: {args.input}")
-    tp_parser = TestPointParser()
-    test_points = tp_parser.parse_file(args.input)
+    parser = TestPointParser()
+    test_points = parser.parse_file(args.input)
 
     if not test_points:
-        print("⚠️  未解析到任何测试点，请检查文件格式", file=sys.stderr)
+        print("⚠️  未解析到任何测试点", file=sys.stderr)
         return 1
 
     print(f"✅ 解析到 {len(test_points)} 个测试点")
 
-    # 2. 统计
+    print("🔨 生成 XMind 脑图文件...")
+    generator = XMindGenerator()
+    generator.generate(test_points, args.output, args.project)
+
     p0 = sum(1 for tp in test_points if assign_priority(tp) == "P0")
     p1 = sum(1 for tp in test_points if assign_priority(tp) == "P1")
     p2 = sum(1 for tp in test_points if assign_priority(tp) == "P2")
-    modules = len(set(tp["module"] for tp in test_points))
 
     print(f"\n✅ 测试用例生成完成！")
     print(f"📊 统计信息：")
-    print(f"  - 测试模块：{modules} 个")
+    print(f"  - 测试模块：{len(set(tp['module'] for tp in test_points))} 个")
     print(f"  - 用例总数：{len(test_points)} 个")
     print(f"  - P0（高）: {p0} 个")
     print(f"  - P1（中）: {p1} 个")
     print(f"  - P2（低）: {p2} 个")
 
-    # 3. 写入
-    print(f"\n📁 写入文件: {args.output}")
-    writer = XMindWriter()
-    writer.write(test_points, args.output, project_name=args.name)
-
-    print(f"\n✅ 文件已保存: {args.output}")
+    size = Path(args.output).stat().st_size
+    print(f"\n📁 输出文件: {args.output} ({size / 1024:.1f} KB)")
     return 0
 
 

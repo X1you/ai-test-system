@@ -1,7 +1,7 @@
 ---
 name: generate-testcases
 description: 根据测试点清单生成测试用例，支持 Excel 和 XMind 两种格式，可按测试维度过滤
-version: 1.1.0
+version: 1.2.0
 tags: [testing, testcases, generation, excel, xmind]
 author: AI Assistant
 created_by: agent
@@ -126,20 +126,24 @@ created_by: agent
 
 #### 5.2 优先级分配规则
 
-**P0（高优先级）：**
-- 核心业务流程的正向测试
-- 涉及资金/安全的测试
-- 关键功能的异常测试
+脚本 `__assign_priority()` 基于 **核心模块 + 维度 + 标题关键词** 三级决策。详见 `references/steps-template-strategy.md`。
+
+**P0（高优先级）— 至少满足一条：**
+- 核心模块/功能点（用户管理、认证、支付、全流程等）的正向测试
+- 核心模块的异常/关键负向/关键边界测试
+- 涉及资金/安全的测试（越权、篡改、注入、泄露等）
+- 校验/验证类、集成/串联/全流程类正向测试
 
 **P1（中优先级）：**
 - 一般功能的正向测试
-- 大部分负向测试
-- 关键功能的边界测试
+- 大部分负向测试、异常测试
+- 关键功能的边界测试、核心模块性能测试
 
 **P2（低优先级）：**
-- 非核心功能的测试
-- 性能测试（除非特别要求）
+- 非核心功能的性能测试
 - UI 细节测试
+
+> ⚠️ 核心模块定义（`CORE_MODULES` / `CORE_FEATURES`）硬编码在脚本中。若被测系统核心模块名不在列表中，需手动补充，否则该模块正向测试不会被提升为 P0。
 
 #### 5.3 用例标题规则
 - 格式：`[操作对象] + [操作动作] + [预期/场景]`
@@ -238,8 +242,9 @@ $HERMES_PYTHON scripts/generate_xmind.py testpoints.md -o testcases.xmind
 
 ### XMind 生成脚本
 - 脚本位置：`scripts/generate_xmind.py`
-- 依赖：**无外部依赖**（仅用 Python 标准库 `zipfile` + `json`）
-- 技术原理：`.xmind` 文件本质是 zip 包，内含 `content.json`。脚本直接构建 JSON 树结构并打包，不需要安装 `xmind` pip 包。
+- 依赖：**[XMind](https://pypi.org/project/XMind/)（v1.2.0）** — 已安装在 Hermes venv 中
+- 安装：`pip install XMind`
+- 技术原理：使用 xmind 库生成标准 XMind 2.0 格式的 `.xmind` 文件（zip 包内含 content.xml + styles.xml + comments.xml）
 - 功能：
   - 读取测试点 Markdown 文件
   - 生成树状脑图：项目 → 模块 → 功能点 → 测试维度 → 用例
@@ -286,25 +291,23 @@ AI：
 
 > 📖 全流程 Pipeline 详细说明（含各环节输出文件、维度体系、优先级体系）见 `references/pipeline-overview.md`
 >
+> 📖 测试步骤生成策略（按操作类型 / 异常类型 / 攻击类型分类的模板设计）见 `references/steps-template-strategy.md`
+>
 > 📂 项目源码仓库：`~/Documents/ai-test-system/`（Skills 运行时安装位置：`~/.hermes/skills/`）
 
 ## ⚠️ 已知问题与陷阱
 
-### 1. 步骤模板过于通用
+### 1. ~~步骤模板过于通用~~（v1.2.0 已修复）
 
-脚本中 `__generate_steps()` 方法根据测试点标题和维度匹配关键词生成步骤。当测试点标题不包含常见关键词（如下单、支付、登录、查询等）时，会回退到通用模板：
+> **v1.2.0 修复方案：** `__generate_steps()` 改用 `ACTION_TEMPLATES` 统一动作映射表（16 类操作模板，每类含正向+负向双步骤集），通过 `__match_action()` 统一匹配。未匹配时利用 `模块名 + 功能点 + 测试数据` 生成半具体化兜底步骤，不再回退到空泛的"执行目标操作"。实测通用模板回退率从 19% 降至 1%。详见 `references/steps-template-strategy.md`。
 
-```
-1. 按照业务流程执行: [标题]
-```
+**仍有改进空间：** 少数用例（如"知识库检索响应时间"等标题不含动作动词的性能测试）仍可能匹配到较泛化的步骤。**在生成后建议人工抽查步骤列，对极少量兜底用例补充具体操作。**
 
-这导致大量用例的步骤描述缺乏可执行性。**在生成后应人工检查步骤描述，对通用模板的用例补充具体操作步骤。**
+### 2. ~~P0 优先级分配异常~~（v1.2.0 已修复）
 
-### 2. P0 优先级分配异常
+> **v1.2.0 修复方案：** `__assign_priority()` 新增 `CORE_MODULES` / `CORE_FEATURES` / `CORE_ACTION_KW` 三组核心定义，实现多级决策：核心模块的正向/异常/关键负向/关键边界测试 → P0。实测 P0 占比从 15% 提升至 38%，P1 从 80% 降至 58%，P0 维度覆盖从 2 个扩展到 5 个。
 
-`__assign_priority()` 方法仅对标题中包含"下单""支付""退款""登录"等特定关键词的正向测试分配 P0。如果需求文档的模块/功能点名称不包含这些词（如"需求分析""测试点梳理""用例评审"），所有用例都会被标为 P1。
-
-**导致测试报告中 P0 数量为 0，质量评分偏差。** 修复方向：`__assign_priority()` 应增加基于模块优先级的兜底（如 `module` 在配置的高优先级列表中时标 P0）。
+**配置说明：** `CORE_MODULES` 和 `CORE_FEATURES` 是硬编码在脚本中的。如果被测系统的核心模块名称不在列表中（如医疗系统的"病历管理"），需要在脚本中补充对应关键词，否则这些模块的正向测试不会被提升为 P0。
 
 ### 3. 安全测试维度难以触发
 
@@ -313,6 +316,14 @@ AI：
 ### 4. 维度分布不平衡
 
 正向测试占比通常过高（70-80%），负向/边界/异常/性能/安全严重偏少。脚本没有维度数量上限控制。这在测试报告中会被 `test-case-review` 的评审报告准确指出。
+
+### 5. XMind 脚本不支持 `-d` 维度过滤参数
+
+Excel 脚本支持 `-d positive,negative,basic,all` 维度过滤，但 XMind 脚本 `generate_xmind.py` 的 argparse 未定义 `-d` 参数，传参会报 `error: unrecognized arguments: -d all`。
+
+**规避：** 如需维度过滤后生成 XMind，先用 Excel 脚本过滤生成，再手动转换；或修改 `generate_xmind.py` 添加 argparse `-d` 定义与 Excel 脚本对齐。
+
+**修复方向：** 两个脚本 argparse 参数定义对齐（`-d`、`-o`、`-n` 等）。
 
 ## 注意事项
 
@@ -324,6 +335,11 @@ AI：
 6. 测试数据为示例数据，实际执行时需要根据环境调整
 
 ## 更新日志
+
+### v1.2.0 (2026-07-14)
+- 🔧 **P0修复：步骤模板优化** — `__generate_steps()` 改用 `ACTION_TEMPLATES` 动作映射表（16类操作模板），通用模板回退率 19%→1%
+- 🔧 **P0修复：优先级分配优化** — `__assign_priority()` 新增核心模块多级决策，P0占比 15%→38%、P1 80%→58%
+- 📝 更新 `references/steps-template-strategy.md` 补充完整设计决策和验证数据
 
 ### v1.0.0 (2026-07-13)
 - ✅ 初始版本
