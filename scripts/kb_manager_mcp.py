@@ -43,7 +43,12 @@ class KnowledgeBaseManager:
         return self.mcp_client.create_file(item)
 
     def ingest(self, source_file: str, category: str, module: str = "") -> int:
-        """回灌知识 (从 Excel 或 Markdown)"""
+        """回灌知识 (从 Excel 或 Markdown)
+
+        Excel 格式自动识别:
+        - testcases.xlsx 标准12列格式（用例编号|模块|功能点|维度|标题|优先级|前置条件|步骤|数据|预期|备注|结果）
+        - 通用3列格式（标题|内容|标签）
+        """
         if not os.path.exists(source_file):
             print(f"❌ 文件不存在: {source_file}")
             return 0
@@ -51,31 +56,84 @@ class KnowledgeBaseManager:
         count = 0
 
         if source_file.endswith('.xlsx'):
-            # Excel 回灌
             try:
                 import openpyxl
                 wb = openpyxl.load_workbook(source_file)
                 ws = wb.active
 
+                # 自动检测 Excel 格式
+                headers = [str(cell.value or '').strip() for cell in ws[1]]
+                is_testcase_format = headers and headers[0] == '用例编号' and '用例标题' in headers
+
                 for row in ws.iter_rows(min_row=2, values_only=True):
                     if not row or len(row) < 3:
                         continue
 
-                    title = str(row[0] or '')
-                    content = str(row[1] or '')
-                    tags = str(row[2] or '').split(',')
+                    if is_testcase_format:
+                        # 标准 testcases.xlsx 12列格式
+                        # col[0]=编号 col[1]=模块 col[2]=功能点 col[3]=维度
+                        # col[4]=标题 col[5]=优先级 col[6]=前置条件 col[7]=步骤
+                        # col[8]=数据 col[9]=预期 col[10]=备注 col[11]=结果
+                        tc_id = str(row[0] or '')
+                        tc_module = str(row[1] or '')
+                        tc_feature = str(row[2] or '')
+                        tc_dimension = str(row[3] or '')
+                        tc_title = str(row[4] or '')
+                        tc_priority = str(row[5] or '')
+                        tc_precondition = str(row[6] or '')
+                        tc_steps = str(row[7] or '')
+                        tc_test_data = str(row[8] or '')
+                        tc_expected = str(row[9] or '')
+                        tc_result = str(row[11] or '')
 
-                    if title and content:
+                        if not tc_title:
+                            continue
+
+                        # 组装结构化内容
+                        content_lines = [
+                            f"**用例编号**: {tc_id}",
+                            f"**模块**: {tc_module}",
+                            f"**功能点**: {tc_feature}",
+                            f"**测试维度**: {tc_dimension}",
+                            f"**优先级**: {tc_priority}",
+                            f"",
+                            f"**前置条件**: {tc_precondition}",
+                            f"**测试步骤**:",
+                            tc_steps,
+                            f"",
+                            f"**测试数据**: {tc_test_data}",
+                            f"**预期结果**: {tc_expected}",
+                        ]
+                        if tc_result:
+                            content_lines.append(f"**执行结果**: {tc_result}")
+
                         item = KnowledgeItem(
                             id='',
-                            title=title,
-                            content=content,
+                            title=f"{tc_id} {tc_title}" if tc_id else tc_title,
+                            content='\n'.join(content_lines),
                             category=category,
-                            module=module,
-                            tags=[t.strip() for t in tags if t.strip()]
+                            module=tc_module or module,
+                            tags=[t.strip() for t in [tc_dimension, tc_priority, tc_feature] if t.strip()]
                         )
                         if self.add(item):
                             count += 1
+                    else:
+                        # 通用3列格式 (title, content, tags)
+                        title = str(row[0] or '')
+                        content = str(row[1] or '')
+                        tags = str(row[2] or '').split(',')
+
+                        if title and content:
+                            item = KnowledgeItem(
+                                id='',
+                                title=title,
+                                content=content,
+                                category=category,
+                                module=module,
+                                tags=[t.strip() for t in tags if t.strip()]
+                            )
+                            if self.add(item):
+                                count += 1
             except ImportError:
                 print("❌ openpyxl 未安装，无法处理 Excel 文件")
                 print("   安装: pip install openpyxl")
