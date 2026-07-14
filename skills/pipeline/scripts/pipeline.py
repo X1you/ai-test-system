@@ -45,7 +45,6 @@ SCRIPT_KB_MCP = SKILLS_DIR / "knowledge-base" / "scripts" / "kb_manager_mcp.py"
 SCRIPT_KB_LOCAL = SKILLS_DIR / "knowledge-base" / "scripts" / "kb_manager.py"
 
 PROJECT_DIR = Path.home() / "Documents" / "ai-test-system"
-DEFAULT_KB_DIR = PROJECT_DIR / "knowledge-base"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -234,7 +233,7 @@ def load_state(output_dir: str) -> dict:
         "step_results": {},
         "mode": "semi",
         "requirements_file": "",
-        "kb_dir": str(DEFAULT_KB_DIR),
+        "kb_dir": "",
     }
 
 
@@ -273,8 +272,7 @@ class Pipeline:
     def __init__(self, output_dir: str, kb_dir: str = None):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.kb_dir = kb_dir or str(DEFAULT_KB_DIR)
-        self.kb_available = Path(self.kb_dir).exists() and (Path(self.kb_dir) / "index.json").exists()
+        self.kb_dir = kb_dir or ""
 
     def _out(self, filename: str) -> str:
         return str(self.output_dir / filename)
@@ -526,7 +524,7 @@ def run_pipeline(args):
     state = load_state(output_dir)
     state["mode"] = mode
     state["requirements_file"] = requirements_file
-    state["kb_dir"] = args.kb_dir or str(DEFAULT_KB_DIR)
+    state["kb_dir"] = args.kb_dir or ""
     save_state(output_dir, state)
 
     pipe = Pipeline(output_dir, kb_dir=state["kb_dir"])

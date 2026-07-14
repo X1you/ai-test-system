@@ -29,7 +29,7 @@ created_by: agent
 
 ```bash
 HERMES_PYTHON="$HOME/.hermes/hermes-agent/venv/bin/python"
-KB="$HOME/.hermes/skills/testing/knowledge-base/scripts/kb_manager.py"
+KB="$HOME/.hermes/skills/knowledge-base/scripts/kb_manager_mcp.py"
 $HERMES_PYTHON "$KB" export "需求关键词" --output knowledge-context.md
 ```
 

@@ -361,45 +361,14 @@ Obsidian Vault (知识存储)
 │   │   ├── SKILL.md
 │   │   └── scripts/generate_report.py       (报告生成脚本)
 │   ├── knowledge-base/                      ✅ v2.1.0 (MCP 层)
-│   │   └── SKILL.md
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       ├── mcp_client.py                (Obsidian Vault 文件访问)
+│   │       ├── kb_manager_mcp.py            (知识库管理：search/export/ingest)
+│   │       └── kb_manager.py                (本地知识库 fallback，旧版)
 │   └── pipeline/                            ✅ v1.1.0 (编排层)
 │       ├── SKILL.md
 │       └── scripts/pipeline.py              (全流程串联引擎)
-│
-├── scripts/                                 🔧 知识库 MCP 层脚本
-│   ├── mcp_client.py                        (Obsidian Vault 文件访问)
-│   ├── kb_manager_mcp.py                    (知识库管理：search/export/ingest)
-│   ├── kb_manager.py                        (本地知识库管理，旧版)
-│   ├── migrate_to_obsidian.py               (迁移脚本：本地→Obsidian)
-│   └── test_obsidian_*.py                   (Obsidian API 测试脚本)
-│
-├── test-run/                                🧪 全流程验证测试数据
-│   ├── requirements.md                      (输入：需求文档 v1)
-│   ├── requirements_v2.md                   (输入：需求文档 v2)
-│   ├── prototype.md                         (输入：原型图)
-│   ├── output/                              (v1 输出产物)
-│   │   ├── requirements_analysis.md
-│   │   ├── clarification_needed.md
-│   │   ├── knowledge-context.md
-│   │   ├── testpoints.md
-│   │   ├── testcases.xlsx / .xmind
-│   │   ├── testcases_fixed.xlsx             (修复后用例)
-│   │   ├── test_case_review_report.md
-│   │   ├── test_report.md / _final.md
-│   │   └── pipeline_validation_report.md    (完整验证报告)
-│   └── output-v2/                           (v2 输出产物)
-│       ├── requirements_analysis.md
-│       ├── clarification_needed.md
-│       ├── testpoints.md
-│       ├── testcases.xlsx / .xmind
-│       └── test_report.md
-│
-├── knowledge-base/                          🧠 本地知识库（旧版，已迁移到 Obsidian）
-│   ├── business-rules/
-│   ├── historical-cases/
-│   ├── pitfalls/
-│   ├── templates/
-│   └── index.json
 │
 ├── examples/                                📁 示例需求文档
 │   ├── demo_requirements.md
@@ -414,12 +383,15 @@ Obsidian Vault (知识存储)
 │   ├── testcases_executed.xlsx
 │   └── test_report.md
 │
+├── docs/                                    📝 项目文档
+│   └── pipeline_validation_report.md        (全流程验证报告)
+│
 ├── reference/                               📚 参考资料和原始文章
 │   └── 我搭建了一套AI生成测试用例的全流程方案....html
 │
-└── docs/                                    📝 额外文档（预留）
+└── .gitignore
 
-知识库存储（运行时）：
+知识库存储（运行时，不在项目仓库内）：
 ~/Documents/test-interview-kb/                ← Obsidian Vault（MCP 访问）
   ├── 🏆 历史用例/   (按项目→批次分层归档)
   ├── 📋 业务规则/

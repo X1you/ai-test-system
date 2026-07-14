@@ -1,765 +1,708 @@
 #!/usr/bin/env python3
 """
-测试知识库管理脚本
-
-本地优先的测试知识库系统，支持：
-  init    — 初始化知识库目录结构
-  search  — TF-IDF + BM25 关键词检索
-  add     — 添加单条知识
-  ingest  — 从文件批量回灌知识（Excel/Markdown）
-  export  — 导出增强上下文（Markdown 格式）
-  status  — 知识库概况统计
-  list    — 列出知识条目
-
-用法:
-    python kb_manager.py init   [--kb-dir DIR]
-    python kb_manager.py search "关键词" [--kb-dir DIR] [--category CAT] [--limit N]
-    python kb_manager.py add    --category CAT --title TITLE --content TEXT [--module M] [--severity S] [--kb-dir DIR]
-    python kb_manager.py ingest <file> --category CAT [--module M] [--kb-dir DIR]
-    python kb_manager.py export  "关键词" [--output FILE] [--kb-dir DIR]
-    python kb_manager.py status  [--kb-dir DIR]
-    python kb_manager.py list    [--category CAT] [--kb-dir DIR]
-
-依赖:
-    openpyxl (可选，仅回灌 Excel 时需要，在 Hermes venv 中)
+Knowledge Base Manager - 本地 Markdown + Obsidian REST API 双方案支持
+支持检索、添加、导出、回灌知识，优先使用 Obsidian API，fallback 到本地文件
 """
 
-import argparse
 import json
-import math
+import os
 import re
 import sys
-from collections import defaultdict, Counter
+import argparse
+import hashlib
+import ssl
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, asdict
+from collections import defaultdict
+import math
+
+try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
 
 
-# ═══════════════════════════════════════════════════════════════
-# 常量
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# 配置
+# ============================================================================
 
-CATEGORIES = ["business-rules", "historical-cases", "pitfalls", "templates"]
+OBSIDIAN_API_BASE = "https://localhost:27124"
+OBSIDIAN_API_KEY = "0cf2c62343bb2f9fed9e8e40ac5be1c2a124380969a1802100b4c6216b96ef2f"
+OBSIDIAN_VAULT = "/Users/x1you/Documents/test-interview-kb"
+OBSIDIAN_SSL_VERIFY = False  # 本地测试，忽略证书验证
 
-CATEGORY_LABELS = {
-    "business-rules": "业务规则",
-    "historical-cases": "历史优质用例",
-    "pitfalls": "线上坑点",
-    "templates": "用例模板",
-}
-
-CATEGORY_ICONS = {
-    "business-rules": "📋",
-    "historical-cases": "🏆",
-    "pitfalls": "⚠️",
-    "templates": "📐",
-}
+LOCAL_KB_DIR = os.path.expanduser("~/Documents/ai-test-system/knowledge-base")
 
 
-# ═══════════════════════════════════════════════════════════════
-# 中文分词器（简单但有效）
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# 数据模型
+# ============================================================================
 
-# 停用词
-STOP_WORDS = frozenset([
-    "的", "了", "在", "是", "和", "与", "或", "对", "为", "从", "到", "由",
-    "这", "那", "它", "他", "她", "我", "你", "们", "个", "中", "上", "下",
-    "不", "也", "都", "就", "还", "又", "被", "把", "给", "向", "已", "一",
-    "the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "to",
-    "for", "of", "with", "by", "from", "and", "or", "not", "no", "yes",
-])
-
-
-def tokenize(text: str) -> list:
-    """
-    混合分词：英文按单词、中文按 2-gram + 单字
-    对中文检索效果较好
-    """
-    if not text:
-        return []
-
-    text = text.lower().strip()
-    tokens = []
-
-    # 英文单词
-    for m in re.finditer(r"[a-z][a-z0-9_\-]{1,}", text):
-        word = m.group()
-        if word not in STOP_WORDS and len(word) > 1:
-            tokens.append(word)
-
-    # 中文字符序列
-    for seg in re.finditer(r"[\u4e00-\u9fff]+", text):
-        chars = seg.group()
-        # 单字
-        for ch in chars:
-            if ch not in STOP_WORDS:
-                tokens.append(ch)
-        # 2-gram（bigram）
-        for i in range(len(chars) - 1):
-            tokens.append(chars[i:i + 2])
-
-    return tokens
+@dataclass
+class KnowledgeItem:
+    """知识条目模型"""
+    id: str  # 唯一ID (MD5 hash)
+    title: str
+    content: str
+    category: str  # business-rules / historical-cases / pitfalls / templates
+    module: str  # 所属模块，如 "订单支付"
+    tags: List[str]
+    severity: Optional[str] = None  # high/medium/low (仅坑点)
+    created_at: str = ""
+    updated_at: str = ""
+    source: str = "local"  # local / obsidian
 
 
-# ═══════════════════════════════════════════════════════════════
-# BM25 检索引擎
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# BM25 检索引擎 (纯标准库实现)
+# ============================================================================
 
 class BM25Engine:
-    """纯标准库实现的 BM25 检索引擎"""
+    """BM25 检索引擎，支持中文"""
 
-    def __init__(self, k1=1.5, b=0.75):
+    def __init__(self, k1: float = 1.5, b: float = 0.75):
         self.k1 = k1
         self.b = b
-        self.documents = []       # [{id, category, source, title, content, tokens, token_freq, metadata}]
-        self.df = defaultdict(int)  # document frequency per token
-        self.avg_dl = 0.0          # average document length
-        self._built = False
-
-    def add_document(self, doc_id: str, category: str, source: str,
-                     title: str, content: str, metadata: dict = None):
-        """添加文档到索引"""
-        full_text = f"{title} {content}"
-        tokens = tokenize(full_text)
-        token_freq = Counter(tokens)
-
-        self.documents.append({
-            "id": doc_id,
-            "category": category,
-            "source": source,
-            "title": title,
-            "content": content,
-            "tokens": tokens,
-            "token_freq": token_freq,
-            "dl": len(tokens),
-            "metadata": metadata or {},
-        })
-
-        # 更新 DF
-        for token in token_freq:
-            self.df[token] += 1
-
-        self._built = False
-
-    def _build(self):
-        """构建检索索引（计算 IDF 等）"""
-        n = len(self.documents)
+        self.corpus = []
+        self.doc_freqs = []
         self.idf = {}
-        for token, df in self.df.items():
-            # BM25 IDF
-            self.idf[token] = math.log((n - df + 0.5) / (df + 0.5) + 1)
+        self.doc_lens = []
+        self.avgdl = 0
 
-        self.avg_dl = (
-            sum(d["dl"] for d in self.documents) / n if n > 0 else 0
-        )
-        self._built = True
+    def tokenize(self, text: str) -> List[str]:
+        """中文分词：按字符 + 按词 (简单版)"""
+        # 字符级分词
+        chars = list(text)
+        # 2-gram 词级分词
+        bigrams = [text[i:i+2] for i in range(len(text)-1)]
+        return chars + bigrams
 
-    def search(self, query: str, category: str = None, limit: int = 20) -> list:
-        """BM25 检索"""
-        if not self.documents:
-            return []
-        if not self._built:
-            self._build()
+    def index(self, documents: List[Dict[str, Any]]):
+        """建立索引"""
+        self.corpus = documents
+        self.doc_freqs = []
+        self.doc_lens = []
+        vocab = set()
 
-        query_tokens = tokenize(query)
-        if not query_tokens:
-            return []
+        for doc in documents:
+            tokens = self.tokenize(doc['title'] + " " + doc['content'])
+            freq = defaultdict(int)
+            for token in tokens:
+                freq[token] += 1
+                vocab.add(token)
+            self.doc_freqs.append(freq)
+            self.doc_lens.append(len(tokens))
 
-        results = []
-        for doc in self.documents:
-            if category and doc["category"] != category:
-                continue
+        if len(self.doc_lens) > 0:
+            self.avgdl = sum(self.doc_lens) / len(self.doc_lens)
 
-            score = 0.0
-            dl = doc["dl"]
-            for qt in query_tokens:
-                if qt not in self.idf:
-                    continue
-                tf = doc["token_freq"].get(qt, 0)
-                if tf == 0:
-                    continue
+        # 计算 IDF
+        N = len(documents)
+        for token in vocab:
+            df = sum(1 for doc_freq in self.doc_freqs if token in doc_freq)
+            self.idf[token] = math.log((N - df + 0.5) / (df + 0.5) + 1)
 
-                # BM25 score
-                idf = self.idf[qt]
-                numerator = tf * (self.k1 + 1)
-                denominator = tf + self.k1 * (1 - self.b + self.b * dl / max(self.avg_dl, 1))
-                score += idf * numerator / denominator
+    def search(self, query: str, top_k: int = 20) -> List[Dict[str, Any]]:
+        """检索"""
+        query_tokens = self.tokenize(query)
+        scores = []
+
+        for idx, doc in enumerate(self.corpus):
+            score = 0
+            doc_freq = self.doc_freqs[idx]
+            doc_len = self.doc_lens[idx]
+
+            for token in query_tokens:
+                if token in doc_freq:
+                    tf = doc_freq[token]
+                    idf = self.idf.get(token, 0)
+                    numerator = tf * (self.k1 + 1)
+                    denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avgdl)
+                    score += idf * numerator / denominator
 
             if score > 0:
-                # 提取匹配片段
-                snippet = self._extract_snippet(doc, query_tokens)
-                results.append({
-                    "id": doc["id"],
-                    "category": doc["category"],
-                    "source": doc["source"],
-                    "title": doc["title"],
-                    "score": round(score, 4),
-                    "snippet": snippet,
-                    "metadata": doc["metadata"],
-                })
+                scores.append((score, idx, doc))
 
-        results.sort(key=lambda x: x["score"], reverse=True)
-        return results[:limit]
-
-    def _extract_snippet(self, doc: dict, query_tokens: list, max_len: int = 200) -> str:
-        """提取匹配上下文片段"""
-        content = doc["content"]
-        if len(content) <= max_len:
-            return content
-
-        # 找最佳匹配位置
-        best_pos = 0
-        best_score = 0
-        for qt in query_tokens:
-            pos = content.find(qt)
-            if pos >= 0:
-                # 简化：取第一个匹配位置
-                best_pos = pos
-                break
-
-        start = max(0, best_pos - max_len // 3)
-        end = min(len(content), start + max_len)
-        snippet = content[start:end]
-        if start > 0:
-            snippet = "..." + snippet
-        if end < len(content):
-            snippet = snippet + "..."
-        return snippet
+        # 按分数排序
+        scores.sort(reverse=True, key=lambda x: x[0])
+        return [doc for _, _, doc in scores[:top_k]]
 
 
-# ═══════════════════════════════════════════════════════════════
-# 知识库管理器
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# Obsidian API 客户端
+# ============================================================================
 
-class KnowledgeBase:
-    """知识库管理"""
+class ObsidianClient:
+    """Obsidian Local REST API 客户端"""
 
-    def __init__(self, kb_dir: str):
-        self.kb_dir = Path(kb_dir)
-        self.index_path = self.kb_dir / "index.json"
-        self.engine = BM25Engine()
+    def __init__(self, base_url: str = OBSIDIAN_API_BASE, api_key: str = OBSIDIAN_API_KEY, ssl_verify: bool = False):
+        self.base_url = base_url
+        self.api_key = api_key
+        self.ssl_verify = ssl_verify
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        # 创建 SSL context
+        if not ssl_verify:
+            self.ssl_context = ssl.create_default_context()
+            self.ssl_context.check_hostname = False
+            self.ssl_context.verify_mode = ssl.CERT_NONE
+        else:
+            self.ssl_context = None
 
-    def _ensure_dir(self):
-        """确保知识库目录存在"""
-        self.kb_dir.mkdir(parents=True, exist_ok=True)
-        for cat in CATEGORIES:
-            (self.kb_dir / cat).mkdir(exist_ok=True)
+    def _request(self, method: str, path: str, data: Optional[Dict] = None) -> Any:
+        """发送请求"""
+        import urllib.request
+        import urllib.error
 
-    def init(self):
-        """初始化知识库目录结构"""
-        self._ensure_dir()
-        if not self.index_path.exists():
-            self._save_index({"version": "1.0", "created": datetime.now().isoformat(), "entries": []})
-        print(f"✅ 知识库已初始化: {self.kb_dir}")
-        for cat in CATEGORIES:
-            cat_dir = self.kb_dir / cat
-            file_count = len(list(cat_dir.glob("*.md")))
-            print(f"   {CATEGORY_ICONS[cat]} {cat}/ — {file_count} 条")
+        url = f"{self.base_url}{path}"
+        req_data = json.dumps(data).encode('utf-8') if data else None
 
-    def _load_index(self) -> dict:
-        """加载索引"""
-        if self.index_path.exists():
-            return json.loads(self.index_path.read_text(encoding="utf-8"))
-        return {"version": "1.0", "created": datetime.now().isoformat(), "entries": []}
-
-    def _save_index(self, index: dict):
-        """保存索引"""
-        self._ensure_dir()
-        index["updated"] = datetime.now().isoformat()
-        self.index_path.write_text(
-            json.dumps(index, ensure_ascii=False, indent=2),
-            encoding="utf-8"
+        req = urllib.request.Request(
+            url,
+            data=req_data,
+            headers=self.headers,
+            method=method.upper()
         )
 
-    def _load_all_documents(self):
-        """加载所有知识文档到检索引擎"""
-        self.engine = BM25Engine()
-        index = self._load_index()
-
-        for entry in index["entries"]:
-            self.engine.add_document(
-                doc_id=entry["id"],
-                category=entry["category"],
-                source=entry["source"],
-                title=entry["title"],
-                content=entry["content"],
-                metadata=entry.get("metadata", {}),
-            )
-
-    def _parse_markdown(self, file_path: Path) -> list:
-        """
-        解析 Markdown 知识文件，提取结构化知识条目
-        格式：每个 ### 标题下是一段知识内容
-        """
-        content = file_path.read_text(encoding="utf-8")
-        entries = []
-        current_title = None
-        current_lines = []
-
-        for line in content.split("\n"):
-            # ### 标题 = 知识条目标题
-            m = re.match(r"^###\s+(.+)", line)
-            if m:
-                if current_title and current_lines:
-                    entries.append({
-                        "title": current_title,
-                        "content": "\n".join(current_lines).strip(),
-                    })
-                current_title = m.group(1).strip()
-                current_lines = []
-            elif current_title:
-                current_lines.append(line)
-
-        # 最后一条
-        if current_title and current_lines:
-            entries.append({
-                "title": current_title,
-                "content": "\n".join(current_lines).strip(),
-            })
-
-        return entries
-
-    def search(self, query: str, category: str = None, limit: int = 20) -> list:
-        """检索知识库"""
-        self._load_all_documents()
-        return self.engine.search(query, category=category, limit=limit)
-
-    def add(self, category: str, title: str, content: str,
-            module: str = "", severity: str = ""):
-        """添加单条知识到 Markdown 文件"""
-        self._ensure_dir()
-
-        # 生成文件名
-        safe_title = re.sub(r"[^\w\u4e00-\u9fff]", "_", title)[:30]
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"{safe_title}_{timestamp}.md"
-        file_path = self.kb_dir / category / filename
-
-        # 构建内容
-        lines = [f"# {CATEGORY_LABELS.get(category, category)}\n"]
-        lines.append(f"### {title}\n")
-        if module:
-            lines.append(f"**模块：** {module}\n")
-        if severity:
-            lines.append(f"**严重程度：** {severity}\n")
-        lines.append(f"\n{content}\n")
-        lines.append(f"\n*记录时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}*\n")
-
-        file_path.write_text("\n".join(lines), encoding="utf-8")
-
-        # 更新索引
-        index = self._load_index()
-        entry_id = f"{category}_{timestamp}"
-        index["entries"].append({
-            "id": entry_id,
-            "category": category,
-            "source": str(file_path.relative_to(self.kb_dir)),
-            "title": title,
-            "content": content,
-            "metadata": {"module": module, "severity": severity},
-            "created": datetime.now().isoformat(),
-        })
-        self._save_index(index)
-
-        print(f"✅ 已添加到知识库")
-        print(f"   分类：{CATEGORY_ICONS.get(category, '')} {category}")
-        print(f"   标题：{title}")
-        print(f"   文件：{file_path}")
-
-    def ingest_excel(self, file_path: str, category: str, module: str = ""):
-        """从 Excel 文件回灌知识"""
         try:
-            from openpyxl import load_workbook
-        except ImportError:
-            print("❌ 回灌 Excel 需要 openpyxl，请使用 Hermes venv Python", file=sys.stderr)
-            return 0
+            kwargs = {}
+            if not self.ssl_verify and self.ssl_context:
+                kwargs['context'] = self.ssl_context
 
-        wb = load_workbook(file_path, data_only=True)
-        ws = wb.active
+            with urllib.request.urlopen(req, timeout=10, **kwargs) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise Exception(f"Obsidian API 请求失败: {e.code} {e.reason}")
+        except Exception as e:
+            raise Exception(f"Obsidian API 连接失败: {str(e)}")
 
-        # 解析表头
-        headers = {}
-        for col in range(1, ws.max_column + 1):
-            val = str(ws.cell(row=1, column=col).value or "").strip()
-            if val:
-                headers[val] = col
+    def list_files(self, directory: str = "") -> List[Dict]:
+        """列出文件 (支持目录和全局)"""
+        import urllib.parse
 
-        # 找关键列
-        def find_col(*names):
-            for name in names:
-                for h, c in headers.items():
-                    if name in h:
-                        return c
-            return None
-
-        col_id = find_col("用例编号", "编号", "id")
-        col_title = find_col("用例标题", "标题", "名称", "title")
-        col_module = find_col("所属模块", "模块", "module")
-        col_steps = find_col("测试步骤", "步骤", "steps")
-        col_expected = find_col("预期结果", "预期", "expected")
-        col_precondition = find_col("前置条件", "precondition")
-        col_priority = find_col("优先级", "priority")
-        col_data = find_col("测试数据", "data")
-
-        if not col_title:
-            print("⚠️  无法识别用例标题列", file=sys.stderr)
-            return 0
-
-        # 提取用例
-        cases = []
-        for row in range(2, ws.max_row + 1):
-            def get(col):
-                if col and col <= ws.max_column:
-                    v = ws.cell(row=row, column=col).value
-                    return str(v).strip() if v else ""
-                return ""
-
-            title = get(col_title)
-            if not title:
-                continue
-
-            case_module = get(col_module) or module or "未分类"
-            content_parts = []
-            if col_precondition:
-                pre = get(col_precondition)
-                if pre:
-                    content_parts.append(f"前置条件：{pre}")
-            if col_steps:
-                steps = get(col_steps)
-                if steps:
-                    content_parts.append(f"测试步骤：\n{steps}")
-            if col_data:
-                data = get(col_data)
-                if data:
-                    content_parts.append(f"测试数据：{data}")
-            if col_expected:
-                exp = get(col_expected)
-                if exp:
-                    content_parts.append(f"预期结果：{exp}")
-
-            cases.append({
-                "id": get(col_id),
-                "title": title,
-                "module": case_module,
-                "content": "\n".join(content_parts),
-                "priority": get(col_priority),
-            })
-
-        wb.close()
-
-        # 按模块分组写入 Markdown 文件
-        self._ensure_dir()
-        index = self._load_index()
-        count = 0
-
-        modules = defaultdict(list)
-        for case in cases:
-            modules[case["module"]].append(case)
-
-        for mod_name, mod_cases in modules.items():
-            safe_mod = re.sub(r"[^\w\u4e00-\u9fff]", "_", mod_name)[:20]
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            filename = f"{safe_mod}_{timestamp}.md"
-            file_path = self.kb_dir / category / filename
-
-            lines = [f"# {mod_name} — 优质用例集\n"]
-            lines.append(f"*回灌时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}*\n")
-
-            for case in mod_cases:
-                lines.append(f"### {case['id']}: {case['title']}\n")
-                if case["priority"]:
-                    lines.append(f"**优先级：** {case['priority']}\n")
-                lines.append(f"{case['content']}\n")
-
-            file_path.write_text("\n".join(lines), encoding="utf-8")
-
-            # 更新索引
-            for case in mod_cases:
-                entry_id = f"{category}_{mod_name}_{case['id']}_{timestamp}"
-                index["entries"].append({
-                    "id": entry_id,
-                    "category": category,
-                    "source": str(file_path.relative_to(self.kb_dir)),
-                    "title": f"{case['id']}: {case['title']}",
-                    "content": case["content"],
-                    "metadata": {
-                        "module": case["module"],
-                        "priority": case["priority"],
-                    },
-                    "created": datetime.now().isoformat(),
-                })
-                count += 1
-
-        self._save_index(index)
-        print(f"✅ 已回灌 {count} 条知识到知识库")
-        print(f"   分类：{CATEGORY_ICONS.get(category, '')} {category}")
-        print(f"   来源：{file_path}")
-        print(f"   模块：{', '.join(modules.keys())}")
-        return count
-
-    def ingest_markdown(self, file_path: str, category: str):
-        """从 Markdown 文件回灌知识"""
-        path = Path(file_path)
-        content = path.read_text(encoding="utf-8")
-
-        # 尝试按 ### 拆分
-        entries = self._parse_markdown(path)
-
-        if not entries:
-            # 整体作为一条
-            entries = [{"title": path.stem, "content": content}]
-
-        self._ensure_dir()
-        index = self._load_index()
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        filename = f"{path.stem}_{timestamp}.md"
-        dest_path = self.kb_dir / category / filename
-
-        # 复制文件
-        dest_path.write_text(content, encoding="utf-8")
-
-        count = 0
-        for entry in entries:
-            entry_id = f"{category}_{timestamp}_{count}"
-            index["entries"].append({
-                "id": entry_id,
-                "category": category,
-                "source": str(dest_path.relative_to(self.kb_dir)),
-                "title": entry["title"],
-                "content": entry["content"][:2000],  # 限制长度
-                "metadata": {},
-                "created": datetime.now().isoformat(),
-            })
-            count += 1
-
-        self._save_index(index)
-        print(f"✅ 已回灌 {count} 条知识到知识库")
-        print(f"   分类：{CATEGORY_ICONS.get(category, '')} {category}")
-        print(f"   来源：{file_path}")
-        return count
-
-    def ingest(self, file_path: str, category: str, module: str = ""):
-        """自动检测文件类型并回灌"""
-        path = Path(file_path)
-        if not path.exists():
-            print(f"❌ 文件不存在: {file_path}", file=sys.stderr)
-            return 0
-
-        if path.suffix.lower() in (".xlsx", ".xls"):
-            return self.ingest_excel(file_path, category, module)
-        elif path.suffix.lower() in (".md", ".markdown", ".txt"):
-            return self.ingest_markdown(file_path, category)
+        if not directory:
+            # 列出所有文件
+            result = self._request("GET", "/")
         else:
-            print(f"⚠️  不支持的文件格式: {path.suffix}", file=sys.stderr)
-            return 0
+            # URL 编码目录名
+            directory_encoded = urllib.parse.quote(directory)
+            result = self._request("GET", f"/?directory={directory_encoded}")
 
-    def export(self, query: str, output: str = None, category: str = None, limit: int = 20) -> str:
-        """导出增强上下文为 Markdown"""
-        results = self.search(query, category=category, limit=limit)
+        if result and 'files' in result:
+            return result['files']
+        return result or []
 
-        if not results:
-            content = f"# 知识库增强上下文\n\n> 检索关键词：{query} | 未命中相关知识\n"
-        else:
-            lines = [f"# 知识库增强上下文\n"]
-            lines.append(f"> 检索关键词：{query} | 命中 {len(results)} 条相关知识\n")
+    def get_file(self, filepath: str) -> Optional[Dict]:
+        """获取文件内容 (URL 编码路径)"""
+        import urllib.parse
+        filepath_encoded = urllib.parse.quote(filepath)
+        result = self._request("GET", f"/{filepath_encoded}")
+        return result
 
-            # 按分类分组
-            by_cat = defaultdict(list)
-            for r in results:
-                by_cat[r["category"]].append(r)
+    def create_file(self, filepath: str, content: str) -> bool:
+        """创建文件 (URL 编码路径)"""
+        import urllib.parse
+        filepath_encoded = urllib.parse.quote(filepath)
+        result = self._request("POST", f"/{filepath_encoded}", {"content": content})
+        return result is not None
 
-            for cat in CATEGORIES:
-                if cat not in by_cat:
+    def update_file(self, filepath: str, content: str) -> bool:
+        """更新文件 (URL 编码路径)"""
+        import urllib.parse
+        filepath_encoded = urllib.parse.quote(filepath)
+        result = self._request("PUT", f"/{filepath_encoded}", {"content": content})
+        return result is not None
+
+    def delete_file(self, filepath: str) -> bool:
+        """删除文件 (URL 编码路径)"""
+        import urllib.parse
+        filepath_encoded = urllib.parse.quote(filepath)
+        result = self._request("DELETE", f"/{filepath_encoded}")
+        return result is not None
+
+    def search_files(self, query: str, context_length: int = 200) -> List[Dict]:
+        """搜索文件 (使用 /search-with-context 端点)"""
+        try:
+            result = self._request("POST", "/search-with-context", {
+                "query": query,
+                "contextLength": context_length
+            })
+            return result.get('results', []) if result else []
+        except Exception:
+            # Fallback 到 /search
+            try:
+                result = self._request("POST", "/search", {"query": query})
+                return result.get('results', []) if result else []
+            except:
+                return []
+
+    def is_available(self) -> bool:
+        """检查 API 是否可用"""
+        try:
+            result = self._request("GET", "/")
+            return result is not None
+        except:
+            return False
+
+
+# ============================================================================
+# 知识库管理器 (核心)
+# ============================================================================
+
+class KnowledgeBaseManager:
+    """知识库管理器 - 本地 + Obsidian 双方案"""
+
+    def __init__(self, kb_dir: Optional[str] = None, use_obsidian: bool = True):
+        self.kb_dir = Path(kb_dir or LOCAL_KB_DIR)
+        self.use_obsidian = use_obsidian
+        self.obsidian = ObsidianClient(ssl_verify=False)
+
+        # 分类目录映射 (Obsidian 使用 wikilinks)
+        self.category_paths = {
+            'business-rules': '📋 业务规则',
+            'historical-cases': '🏆 历史用例',
+            'pitfalls': '⚠️ 线上坑点',
+            'templates': '📝 用例模板'
+        }
+
+        # 确保本地目录存在
+        for cat_dir in self.category_paths.keys():
+            (self.kb_dir / cat_dir).mkdir(parents=True, exist_ok=True)
+
+    def _generate_id(self, content: str) -> str:
+        """生成唯一ID"""
+        return hashlib.md5(content.encode('utf-8')).hexdigest()[:12]
+
+    def _obsidian_filepath(self, category: str, title: str) -> str:
+        """生成 Obsidian 文件路径 (带 wikilinks)"""
+        category_display = self.category_paths.get(category, category)
+        # 使用日期前缀 + 标题
+        date_prefix = datetime.now().strftime("%Y-%m-%d")
+        safe_title = re.sub(r'[\\/*?:"<>|]', '-', title)[:50]
+        filename = f"{date_prefix} {safe_title}.md"
+        return f"{category_display}/{filename}"
+
+    def _parse_yaml_frontmatter(self, content: str) -> Dict:
+        """解析 YAML frontmatter"""
+        frontmatter = {}
+        if content.startswith('---'):
+            parts = content.split('---', 2)
+            if len(parts) >= 2:
+                try:
+                    import yaml
+                    frontmatter = yaml.safe_load(parts[1]) or {}
+                except ImportError:
+                    # 简单解析 key: value 格式
+                    for line in parts[1].strip().split('\n'):
+                        if ':' in line:
+                            key, value = line.split(':', 1)
+                            frontmatter[key.strip()] = value.strip()
+        return frontmatter
+
+    def _format_obsidian_note(self, item: KnowledgeItem) -> str:
+        """格式化为 Obsidian Note (YAML frontmatter + wikilinks)"""
+        now = datetime.now().isoformat()
+
+        frontmatter = {
+            'id': item.id,
+            'category': item.category,
+            'module': item.module,
+            'tags': item.tags,
+            'created_at': item.created_at or now,
+            'updated_at': now,
+        }
+
+        if item.severity:
+            frontmatter['severity'] = item.severity
+
+        # YAML frontmatter
+        fm_lines = ['---']
+        for k, v in frontmatter.items():
+            if isinstance(v, list):
+                fm_lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+            else:
+                fm_lines.append(f"{k}: {v}")
+        fm_lines.append('---')
+
+        # 内容 (支持 wikilinks)
+        content_lines = fm_lines + [
+            '',
+            f"# {item.title}",
+            '',
+            f"**模块**: [[{item.module}]]",
+            '',
+            item.content
+        ]
+
+        return '\n'.join(content_lines)
+
+    # -------------------------------------------------------------------------
+    # 核心操作
+    # -------------------------------------------------------------------------
+
+    def search(self, query: str, category: str = None, limit: int = 20) -> List[Dict]:
+        """检索知识库"""
+        all_items = []
+
+        if self.use_obsidian and self.obsidian.is_available():
+            # 使用 Obsidian API 搜索
+            try:
+                # 先尝试本地搜索 (因为 search-with-context 可能不支持)
+                files = self.obsidian.list_files()
+
+                # 搜索内容
+                for file_path in files:
+                    if not file_path.endswith('.md'):
+                        continue
+
+                    # 检查是否匹配查询
+                    if query.lower() in file_path.lower():
+                        # 匹配文件名
+                        file_data = self.obsidian.get_file(file_path)
+                        if file_data:
+                            category_match = None
+                            for cat, cat_path in self.category_paths.items():
+                                if cat_path in file_path:
+                                    category_match = cat
+                                    break
+
+                            if category and category_match != category:
+                                continue
+
+                            frontmatter = self._parse_yaml_frontmatter(file_data.get('content', ''))
+                            all_items.append({
+                                'id': frontmatter.get('id', self._generate_id(file_path)),
+                                'title': frontmatter.get('title', Path(file_path).stem),
+                                'content': file_data.get('content', ''),
+                                'category': category_match or 'unknown',
+                                'module': frontmatter.get('module', ''),
+                                'severity': frontmatter.get('severity'),
+                                'source': 'obsidian',
+                                'filepath': file_path
+                            })
+
+            except Exception as e:
+                print(f"⚠️ Obsidian 检索失败，fallback 到本地: {e}", file=sys.stderr)
+
+        # 本地文件搜索 (fallback 或补充)
+        if not all_items or not self.use_obsidian:
+            # 分词：多关键词 OR 匹配（与 MCP 层 search 逻辑一致）
+            keywords = [kw.strip().lower() for kw in query.split() if kw.strip()]
+            if not keywords:
+                keywords = [query.strip().lower()]
+
+            for cat, cat_dir in self.category_paths.items():
+                if category and cat != category:
                     continue
-                items = by_cat[cat]
-                icon = CATEGORY_ICONS.get(cat, "")
-                label = CATEGORY_LABELS.get(cat, cat)
-                lines.append(f"## {icon} {label}（{len(items)} 条）\n")
 
-                for i, r in enumerate(items, 1):
-                    lines.append(f"### {i}. [{r['source']}] {r['title']}\n")
-                    # 添加元数据
-                    meta = r.get("metadata", {})
-                    if meta.get("module"):
-                        lines.append(f"**模块：** {meta['module']}")
-                    if meta.get("priority"):
-                        lines.append(f"**优先级：** {meta['priority']}")
-                    if meta.get("severity"):
-                        lines.append(f"**严重程度：** {meta['severity']}")
-                    if meta:
-                        lines.append("")
-                    lines.append(f"{r['snippet']}\n")
+                cat_path = self.kb_dir / cat
+                if not cat_path.exists():
+                    continue
 
-            content = "\n".join(lines)
+                for md_file in cat_path.glob("*.md"):
+                    with open(md_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        content_lower = content.lower()
+                        stem_lower = md_file.stem.lower()
 
-        if output:
-            Path(output).write_text(content, encoding="utf-8")
-            print(f"✅ 知识上下文已导出: {output}")
+                    # 多关键词 OR 匹配
+                    matched = any(kw in content_lower or kw in stem_lower for kw in keywords)
+                    if matched:
+                        all_items.append({
+                            'id': self._generate_id(content[:200]),
+                            'title': md_file.stem,
+                            'content': content,
+                            'category': cat,
+                            'module': '',
+                            'severity': None,
+                            'source': 'local',
+                            'filepath': str(md_file)
+                        })
 
-        return content
+        # BM25 重排序
+        if all_items:
+            engine = BM25Engine()
+            engine.index(all_items)
+            all_items = engine.search(query, min(limit, len(all_items)))
 
-    def status(self):
+        return all_items
+
+    def add(self, item: KnowledgeItem) -> bool:
+        """添加知识条目"""
+        item.id = item.id or self._generate_id(item.title + item.content)
+        now = datetime.now().isoformat()
+        item.created_at = item.created_at or now
+        item.updated_at = now
+
+        if self.use_obsidian and self.obsidian.is_available():
+            # 保存到 Obsidian
+            filepath = self._obsidian_filepath(item.category, item.title)
+            content = self._format_obsidian_note(item)
+            try:
+                if self.obsidian.create_file(filepath, content):
+                    print(f"✅ 已保存到 Obsidian: {filepath}")
+                    return True
+            except Exception as e:
+                print(f"⚠️ Obsidian 保存失败，fallback 到本地: {e}", file=sys.stderr)
+
+        # Fallback 到本地
+        category_dir = self.kb_dir / item.category
+        filename = f"{item.created_at[:10]}_{item.title}.md"
+        filepath = category_dir / filename
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(f"# {item.title}\n\n")
+            f.write(f"**模块**: {item.module}\n")
+            f.write(f"**分类**: {item.category}\n")
+            if item.severity:
+                f.write(f"**严重级别**: {item.severity}\n")
+            f.write(f"**标签**: {', '.join(item.tags)}\n\n")
+            f.write(item.content)
+
+        print(f"✅ 已保存到本地: {filepath}")
+        return True
+
+    def ingest(self, source_file: str, category: str, module: str = "") -> int:
+        """回灌知识 (从 Excel 或 Markdown)"""
+        if not os.path.exists(source_file):
+            print(f"❌ 文件不存在: {source_file}")
+            return 0
+
+        count = 0
+
+        if source_file.endswith('.xlsx'):
+            if not OPENPYXL_AVAILABLE:
+                print("❌ openpyxl 未安装，无法处理 Excel 文件")
+                print("   安装: pip install openpyxl")
+                return 0
+
+            # Excel 回灌
+            wb = openpyxl.load_workbook(source_file)
+            ws = wb.active
+
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                if not row or len(row) < 3:
+                    continue
+
+                title = str(row[0] or '')
+                content = str(row[1] or '')
+                tags = str(row[2] or '').split(',')
+
+                if title and content:
+                    item = KnowledgeItem(
+                        id='',
+                        title=title,
+                        content=content,
+                        category=category,
+                        module=module,
+                        tags=[t.strip() for t in tags if t.strip()]
+                    )
+                    if self.add(item):
+                        count += 1
+
+        elif source_file.endswith('.md'):
+            # Markdown 回灌
+            with open(source_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                title = Path(source_file).stem
+
+                item = KnowledgeItem(
+                    id='',
+                    title=title,
+                    content=content,
+                    category=category,
+                    module=module,
+                    tags=[category, module]
+                )
+                if self.add(item):
+                    count = 1
+
+        else:
+            print(f"❌ 不支持的文件格式: {source_file}")
+            return 0
+
+        print(f"✅ 已回灌 {count} 条知识到知识库")
+        return count
+
+    def export(self, query: str, output_file: str = "knowledge-context.md") -> str:
+        """导出增强上下文 (Markdown 格式)"""
+        results = self.search(query, limit=50)
+
+        # 按分类分组
+        grouped = defaultdict(list)
+        for item in results:
+            grouped[item['category']].append(item)
+
+        # 生成 Markdown
+        lines = [
+            "# 知识库增强上下文",
+            "",
+            f"> 检索关键词: {query} | 命中 {len(results)} 条相关知识",
+            "",
+            f"> 来源: {'Obsidian Vault' if self.use_obsidian and self.obsidian.is_available() else '本地 Markdown'}",
+            ""
+        ]
+
+        for category, items in grouped.items():
+            cat_display = {
+                'business-rules': '📋 业务规则',
+                'historical-cases': '🏆 历史优质用例',
+                'pitfalls': '⚠️ 线上坑点',
+                'templates': '📝 用例模板'
+            }.get(category, category)
+
+            lines.append(f"## {cat_display} ({len(items)} 条)")
+
+            for idx, item in enumerate(items, 1):
+                lines.append(f"### {idx}. [[{item['filepath']}]]" if item['source'] == 'obsidian' else f"### {idx}. [{item['title']}]({item['filepath']})")
+                lines.append(f"**模块**: {item.get('module', 'N/A')}")
+                if item.get('severity'):
+                    lines.append(f"**严重级别**: {item['severity']}")
+
+                # 提取内容片段 (前 500 字)
+                content_preview = item['content'][:500]
+                if '---' in content_preview:
+                    content_preview = content_preview.split('---', 2)[-1].strip()
+
+                lines.append(content_preview + ("..." if len(item['content']) > 500 else ""))
+                lines.append("")
+
+        # 写入文件
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines))
+
+        print(f"✅ 已导出知识上下文: {output_path}")
+        return str(output_path)
+
+    def status(self) -> Dict:
         """知识库概况"""
-        self._ensure_dir()
-        index = self._load_index()
-        entries = index.get("entries", [])
+        summary = {
+            'source': 'obsidian' if self.use_obsidian and self.obsidian.is_available() else 'local',
+            'categories': {},
+            'total': 0,
+            'last_updated': None
+        }
 
-        print(f"📊 知识库概况\n")
-        print(f"   路径：{self.kb_dir}")
-        print(f"   创建时间：{index.get('created', 'N/A')[:19]}")
-        print(f"   最后更新：{index.get('updated', 'N/A')[:19]}")
-        print(f"   总条目：{len(entries)}\n")
+        if self.use_obsidian and self.obsidian.is_available():
+            # 统计 Obsidian Vault
+            try:
+                files = self.obsidian.list_files()
+                for filepath in files:
+                    if isinstance(filepath, str) and not filepath.endswith('.md'):
+                        continue
 
-        # 按分类统计
-        cat_counts = defaultdict(int)
-        for e in entries:
-            cat_counts[e["category"]] += 1
+                    category = 'unknown'
+                    for cat, cat_path in self.category_paths.items():
+                        if cat_path in filepath:
+                            category = cat
+                            break
 
-        print(f"   {'分类':<20} {'条目数':>6}")
-        print(f"   {'─' * 30}")
-        for cat in CATEGORIES:
-            count = cat_counts.get(cat, 0)
-            icon = CATEGORY_ICONS.get(cat, "")
-            label = CATEGORY_LABELS.get(cat, cat)
-            print(f"   {icon} {label:<18} {count:>6}")
+                    summary['categories'][category] = summary['categories'].get(category, 0) + 1
+                    summary['total'] += 1
 
-        # 文件统计
-        print(f"\n   {'目录':<20} {'文件数':>6}")
-        print(f"   {'─' * 30}")
-        for cat in CATEGORIES:
-            cat_dir = self.kb_dir / cat
-            file_count = len(list(cat_dir.glob("*.md"))) if cat_dir.exists() else 0
-            print(f"   {cat:<20} {file_count:>6}")
+                summary['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            except Exception as e:
+                print(f"⚠️ Obsidian 状态查询失败: {e}", file=sys.stderr)
 
-    def list_entries(self, category: str = None, limit: int = 50):
-        """列出知识条目"""
-        index = self._load_index()
-        entries = index.get("entries", [])
+        # 本地统计
+        for cat, cat_dir in self.category_paths.items():
+            cat_path = self.kb_dir / cat
+            if cat_path.exists():
+                count = len(list(cat_path.glob("*.md")))
+                summary['categories'][cat] = summary['categories'].get(cat, 0) + count
+                summary['total'] += count
 
-        if category:
-            entries = [e for e in entries if e["category"] == category]
-
-        if not entries:
-            print("（空）")
-            return
-
-        print(f"📚 知识条目（{len(entries)} 条）\n")
-        print(f"   {'ID':<30} {'分类':<18} {'标题':<40}")
-        print(f"   {'─' * 90}")
-
-        for i, e in enumerate(entries[:limit]):
-            cat_label = CATEGORY_LABELS.get(e["category"], e["category"])
-            title = e["title"][:38]
-            eid = e["id"][:28]
-            print(f"   {eid:<30} {cat_label:<18} {title}")
-
-        if len(entries) > limit:
-            print(f"\n   ... 还有 {len(entries) - limit} 条")
+        return summary
 
 
-# ═══════════════════════════════════════════════════════════════
-# 主函数
-# ═══════════════════════════════════════════════════════════════
+# ============================================================================
+# CLI 入口
+# ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="测试知识库管理器 — 本地优先的 RAG 知识库"
-    )
-    subparsers = parser.add_subparsers(dest="command", help="操作命令")
+    parser = argparse.ArgumentParser(description="知识库管理器")
+    subparsers = parser.add_subparsers(dest='command', required=True)
 
-    # 默认知识库路径
-    default_kb = str(Path.home() / "Documents" / "ai-test-system" / "knowledge-base")
+    # search 命令
+    search_parser = subparsers.add_parser('search', help='检索知识库')
+    search_parser.add_argument('query', help='检索关键词')
+    search_parser.add_argument('--category', choices=['business-rules', 'historical-cases', 'pitfalls', 'templates'], help='限定分类')
+    search_parser.add_argument('--limit', type=int, default=20, help='返回条数')
+    search_parser.add_argument('--kb-dir', help='知识库目录 (仅本地模式)')
 
-    # init
-    p_init = subparsers.add_parser("init", help="初始化知识库")
-    p_init.add_argument("--kb-dir", default=default_kb, help="知识库目录")
+    # add 命令
+    add_parser = subparsers.add_parser('add', help='添加单条知识')
+    add_parser.add_argument('--category', required=True, choices=['business-rules', 'historical-cases', 'pitfalls', 'templates'])
+    add_parser.add_argument('--title', required=True, help='标题')
+    add_parser.add_argument('--content', required=True, help='内容')
+    add_parser.add_argument('--module', default='', help='所属模块')
+    add_parser.add_argument('--tags', default='', help='标签 (逗号分隔)')
+    add_parser.add_argument('--severity', choices=['high', 'medium', 'low'], help='严重级别 (仅坑点)')
+    add_parser.add_argument('--kb-dir', help='知识库目录 (仅本地模式)')
 
-    # search
-    p_search = subparsers.add_parser("search", help="检索知识库")
-    p_search.add_argument("query", help="检索关键词")
-    p_search.add_argument("--kb-dir", default=default_kb, help="知识库目录")
-    p_search.add_argument("--category", choices=CATEGORIES, help="限定分类")
-    p_search.add_argument("--limit", type=int, default=20, help="返回条数")
+    # ingest 命令
+    ingest_parser = subparsers.add_parser('ingest', help='回灌知识文件')
+    ingest_parser.add_argument('source_file', help='源文件 (Excel 或 Markdown)')
+    ingest_parser.add_argument('--category', required=True, choices=['business-rules', 'historical-cases', 'pitfalls', 'templates'])
+    ingest_parser.add_argument('--module', default='', help='所属模块')
+    ingest_parser.add_argument('--kb-dir', help='知识库目录 (仅本地模式)')
 
-    # add
-    p_add = subparsers.add_parser("add", help="添加单条知识")
-    p_add.add_argument("--category", choices=CATEGORIES, required=True, help="知识分类")
-    p_add.add_argument("--title", required=True, help="标题")
-    p_add.add_argument("--content", required=True, help="内容")
-    p_add.add_argument("--module", default="", help="所属模块")
-    p_add.add_argument("--severity", default="", choices=["", "high", "medium", "low", "critical"], help="严重程度")
-    p_add.add_argument("--kb-dir", default=default_kb, help="知识库目录")
+    # export 命令
+    export_parser = subparsers.add_parser('export', help='导出增强上下文')
+    export_parser.add_argument('query', help='检索关键词')
+    export_parser.add_argument('--output', default='knowledge-context.md', help='输出文件路径')
+    export_parser.add_argument('--kb-dir', help='知识库目录 (仅本地模式)')
 
-    # ingest
-    p_ingest = subparsers.add_parser("ingest", help="从文件回灌知识")
-    p_ingest.add_argument("file", help="源文件路径")
-    p_ingest.add_argument("--category", choices=CATEGORIES, required=True, help="目标分类")
-    p_ingest.add_argument("--module", default="", help="所属模块（用于 Excel）")
-    p_ingest.add_argument("--kb-dir", default=default_kb, help="知识库目录")
-
-    # export
-    p_export = subparsers.add_parser("export", help="导出增强上下文")
-    p_export.add_argument("query", help="检索关键词")
-    p_export.add_argument("--output", default="", help="输出文件路径")
-    p_export.add_argument("--kb-dir", default=default_kb, help="知识库目录")
-    p_export.add_argument("--category", choices=CATEGORIES, help="限定分类")
-    p_export.add_argument("--limit", type=int, default=20, help="返回条数")
-
-    # status
-    p_status = subparsers.add_parser("status", help="知识库概况")
-    p_status.add_argument("--kb-dir", default=default_kb, help="知识库目录")
-
-    # list
-    p_list = subparsers.add_parser("list", help="列出知识条目")
-    p_list.add_argument("--kb-dir", default=default_kb, help="知识库目录")
-    p_list.add_argument("--category", choices=CATEGORIES, help="限定分类")
-    p_list.add_argument("--limit", type=int, default=50, help="返回条数")
+    # status 命令
+    status_parser = subparsers.add_parser('status', help='知识库概况')
+    status_parser.add_argument('--kb-dir', help='知识库目录 (仅本地模式)')
 
     args = parser.parse_args()
 
-    if not args.command:
-        parser.print_help()
-        return 1
+    # 创建管理器
+    kb_dir = getattr(args, 'kb_dir', None) or LOCAL_KB_DIR
+    kb = KnowledgeBaseManager(
+        kb_dir=kb_dir,
+        use_obsidian=True  # 默认启用 Obsidian
+    )
 
-    kb = KnowledgeBase(args.kb_dir)
-
-    if args.command == "init":
-        kb.init()
-
-    elif args.command == "search":
+    # 执行命令
+    if args.command == 'search':
         results = kb.search(args.query, category=args.category, limit=args.limit)
-        if not results:
-            print(f"🔍 检索 \"{args.query}\" — 未命中")
-            return 0
+        print(json.dumps(results, ensure_ascii=False, indent=2))
 
-        print(f"🔍 检索 \"{args.query}\" — 命中 {len(results)} 条\n")
-        for i, r in enumerate(results, 1):
-            icon = CATEGORY_ICONS.get(r["category"], "")
-            label = CATEGORY_LABELS.get(r["category"], r["category"])
-            print(f"{i}. [{icon} {label}] {r['title']}")
-            print(f"   来源：{r['source']} | 相关度：{r['score']}")
-            print(f"   {r['snippet'][:150]}...")
-            print()
+    elif args.command == 'add':
+        tags = [t.strip() for t in args.tags.split(',')] if args.tags else []
+        item = KnowledgeItem(
+            id='',
+            title=args.title,
+            content=args.content,
+            category=args.category,
+            module=args.module,
+            tags=tags,
+            severity=args.severity
+        )
+        kb.add(item)
 
-    elif args.command == "add":
-        kb.add(args.category, args.title, args.content, args.module, args.severity)
+    elif args.command == 'ingest':
+        kb.ingest(args.source_file, args.category, args.module)
 
-    elif args.command == "ingest":
-        kb.ingest(args.file, args.category, args.module)
+    elif args.command == 'export':
+        kb.export(args.query, args.output)
 
-    elif args.command == "export":
-        output = args.output or None
-        content = kb.export(args.query, output=output, category=args.category, limit=args.limit)
-        if not output:
-            print(content)
-
-    elif args.command == "status":
-        kb.status()
-
-    elif args.command == "list":
-        kb.list_entries(category=args.category, limit=args.limit)
-
-    return 0
+    elif args.command == 'status':
+        summary = kb.status()
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+if __name__ == '__main__':
+    main()
