@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from collections import defaultdict
+from datetime import datetime
 import json
 
 # 添加 scripts 目录到路径
@@ -42,18 +43,31 @@ class KnowledgeBaseManager:
         """添加知识条目"""
         return self.mcp_client.create_file(item)
 
-    def ingest(self, source_file: str, category: str, module: str = "") -> int:
+    def ingest(self, source_file: str, category: str, module: str = "",
+               project: str = "", batch: str = "") -> int:
         """回灌知识 (从 Excel 或 Markdown)
 
         Excel 格式自动识别:
         - testcases.xlsx 标准12列格式（用例编号|模块|功能点|维度|标题|优先级|前置条件|步骤|数据|预期|备注|结果）
         - 通用3列格式（标题|内容|标签）
+
+        归档结构（历史用例）:
+          🏆 历史用例/{项目名}/{批次日期}/TC-001 xxx.md
+          如未指定 project/batch，则用文件名和当前日期兜底
+
+        其他分类: 仍按平铺存储（业务规则/坑点等天然是独立条目）
         """
         if not os.path.exists(source_file):
             print(f"❌ 文件不存在: {source_file}")
             return 0
 
         count = 0
+
+        # 兜底项目名和批次名
+        if not project:
+            project = Path(source_file).stem  # testcases → testcases
+        if not batch:
+            batch = datetime.now().strftime("%Y-%m-%d")
 
         if source_file.endswith('.xlsx'):
             try:
@@ -71,9 +85,6 @@ class KnowledgeBaseManager:
 
                     if is_testcase_format:
                         # 标准 testcases.xlsx 12列格式
-                        # col[0]=编号 col[1]=模块 col[2]=功能点 col[3]=维度
-                        # col[4]=标题 col[5]=优先级 col[6]=前置条件 col[7]=步骤
-                        # col[8]=数据 col[9]=预期 col[10]=备注 col[11]=结果
                         tc_id = str(row[0] or '')
                         tc_module = str(row[1] or '')
                         tc_feature = str(row[2] or '')
@@ -115,6 +126,10 @@ class KnowledgeBaseManager:
                             module=tc_module or module,
                             tags=[t.strip() for t in [tc_dimension, tc_priority, tc_feature] if t.strip()]
                         )
+                        # 历史用例按项目维度归档
+                        if category == 'historical-cases':
+                            # 把项目和批次信息编码到 module 字段
+                            item.module = f"{project}/{batch}/{tc_module or module}"
                         if self.add(item):
                             count += 1
                     else:
@@ -265,6 +280,8 @@ def main():
     ingest_parser.add_argument('source_file', help='源文件 (Excel 或 Markdown)')
     ingest_parser.add_argument('--category', required=True, choices=['business-rules', 'historical-cases', 'pitfalls', 'templates', 'data-dictionary', 'business-specs', 'team-standards'])
     ingest_parser.add_argument('--module', default='', help='所属模块')
+    ingest_parser.add_argument('--project', default='', help='项目名 (历史用例归档: 🏆 历史用例/项目名/批次/)')
+    ingest_parser.add_argument('--batch', default='', help='批次名/日期 (历史用例归档)')
 
     # export 命令
     export_parser = subparsers.add_parser('export', help='导出增强上下文')
@@ -289,7 +306,9 @@ def main():
         kb.add_single(args.title, args.content, args.category, args.module, tags, args.severity)
 
     elif args.command == 'ingest':
-        kb.ingest(args.source_file, args.category, args.module)
+        kb.ingest(args.source_file, args.category, args.module,
+                  project=getattr(args, 'project', ''),
+                  batch=getattr(args, 'batch', ''))
 
     elif args.command == 'export':
         kb.export(args.query, args.output)

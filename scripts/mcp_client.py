@@ -178,20 +178,43 @@ class MCPClient:
         """
         MCP: create_file
         创建新知识条目
+
+        目录策略:
+        - historical-cases: 🏆 历史用例/{项目名}/{批次}/TC-xxx.md
+          (item.module 编码为 "项目名/批次/模块名" 时自动分层)
+        - 其他分类: 平铺存储
         """
         item.id = item.id or self._generate_id(item.title + item.content)
         now = datetime.now().isoformat()
         item.created_at = item.created_at or now
         item.updated_at = now
 
-        # 生成文件路径
-        category_display = CATEGORY_PATHS.get(item.category, item.category)
-        date_prefix = datetime.now().strftime("%Y-%m-%d")
         safe_title = re.sub(r'[\\/*?:"<>|]', '-', item.title)[:50]
-        filename = f"{date_prefix} {safe_title}.md"
-        filepath = f"{category_display}/{filename}"
+
+        # 历史用例按项目维度归档
+        if item.category == 'historical-cases' and '/' in item.module:
+            # module 编码为 "项目名/批次/模块名"
+            parts = item.module.split('/', 2)
+            project = parts[0] if len(parts) > 0 else '未分类项目'
+            batch = parts[1] if len(parts) > 1 else '未分类批次'
+            actual_module = parts[2] if len(parts) > 2 else ''
+            # 目录: 🏆 历史用例/项目名/批次/
+            category_display = CATEGORY_PATHS.get(item.category, item.category)
+            date_prefix = datetime.now().strftime("%Y-%m-%d")
+            filename = f"{safe_title}.md"
+            filepath = f"{category_display}/{project}/{batch}/{filename}"
+            # YAML frontmatter 中保存真实模块名
+            display_module = actual_module or item.module
+        else:
+            # 其他分类或无项目信息: 平铺
+            category_display = CATEGORY_PATHS.get(item.category, item.category)
+            date_prefix = datetime.now().strftime("%Y-%m-%d")
+            filename = f"{date_prefix} {safe_title}.md"
+            filepath = f"{category_display}/{filename}"
+            display_module = item.module
 
         # 格式化内容
+        item.module = display_module
         content = self._format_obsidian_note(item)
 
         # 写入文件
