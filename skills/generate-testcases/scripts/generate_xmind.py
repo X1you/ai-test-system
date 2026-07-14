@@ -92,13 +92,27 @@ def assign_priority(tp: dict) -> str:
     title = tp["title"]
     dimension = tp["dimension"]
 
-    if "正向" in dimension and any(k in title for k in ["下单", "支付", "退款", "登录"]):
-        return "P0"
-    if "安全" in dimension and any(k in title for k in ["越权", "篡改", "注入", "泄露"]):
-        return "P0"
-    if "异常" in dimension and any(k in title for k in ["并发", "回调", "支付"]):
-        return "P0"
+    # P0: 核心功能正向、高风险安全、关键异常
+    if "正向" in dimension:
+        if any(k in title for k in ["登录", "注册", "创建", "新增", "提交", "支付",
+                                     "核心", "主流程", "关键", "基础", "校验", "验证"]):
+            return "P0"
+        return "P1"
+    if "安全" in dimension:
+        if any(k in title for k in ["越权", "篡改", "注入", "泄露", "认证", "敏感"]):
+            return "P0"
+        return "P1"
+    if "异常" in dimension:
+        if any(k in title for k in ["并发", "核心", "关键"]):
+            return "P0"
+        return "P1"
+    if "负向" in dimension:
+        if any(k in title for k in ["越权", "未授权", "未登录", "注入"]):
+            return "P0"
+        return "P1"
     if "性能" in dimension:
+        if any(k in title for k in ["核心", "主流程", "并发", "高并发"]):
+            return "P1"
         return "P2"
     return "P1"
 
