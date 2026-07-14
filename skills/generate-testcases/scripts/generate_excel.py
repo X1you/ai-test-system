@@ -113,93 +113,212 @@ class TestCaseGenerator:
         "安全测试": "security",
     }
 
+    # ── 动作关键词→步骤模板映射表 ──
+    # 每条: (关键词列表, 正向步骤列表, 负向步骤列表)
+    # 按优先级从上到下匹配，先匹配到的生效
+    ACTION_TEMPLATES = [
+        # ── 认证/登录类 ──
+        (["登录", "登录成功", "登录失败"], [
+            "2. 在登录页面输入正确的账号和密码（详见测试数据）",
+            "3. 点击登录按钮提交",
+            "4. 检查是否跳转到首页/正确页面，生成有效 Token",
+        ], [
+            "2. 在登录页面输入错误的/异常的账号或密码（详见测试数据）",
+            "3. 点击登录按钮提交",
+            "4. 检查系统是否拒绝登录并给出正确提示",
+        ]),
+        # ── 注册/开通类 ──
+        (["注册", "开通", "激活"], [
+            "2. 在注册页面输入合法的手机号，获取并输入验证码",
+            "3. 设置符合强度要求的密码（详见测试数据）",
+            "4. 点击注册/提交按钮",
+            "5. 检查注册是否成功，数据库是否新增用户记录",
+        ], [
+            "2. 在注册页面输入无效/重复的数据（详见测试数据）",
+            "3. 点击注册/提交按钮",
+            "4. 检查系统是否拒绝注册并给出正确提示",
+        ]),
+        # ── 上传/导入类 ──
+        (["上传", "导入"], [
+            "2. 进入上传/导入页面",
+            "3. 选择符合要求的文件（格式、大小、编码正确）",
+            "4. 点击上传/导入按钮",
+            "5. 确认上传成功，检查返回结果/解析结果",
+        ], [
+            "2. 准备不符合要求的文件（格式错误/超大/空文件/编码异常）",
+            "3. 尝试上传/导入该文件",
+            "4. 检查系统是否拒绝并给出正确的错误提示",
+        ]),
+        # ── 导出/下载类 ──
+        (["导出", "下载"], [
+            "2. 进入含可导出数据的页面/模块",
+            "3. 选择导出范围/条件（如有）",
+            "4. 点击导出/下载按钮",
+            "5. 检查文件是否成功下载，内容是否完整",
+        ], [
+            "2. 在无数据/无权限状态下尝试导出",
+            "3. 检查系统是否阻止并提示",
+        ]),
+        # ── 创建/新增/生成类 ──
+        (["创建", "新增", "生成", "添加", "新建"], [
+            "2. 进入创建/新增页面",
+            "3. 填写/选择必要的信息（名称、描述等，详见测试数据）",
+            "4. 点击提交/保存按钮",
+            "5. 确认操作成功，检查生成的唯一标识和返回结果",
+        ], [
+            "2. 准备非法/重复/不完整的创建数据（详见测试数据）",
+            "3. 尝试提交创建请求",
+            "4. 检查系统是否拒绝并给出正确提示",
+        ]),
+        # ── 配置/设置类 ──
+        (["配置", "设置", "勾选", "取消"], [
+            "2. 进入配置/设置页面",
+            "3. 按需求勾选/填写配置项（详见测试数据）",
+            "4. 点击保存/应用按钮",
+            "5. 确认配置已保存生效，触发后续操作验证效果",
+        ], [
+            "2. 准备非法/无效的配置（如取消所有必选项、不存在路径）",
+            "3. 尝试保存配置",
+            "4. 检查系统是否拒绝并给出正确提示",
+        ]),
+        # ── 编辑/修改/更新类 ──
+        (["编辑", "修改", "更新", "变更", "重置"], [
+            "2. 进入编辑模式，定位目标记录",
+            "3. 修改目标字段为新值（详见测试数据）",
+            "4. 点击保存/确认按钮",
+            "5. 确认修改已生效，检查相关数据是否同步更新",
+        ], [
+            "2. 尝试用非法/无效/冲突的数据修改目标字段（详见测试数据）",
+            "3. 提交修改",
+            "4. 检查系统是否拒绝并给出正确提示",
+        ]),
+        # ── 删除/取消/作废类 ──
+        (["删除", "取消", "作废", "撤销"], [
+            "2. 定位待删除/取消的目标数据",
+            "3. 执行删除/取消操作",
+            "4. 确认删除/取消结果，检查关联数据状态",
+        ], [
+            "2. 在无权限/数据被引用状态下尝试删除",
+            "3. 检查系统是否阻止并给出正确提示",
+        ]),
+        # ── 查询/搜索/检索/列表类 ──
+        (["查询", "搜索", "检索", "列表", "筛选"], [
+            "2. 进入查询/检索页面",
+            "3. 输入有效的查询关键词/条件（详见测试数据）",
+            "4. 执行查询操作",
+            "5. 检查返回结果是否正确匹配，排序是否合理",
+        ], [
+            "2. 输入无效/空/超长查询条件（详见测试数据）",
+            "3. 执行查询操作",
+            "4. 检查系统是否正确处理（空结果或错误提示）",
+        ]),
+        # ── 分析/解析/处理类 ──
+        (["分析", "解析", "处理", "读取", "识别"], [
+            "2. 准备待分析/处理的输入文件或数据（详见测试数据）",
+            "3. 执行分析/处理操作",
+            "4. 检查输出结果是否符合预期，字段识别是否准确",
+        ], [
+            "2. 准备无效/空/损坏的输入数据（详见测试数据）",
+            "3. 执行分析/处理操作",
+            "4. 检查系统是否给出正确提示或容错处理",
+        ]),
+        # ── 评审/质检/检查类 ──
+        (["评审", "质检", "检查", "审查"], [
+            "2. 导入待评审/检查的数据文件",
+            "3. 启动评审/检查流程",
+            "4. 检查评审结果是否准确，评分是否合理",
+        ], [
+            "2. 导入异常/空/格式错误的文件进行评审",
+            "3. 检查系统是否正确处理并提示",
+        ]),
+        # ── 回灌/写入/同步类 ──
+        (["回灌", "写入", "同步", "导入知识"], [
+            "2. 准备待回灌/同步的数据文件",
+            "3. 执行回灌/同步操作",
+            "4. 确认数据已正确写入目标存储，字段完整",
+        ], [
+            "2. 准备格式不正确/空的文件尝试回灌",
+            "3. 检查系统是否拒绝并给出正确提示",
+        ]),
+        # ── 报告/统计类 ──
+        (["报告", "统计", "生成报告"], [
+            "2. 选择已执行完成的测试用例文件",
+            "3. 执行报告生成操作",
+            "4. 检查报告各部分是否完整，数据是否准确",
+        ], [
+            "2. 选择未执行/空的用例文件生成报告",
+            "3. 检查系统是否提示先执行测试",
+        ]),
+        # ── 集成/串联/全流程类 ──
+        (["集成", "串联", "全流程", "恢复", "续跑", "执行"], [
+            "2. 准备完整的输入文件和前置输出（详见测试数据）",
+            "3. 启动全流程/串联执行",
+            "4. 逐步检查各环节输出是否正确，数据流是否打通",
+        ], [
+            "2. 准备缺失/损坏的输入文件",
+            "3. 启动流程执行",
+            "4. 检查系统是否在缺失环节报错并提示",
+        ]),
+        # ── 校验/验证类 ──
+        (["校验", "验证", "完整性", "一致性", "连续性"], [
+            "2. 准备待校验的数据/文件",
+            "3. 执行校验操作",
+            "4. 比对实际结果与预期是否一致",
+        ], [
+            "2. 准备不符合校验规则的数据",
+            "3. 执行校验操作",
+            "4. 检查系统是否正确识别并提示问题",
+        ]),
+    ]
+
+    def __match_action(self, title: str, dimension: str):
+        """匹配动作模板，返回 (positive_steps, negative_steps) 或 None"""
+        for keywords, pos_steps, neg_steps in self.ACTION_TEMPLATES:
+            if any(k in title for k in keywords):
+                return (pos_steps, neg_steps)
+        return None
+
     def __generate_steps(self, tp: dict) -> str:
         """根据测试点生成具体的测试步骤"""
         title = tp["title"]
         dimension = tp["dimension"]
         module = tp["module"]
         feature = tp["feature"]
+        test_data = tp.get("test_data", "")
 
         # ── 正向测试 ──
         if "正向" in dimension:
-            # 通用正向步骤模式
-            steps = []
-            steps.append("1. 准备测试环境，确认前置条件满足")
-            # 如果是"登录/输入/填写"类操作
-            if any(k in title for k in ["登录", "注册", "输入", "填写"]):
-                steps.append("2. 输入必要的测试数据（详见测试数据字段）")
-                steps.append("3. 点击确认/提交按钮")
-            elif any(k in title for k in ["查询", "列表", "搜索", "筛选"]):
-                steps.append("2. 进入查询页面/模块")
-                steps.append("3. 输入查询条件（如有）")
-                steps.append("4. 执行查询操作")
-            elif any(k in title for k in ["导出", "下载", "导入", "上传"]):
-                steps.append("2. 选择待操作的文件/数据")
-                steps.append("3. 执行导入/导出操作")
-                steps.append("4. 确认操作完成提示")
-            elif any(k in title for k in ["创建", "新增", "添加", "提交"]):
-                steps.append("2. 填写/选择必要的信息")
-                steps.append("3. 点击提交/保存按钮")
-                steps.append("4. 确认操作成功，检查返回结果")
-            elif any(k in title for k in ["编辑", "修改", "更新", "变更"]):
-                steps.append("2. 进入编辑模式")
-                steps.append("3. 修改目标字段")
-                steps.append("4. 保存修改")
-            elif any(k in title for k in ["删除", "取消", "作废"]):
-                steps.append("2. 定位目标数据/操作对象")
-                steps.append("3. 执行删除/取消操作")
-                steps.append("4. 确认删除/取消结果")
-            elif any(k in title for k in ["校验", "验证", "检查", "对比"]):
-                steps.append("2. 准备对比/校验的基准数据")
-                steps.append("3. 执行校验操作")
-                steps.append("4. 比对实际结果与预期是否一致")
-            elif "集成" in title or "串联" in title or "顺序" in title:
-                steps.append("2. 按顺序执行各步骤/操作")
-                steps.append("3. 检查每一步的中间结果")
-                steps.append("4. 确认最终结果与预期一致")
-            elif any(k in title for k in ["超长", "大量", "大批量"]):
-                steps.append("2. 准备超长/大量测试数据")
-                steps.append("3. 执行操作")
-                steps.append("4. 检查系统是否正常处理")
+            steps = ["1. 准备测试环境，确认前置条件满足"]
+            matched = self.__match_action(title, dimension)
+            if matched:
+                steps.extend(matched[0])
             else:
-                steps.append("2. 执行目标操作")
-                steps.append("3. 观察操作结果")
+                # 智能兜底：利用测试点标题和测试数据生成半具体化步骤
+                steps.append(f"2. 进入「{module}」模块的「{feature}」功能")
+                steps.append(f"3. 按需求执行: {title}")
+                if test_data:
+                    steps.append(f"   - 测试数据: {test_data}")
+                steps.append("4. 检查操作结果与预期是否一致")
             return "\n".join(steps)
 
         # ── 负向测试 ──
         if "负向" in dimension:
             steps = ["1. 准备测试环境，确保系统处于可测试状态"]
-            if any(k in title for k in ["为空", "空", "缺失", "缺少", "未填写"]):
-                steps.append("2. 保持必填字段为空/不输入数据")
-                steps.append("3. 提交/确认操作")
-                steps.append("4. 检查系统是否给出正确的提示信息")
-            elif any(k in title for k in ["非法", "无效", "错误", "异常字符", "特殊字符"]):
-                steps.append(f"2. 在输入字段中输入非法/无效数据: {tp.get('test_data', '非法数据')}")
-                steps.append("3. 提交/确认操作")
-                steps.append("4. 检查系统是否拒绝并给出提示")
-            elif any(k in title for k in ["未授权", "越权", "无权限", "未登录"]):
-                steps.append("2. 使用无权限账号/未登录状态下尝试操作")
-                steps.append("3. 观察系统是否阻止操作并提示")
-            elif any(k in title for k in ["不存在", "不匹配", "错误", "不一致"]):
-                steps.append(f"2. 使用不存在的/错误的测试数据: {tp.get('test_data', '无效数据')}")
-                steps.append("3. 执行操作")
-                steps.append("4. 检查系统是否给出正确的错误提示")
-            elif "格式" in title:
-                steps.append(f"2. 输入不符合格式要求的数据: {tp.get('test_data', '格式错误数据')}")
-                steps.append("3. 提交操作")
-                steps.append("4. 检查系统是否提示格式错误")
+            matched = self.__match_action(title, dimension)
+            if matched:
+                steps.extend(matched[1])
             else:
-                steps.append(f"2. 准备非法条件/数据: {tp.get('test_data', '非法数据')}")
-                steps.append("3. 执行操作")
-                steps.append("4. 验证系统正确处理异常情况")
+                # 智能兜底
+                steps.append(f"2. 准备非法/无效条件（详见测试数据: {test_data or '非法数据'}）")
+                steps.append(f"3. 执行操作: {title}")
+                steps.append("4. 验证系统是否正确拒绝并给出提示")
             return "\n".join(steps)
 
         # ── 边界测试 ──
         if "边界" in dimension:
             steps = ["1. 确定目标字段的边界值"]
-            # 从标题中判断边界类型
             if any(k in title for k in ["最小值", "最小", "下限", "刚好", "恰好"]):
-                steps.append(f"2. 设置测试数据为边界最小值")
+                steps.append("2. 设置测试数据为边界最小值")
             elif any(k in title for k in ["最大值", "最大", "上限", "超出", "超过"]):
                 steps.append("2. 设置测试数据为边界最大值（或略超）")
             elif "超长" in title or "长度" in title:
@@ -207,11 +326,16 @@ class TestCaseGenerator:
             elif "数量" in title:
                 steps.append("2. 设置数量为边界值（如刚好 N 个）")
             elif "金额" in title:
-                steps.append(f"2. 设置金额为边界值（如 0.01 / 999999.99）")
+                steps.append("2. 设置金额为边界值（如 0.01 / 999999.99）")
+            elif any(k in title for k in ["时间", "有效期", "过期", "频率", "间隔"]):
+                steps.append("2. 设置时间/有效期刚好在边界值（如刚好 N 分钟/N 秒）")
+            elif any(k in title for k in ["次数", "第", "锁定", "限制"]):
+                steps.append("2. 重复操作至边界次数（如第 N-1 次和第 N 次）")
             else:
-                steps.append(f"2. 设置边界测试数据: {tp.get('test_data', '边界数据')}")
-            if tp.get('test_data'):
-                steps.append(f"   - 测试数据: {tp['test_data']}")
+                # 智能兜底：从标题中提取关键信息
+                steps.append(f"2. 针对「{feature}」设置边界值测试数据（详见测试数据字段）")
+            if test_data:
+                steps.append(f"   - 测试数据: {test_data}")
             steps.append("3. 执行操作")
             steps.append("4. 检查系统是否正确处理边界情况")
             return "\n".join(steps)
@@ -219,7 +343,7 @@ class TestCaseGenerator:
         # ── 异常测试 ──
         if "异常" in dimension:
             steps = ["1. 准备正常的测试环境"]
-            if any(k in title for k in ["超时", "timeout", "超时"]):
+            if any(k in title for k in ["超时", "timeout"]):
                 steps.append("2. 模拟网络超时/服务无响应场景")
                 steps.append("3. 执行操作")
                 steps.append("4. 观察系统是否给出超时提示")
@@ -229,17 +353,18 @@ class TestCaseGenerator:
             elif any(k in title for k in ["并发", "同时", "并行"]):
                 steps.append("2. 使用多线程/多进程模拟并发请求")
                 steps.append("3. 检查并发处理结果的一致性")
-            elif any(k in title for k in ["编码", "字符集"]):
-                steps.append(f"2. 使用异常编码/字符集的数据: {tp.get('test_data', '非标编码数据')}")
+            elif any(k in title for k in ["编码", "字符集", "乱码", "GBK"]):
+                steps.append(f"2. 使用异常编码/字符集的数据: {test_data or '非标编码数据'}")
                 steps.append("3. 执行操作")
                 steps.append("4. 检查是否正确处理编码问题")
-            elif any(k in title for k in ["不可读", "不存在", "损坏", "异常"]):
-                steps.append(f"2. 模拟异常条件: {tp.get('test_data', '异常条件')}")
+            elif any(k in title for k in ["不可读", "不存在", "损坏", "异常", "失败"]):
+                steps.append(f"2. 模拟异常条件: {test_data or '异常条件'}")
                 steps.append("3. 执行操作")
                 steps.append("4. 验证系统的异常处理机制")
             else:
-                steps.append(f"2. 模拟异常场景: {tp.get('test_data', '异常场景')}")
-                steps.append("3. 执行操作")
+                # 智能兜底
+                steps.append(f"2. 模拟异常场景（详见测试数据: {test_data or '异常场景'}）")
+                steps.append(f"3. 执行操作: {title}")
                 steps.append("4. 观察系统响应是否合理")
             return "\n".join(steps)
 
@@ -248,7 +373,7 @@ class TestCaseGenerator:
             steps = ["1. 准备性能测试工具和监控环境"]
             if "并发" in title or "高并发" in title or "大量" in title:
                 steps.append("2. 使用性能测试工具（如 JMeter/Locust）模拟并发用户")
-                steps.append(f"3. 按测试数据设置并发数量和脚本参数")
+                steps.append("3. 按测试数据设置并发数量和脚本参数")
                 steps.append("4. 执行测试，记录响应时间、TPS、错误率等指标")
                 steps.append("5. 与性能基线对比，判断是否达标")
             elif "响应时间" in title or "延迟" in title:
@@ -256,13 +381,14 @@ class TestCaseGenerator:
                 steps.append("3. 记录从请求发起到收到响应的时间")
                 steps.append("4. 重复执行 N 次（N>=10），计算平均响应时间")
                 steps.append("5. 判断是否满足性能要求")
-            elif "效率" in title or "生成" in title:
-                steps.append("2. 准备较大规模输入数据")
+            elif "效率" in title or "生成" in title or "耗时" in title:
+                steps.append(f"2. 准备较大规模输入数据（详见测试数据: {test_data or '大规模数据'}）")
                 steps.append("3. 执行目标操作并计时")
                 steps.append("4. 记录完成耗时，判断是否满足时间要求")
             else:
-                steps.append(f"2. 执行目标操作: {title}")
-                steps.append("3. 记录性能指标数据")
+                steps.append(f"2. 针对「{feature}」准备性能测试场景")
+                steps.append(f"3. 执行操作: {title}")
+                steps.append("4. 记录性能指标数据，判断是否达标")
             return "\n".join(steps)
 
         # ── 安全测试 ──
@@ -272,11 +398,11 @@ class TestCaseGenerator:
                 steps.append("2. 使用低权限用户 A 的凭证登录")
                 steps.append("3. 尝试访问/操作高权限用户 B 的数据或功能")
                 steps.append("4. 验证系统是否阻止越权访问并给出提示")
-            elif any(k in title for k in ["注入", "SQL", "XSS", "脚本"]):
-                steps.append(f"2. 在输入框/参数中注入恶意载荷: {tp.get('test_data', 'SQL/XSS 注入 payload')}")
+            elif any(k in title for k in ["注入", "SQL", "XSS", "脚本", "xss"]):
+                steps.append(f"2. 在输入框/参数中注入恶意载荷: {test_data or 'SQL/XSS 注入 payload'}")
                 steps.append("3. 提交请求")
                 steps.append("4. 检查是否被拦截或过滤，不泄露原始错误信息")
-            elif any(k in title for k in ["篡改", "伪造", "篡改"]):
+            elif any(k in title for k in ["篡改", "伪造"]):
                 steps.append("2. 使用抓包工具（如 Burp Suite/Charles）拦截请求")
                 steps.append("3. 篡改关键参数（如金额、用户ID、token）")
                 steps.append("4. 发送篡改后的请求")
@@ -285,69 +411,103 @@ class TestCaseGenerator:
                 steps.append("2. 检查 API 响应和页面渲染是否包含敏感信息")
                 steps.append("3. 检查敏感字段在传输和存储时是否加密")
                 steps.append("4. 验证日志中是否过滤了敏感数据")
-            elif any(k in title for k in ["认证", "身份", "Token", "token"]):
-                steps.append("2. 使用无效/过期的 token 或认证信息访问接口")
-                steps.append("3. 验证系统是否返回 401/403")
-                steps.append("4. 验证系统是否正确处理认证异常")
+            elif any(k in title for k in ["认证", "身份", "Token", "token", "暴力", "破解", "封禁", "频率"]):
+                steps.append(f"2. 准备安全测试攻击载荷/场景（详见测试数据: {test_data or '攻击载荷'}）")
+                steps.append(f"3. 执行攻击操作: {title}")
+                steps.append("4. 验证系统的安全防护机制是否触发")
             else:
-                steps.append(f"2. 执行安全测试: {title}")
-                steps.append("3. 验证系统的安全防护机制")
+                steps.append(f"2. 针对「{feature}」执行安全测试")
+                steps.append(f"3. 操作: {title}")
+                steps.append("4. 验证系统的安全防护机制")
             return "\n".join(steps)
 
         # 兜底
         return f"1. 准备测试环境\n2. 执行操作: {title}\n3. 验证结果与预期一致"
 
+    # ── 核心模块/功能点定义 ──
+    # 出现在这些模块/功能点中的用例，优先级整体提升一级（P1→P0, P2→P1）
+    CORE_MODULES = {
+        "用户管理", "用户注册", "用户登录", "密码找回",
+        "认证", "权限", "订单", "支付", "交易",
+    }
+    CORE_FEATURES = {
+        "注册", "登录", "认证", "授权", "权限",
+        "创建", "新建", "提交", "下单", "支付",
+        "核心流程", "主流程", "全流程",
+    }
+    # 核心操作关键词
+    CORE_ACTION_KW = [
+        "登录", "注册", "创建", "新增", "提交", "支付", "下单",
+        "核心", "主流程", "关键", "基础", "全流程",
+    ]
+
     def __assign_priority(self, tp: dict) -> str:
-        """分配优先级 - 基于模块、维度和测试类型"""
+        """分配优先级 - 基于模块、功能点、维度和测试类型的多级决策"""
         title = tp["title"]
         dimension = tp["dimension"]
-        module = tp["module"]
+        module = tp.get("module", "")
+        feature = tp.get("feature", "")
 
-        # P0: 核心功能的正向测试、关键安全测试
+        # 判断是否属于核心模块/功能点
+        is_core_module = any(k in module for k in self.CORE_MODULES)
+        is_core_feature = any(k in feature for k in self.CORE_FEATURES)
+        is_core = is_core_module or is_core_feature
+
+        # ── 正向测试 ──
         if "正向" in dimension:
-            # 核心操作类关键字（任何系统都适用的）
-            core_kw = ["登录", "注册", "创建", "新增", "提交", "支付",
-                       "下单", "核心", "主流程", "关键", "基础"]
-            if any(k in title for k in core_kw):
+            # 核心操作正向 → P0
+            if any(k in title for k in self.CORE_ACTION_KW):
                 return "P0"
-            # 校验/验证类通常较重要
+            # 校验/验证类 → P0
             if any(k in title for k in ["校验", "验证", "完整性"]):
                 return "P0"
-            # 集成/串联测试
-            if any(k in title for k in ["集成", "串联", "全流程"]):
+            # 集成/串联/全流程 → P0
+            if any(k in title for k in ["集成", "串联", "全流程", "恢复", "续跑"]):
                 return "P0"
-            # 其余正向
+            # 核心模块/功能点的正向测试 → P0（兜底提升）
+            if is_core:
+                return "P0"
+            # 其余正向 → P1
             return "P1"
 
-        # 安全测试 - 高风险场景 P0
+        # ── 安全测试 ──
         if "安全" in dimension:
-            high_risk = ["越权", "篡改", "注入", "泄露", "认证", "敏感"]
+            high_risk = ["越权", "篡改", "注入", "泄露", "认证", "敏感", "暴力", "破解"]
             if any(k in title for k in high_risk):
                 return "P0"
             return "P1"
 
-        # 异常测试 - 关键异常 P0
+        # ── 异常测试 ──
         if "异常" in dimension:
-            critical = ["并发", "支付", "核心", "关键", "数据丢失"]
+            critical = ["并发", "支付", "核心", "关键", "数据丢失", "中断", "失败"]
             if any(k in title for k in critical):
                 return "P0"
-            return "P1"
-
-        # 边界测试 - 边界场景通常是 P1
-        if "边界" in dimension:
-            return "P1"
-
-        # 负向测试 - 通常是 P1
-        if "负向" in dimension:
-            # 涉及安全/权限的负向测试可提级
-            if any(k in title for k in ["越权", "未授权", "未登录", "注入"]):
+            # 核心模块的异常测试 → P0
+            if is_core:
                 return "P0"
             return "P1"
 
-        # 性能测试 - 通常是 P2
+        # ── 负向测试 ──
+        if "负向" in dimension:
+            # 涉及安全/权限的负向测试 → P0
+            if any(k in title for k in ["越权", "未授权", "未登录", "注入", "锁定", "限制", "封禁"]):
+                return "P0"
+            # 核心模块/功能点的关键负向测试 → P0
+            if is_core and any(k in title for k in ["错误", "失败", "无效", "重复", "空"]):
+                return "P0"
+            return "P1"
+
+        # ── 边界测试 ──
+        if "边界" in dimension:
+            # 核心模块的边界测试 → P0（如密码长度、Token 有效期、锁定次数）
+            if is_core and any(k in title for k in ["密码", "Token", "有效期", "锁定", "次数", "频率"]):
+                return "P0"
+            return "P1"
+
+        # ── 性能测试 ──
         if "性能" in dimension:
-            # 但如果是核心模块的性能则 P1
-            if any(k in title for k in ["核心", "主流程", "并发", "高并发"]):
+            # 核心模块的性能 → P1
+            if is_core or any(k in title for k in ["核心", "主流程", "并发", "高并发"]):
                 return "P1"
             return "P2"
 
