@@ -1,7 +1,7 @@
 ---
 name: knowledge-base
 description: 测试知识库管理（MCP 层）— 通过 MCP 协议访问 Obsidian Vault，检索业务规则/历史用例/线上坑点，回灌优质产物，为生成环节提供 RAG 增强
-version: 2.0.0
+version: 2.1.0
 tags: [testing, knowledge-base, rag, mcp, obsidian]
 author: AI Assistant
 created_by: agent
@@ -271,13 +271,18 @@ AI：[调用 knowledge-base status]
 
 1. 知识库存储在 **Obsidian Vault** 中，通过 MCP 协议访问
 2. 支持 **wikilinks** 连接（[[模块]]）和 **YAML frontmatter** 元数据
-3. 检索使用文本匹配 + BM25 排序
+3. 检索使用多关键词 OR 匹配 + 命中数排序
 4. 回灌的用例会提取关键字段，不会原样复制整个文件
 5. 知识库需要定期维护，清理过时内容
 6. 支持 **手动在 Obsidian 中编辑**知识内容
 7. 所有文件使用 **日期前缀 + 标题** 命名，便于按时间管理
 
 ## 更新日志
+
+### v2.1.0 (2026-07-15)
+- 🐛 修复 search/export 检索逻辑不一致：统一为多关键词 OR 匹配
+- ✅ 搜索结果按命中关键词数排序（多词命中的条目排前面）
+- ✅ 旧版 kb_manager.py（本地 BM25）同步修复多词查询逻辑
 
 ### v2.0.0 (2026-07-14)
 - ✅ 迁移到 MCP 协议层

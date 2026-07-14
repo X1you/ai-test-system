@@ -1,6 +1,6 @@
 # Hermes 测试用例生成系统
 
-基于 Hermes Agent 的测试用例自动化生成全流程系统，实现从需求到测试报告的端到端自动化。
+基于 Hermes Agent 的测试用例自动化生成全流程系统，实现从需求到测试报告的端到端自动化。7 个核心 Skill 串联，知识库 RAG 横切增强，人工校验节点保留，整体提效。
 
 ## 📖 项目背景
 
@@ -10,114 +10,86 @@
 
 ## 🎯 项目目标
 
-将测试用例生产拆成7个可串联的 Skill 环节，知识库 & RAG 横切增强中间链路，每个环节 AI 负责生成和整理，人负责确认和决策，在保留必要人工校验节点的前提下，整体提效。
+将测试用例生产拆成 7 个可串联的 Skill 环节，知识库 & RAG 横切增强中间链路，每个环节 AI 负责生成和整理，人负责确认和决策，在保留必要人工校验节点的前提下，整体提效。
 
 ## 🏗️ 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Hermes Agent Platform                      │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  1. 需求读取 (MCP集成)                                         │
-│     ├── 蓝湖 MCP Skill                                         │
-│     ├── Figma MCP Skill                                        │
-│     ├── Axure Parser                                           │
-│     └── 飞书文档                                               │
-│           ↓                                                   │
-│  2. 需求分析 ✅ 已完成                                          │
-│     ├── requirement-analysis Skill (v1.2.0)                    │
-│     ├── 功能模块识别                                           │
-│     ├── 功能点提取                                             │
-│     ├── 待确认事项清单                                         │
-│     └── 质量报告生成                                           │
-│           ↓                                                   │
-│  3. 知识库 & RAG ✅ 已完成                                      │
-│     ├── knowledge-base Skill (v1.0.0)                         │
-│     ├── BM25 检索引擎（纯标准库）                               │
-│     ├── 历史用例检索                                           │
-│     ├── 业务规则匹配                                           │
-│     └── 线上坑点召回                                           │
-│           ↓                                                   │
-│  4. 测试点梳理 ✅ 已完成                                        │
-│     ├── test-points Skill (v1.1.0)                            │
-│     ├── 模块→功能点→测试维度→具体测试点                          │
-│     ├── 6个测试维度支持                                        │
-│     └── 优先级建议生成                                         │
-│           ↓                                                   │
-│  5. 生成测试用例 ✅ 已完成                                      │
-│     ├── generate-testcases Skill (v1.0.0)                     │
-│     ├── Excel 格式                                             │
-│     └── XMind 格式                                             │
-│           ↓                                                   │
-│  6. 用例评审 ✅ 已完成                                          │
-│     ├── test-case-review Skill (v1.0.0)                       │
-│     ├── 四维质检                                               │
-│     │   ├── 缺失用例检测                                       │
-│     │   ├── 质量问题识别                                       │
-│     │   ├── 重复冗余检查                                       │
-│     │   └── 整改建议生成                                       │
-│     └── 质量评分                                               │
-│           ↓                                                   │
-│  7. 生成测试报告 ✅ 已完成                                      │
-│     ├── generate-report Skill (v1.0.0)                        │
-│     ├── 质量摘要                                               │
-│     ├── 失败分析                                               │
-│     └── 模块覆盖率                                             │
-│           ↓                                                   │
-│  8. 知识库回灌 (Mem0)                                          │
-│     └── 持续沉淀优质产物                                       │
-│                                                               │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                      Hermes Agent Platform                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │         pipeline Skill (v1.1.0) — 编排层                  │    │
+│  │  自动串联以下 7 步 + 断点续跑 + 人工检查点                    │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                              ↕                                    │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │       knowledge-base Skill (v2.1.0) — RAG 增强           │    │
+│  │  MCP 协议访问 Obsidian Vault（7 分类，持续回灌）             │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ── 数据流 ──────────────────────────────────────────────────    │
+│                                                                   │
+│  Step 1  需求分析 (requirement-analysis v1.2.0)  🤖 AI 实时处理   │
+│          需求文档 → 功能模块/功能点/可测项 + 待确认事项             │
+│                ↓                                                  │
+│  Step 2  知识库检索 (knowledge-base v2.1.0)      📜 脚本自动化    │
+│          MCP 检索 Obsidian Vault → knowledge-context.md           │
+│                ↓                                                  │
+│  Step 3  测试点梳理 (test-points v1.3.0)         🤖 AI 实时处理   │
+│          模块→功能点→6维测试点 + 优先级建议                        │
+│                ↓                                                  │
+│  Step 4  生成测试用例 (generate-testcases v1.3.0) 📜 脚本自动化   │
+│          测试点 → Excel (12列) + XMind (树状)                     │
+│                ↓                                                  │
+│  Step 5  用例评审 (test-case-review v1.0.0)      🤖 AI 实时处理   │
+│          四维质检（缺失/质量/重复/整改）→ 质量评分                  │
+│                ↓                                                  │
+│  Step 6  执行测试                                👤 人工执行       │
+│          按用例执行 → 填写结果到 Excel                              │
+│                ↓                                                  │
+│  Step 7  生成报告 (generate-report v1.1.0)      📜 脚本自动化    │
+│          执行结果 → 质量报告（概览/模块/失败/风险）                 │
+│                ↓                                                  │
+│  回灌    知识库回灌 (knowledge-base v2.1.0)     📜 脚本自动化    │
+│          优质用例 + 坑点 → Obsidian Vault 持续沉淀                  │
+│                                                                   │
+│  ── 脚本 vs AI ───────────────────────────────────────────────   │
+│  🤖 AI 实时处理：Step 1 / 3 / 5（无独立脚本，AI 直接生成）         │
+│  📜 脚本自动化：Step 2 / 4 / 7 + 回灌（Python 脚本，秒级执行）      │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## ✅ 已完成功能
 
-### 1. 需求分析 Skill (v1.2.0)
+### 1. 需求分析 Skill (requirement-analysis v1.2.0)
 
-**文件位置：** `~/.hermes/skills/requirement-analysis/`
+**文件位置：** `skills/requirement-analysis/`
 
 **功能特性：**
-- ✅ 需求文档结构化拆解
+- ✅ 需求文档（Markdown）结构化拆解
 - ✅ 识别功能模块、功能点、可测项
-- ✅ 生成待确认事项清单
-- ✅ 优先级自动标注（高/中/低）
-- ✅ 影响范围标注
+- ✅ 待确认事项清单生成（高/中/低优先级）
+- ✅ 优先级自动标注 + 影响范围标注
 - ✅ 质量报告生成（可选）
 
 **输出文件：**
-1. `requirements_analysis.md` - 需求拆解
-2. `clarification_needed.md` - 待确认清单
-3. `requirements_quality_report.md` - 质量报告（可选）
-
-**使用示例：**
-```
-用户：帮我分析这个需求文档：requirements.md
-
-AI：
-✅ 需求分析完成！
-📊 统计信息：
-- 功能模块：6 个
-- 功能点：17 个
-- 可测项：60+ 个
-- 待确认事项：22 个
-```
-
-**版本历史：**
-- v1.0.0: 初始版本，基础需求分析功能
-- v1.1.0: 移除手动脚本，改为 AI 直接调用
-- v1.2.0: 添加优先级标注、质量报告、增强识别规则
+- `requirements_analysis.md` — 需求拆解
+- `clarification_needed.md` — 待确认清单
+- `requirements_quality_report.md` — 质量报告（可选）
 
 ---
 
-### 2. 测试点梳理 Skill (v1.1.0)
+### 2. 测试点梳理 Skill (test-points v1.3.0)
 
-**文件位置：** `~/.hermes/skills/test-points/`
+**文件位置：** `skills/test-points/`
 
 **功能特性：**
 - ✅ 基于需求分析生成测试点清单
 - ✅ 结构化：模块→功能点→测试维度→具体测试点
-- ✅ 支持6个测试维度（可配置）
+- ✅ 支持 6 个测试维度（可配置）
   - 正向测试（必需）
   - 负向测试（必需）
   - 边界测试（必需）
@@ -128,39 +100,39 @@ AI：
 - ✅ 测试优先级建议生成
 
 **输出文件：**
-- `testpoints.md` - 测试点清单
-
-**使用示例：**
-```
-# 基础测试（4个维度）
-用户：梳理测试点，基于 requirements_analysis.md
-
-# 包含性能测试
-用户：梳理测试点，包含性能测试
-
-# 包含所有测试维度（6个维度）
-用户：梳理测试点，包含性能和安全测试
-```
-
-**测试点分布示例（6个维度）：**
-| 测试维度 | 数量 | 占比 |
-|---------|------|------|
-| 正向测试 | 22 个 | 22% |
-| 负向测试 | 18 个 | 18% |
-| 边界测试 | 14 个 | 14% |
-| 异常测试 | 14 个 | 14% |
-| 性能测试 | 17 个 | 17% |
-| 安全测试 | 17 个 | 17% |
-
-**版本历史：**
-- v1.0.0: 初始版本，支持4个测试维度
-- v1.1.0: 集成性能和安全测试生成功能，支持参数化配置
+- `testpoints.md` — 测试点清单
 
 ---
 
-### 3. 用例评审 Skill (v1.0.0)
+### 3. 测试用例生成 Skill (generate-testcases v1.3.0)
 
-**文件位置：** `~/.hermes/skills/test-case-review/`
+**文件位置：** `skills/generate-testcases/`
+**脚本位置：** `skills/generate-testcases/scripts/generate_excel.py`、`generate_xmind.py`
+
+**功能特性：**
+- ✅ Excel 格式生成（12 列标准结构：编号/模块/功能点/标题/维度/优先级/前置条件/步骤/测试数据/预期结果/执行结果/备注）
+- ✅ XMind 格式生成（标准 xmind 库，树状结构）
+- ✅ 用例编号自动连续（TC-001 ~ TC-NNN）
+- ✅ 优先级自动分配（P0/P1/P2）
+- ✅ 按测试维度过滤（`-d` 参数）
+- ✅ 格式化（表头加粗、冻结首行）
+- ✅ 步骤模板按模块类型匹配（v1.2.0 优化，减少通用模板回退）
+
+**输出文件：**
+- `testcases.xlsx` — Excel 测试用例
+- `testcases.xmind` — XMind 测试用例脑图
+
+**版本历史：**
+- v1.0.0: 初始版本，Excel + XMind 双格式
+- v1.1.0: 标准 xmind 库替代手工 JSON
+- v1.2.0: P0 修复 — 步骤模板优化 + 优先级分配优化
+- v1.3.0: XMind 支持 -d 维度过滤 + 优先级逻辑与 Excel 统一
+
+---
+
+### 4. 用例评审 Skill (test-case-review v1.0.0)
+
+**文件位置：** `skills/test-case-review/`
 
 **功能特性：**
 - ✅ 四维质检分析
@@ -169,34 +141,14 @@ AI：
   - 重复冗余检查（用例重复、场景重叠）
   - 整改建议生成（需澄清项、补充建议）
 - ✅ 支持多种文件格式（Excel、Markdown、CSV）
-- ✅ 质量评分功能（4个维度，满分100）
+- ✅ 质量评分功能（4 个维度，满分 100）
 - ✅ 整改清单生成
-- ✅ 测试点对比（可选）
 
 **输出文件：**
-- `test_case_review_report.md` - 评审报告
-
-**使用示例：**
-```
-# 基本用法
-用户：帮我评审测试用例 testcases.xlsx
-
-AI：
-✅ 用例评审完成！
-📊 评审概况：
-- 用例总数：50 个
-- 通过质检：35 个
-- 需要整改：15 个
-- 质量评分：72/100（中等）
-
-🎯 四维质检结果：
-- 缺失用例：5 个
-- 质量问题：8 个
-- 重复冗余：2 对
-- 整改建议：10 条
-```
+- `test_case_review_report.md` — 评审报告
 
 **质量评分标准：**
+
 | 维度 | 满分 | 评分标准 |
 |------|------|---------|
 | 完整性 | 30 | 缺失用例越少，得分越高 |
@@ -204,30 +156,12 @@ AI：
 | 准确性 | 20 | 重复冗余越少，得分越高 |
 | 可执行性 | 20 | 用例越具体、越可执行，得分越高 |
 
-**版本历史：**
-- v1.0.0: 初始版本，完整四维质检功能
-
 ---
 
-### 4. Mem0 记忆系统集成 ✅ 已配置
+### 5. 测试报告生成 Skill (generate-report v1.1.0)
 
-**配置状态：**
-- ✅ Mem0 API key 已配置
-- ✅ Provider 设置为 mem0
-- ✅ Memory enabled: true
-- ✅ User profile enabled: true
-
-**功能：**
-- 持久化跨会话记忆
-- 知识库增强
-- 业务规则匹配
-- 历史用例检索
-
----
-
-### 5. 测试报告生成 Skill (v1.0.0)
-
-**文件位置：** `~/.hermes/skills/testing/generate-report/`
+**文件位置：** `skills/generate-report/`
+**脚本位置：** `skills/generate-report/scripts/generate_report.py`
 
 **功能特性：**
 - ✅ 读取已执行完成的测试用例 Excel 文件
@@ -240,32 +174,13 @@ AI：
 - ✅ 阻塞用例分析
 - ✅ 风险评估（高/中/低三级风险，自动判断）
 - ✅ 发布建议（基于 P0 失败数和通过率自动推荐）
+- ✅ 需求覆盖率计算（`-r` 参数）
 
-**输出文件：** `test_report.md` - Markdown 测试报告
-
-**使用示例：**
-```
-用户：生成测试报告，基于 testcases.xlsx
-
-AI：
-✅ 测试报告生成完成！
-
-📊 总体概览：
-- 总用例数：145 个
-- 通过：101 个（69.7%）
-- 失败：12 个
-- 阻塞：18 个
-- 跳过：14 个
-- 质量评级：较差 ❌
-
-📁 生成的文件：
-- test_report.md - 测试报告（8.6 KB）
-
-💡 下一步：
-请根据报告中的失败用例分析和风险评估，优先修复高风险问题。
-```
+**输出文件：**
+- `test_report.md` — Markdown 测试报告
 
 **质量评级标准：**
+
 | 通过率 | 评级 | 说明 |
 |--------|------|------|
 | ≥ 95% | 优秀 🏆 | 可以发布 |
@@ -273,46 +188,152 @@ AI：
 | 70%-85% | 中等 ⚠️ | 需要修复较多问题 |
 | < 70% | 较差 ❌ | 不建议发布 |
 
+---
+
+### 6. 知识库管理 Skill (knowledge-base v2.1.0) — MCP 层
+
+**文件位置：** `skills/knowledge-base/`
+**脚本位置：** `scripts/kb_manager_mcp.py`、`scripts/mcp_client.py`
+
+**架构方案：** MCP 协议层（Option D），直接访问 Obsidian Vault 文件系统，非 REST API。
+
+```
+Hermes Skills / CLI 调用层
+       ↕
+MCP 协议层 (统一知识库接口)
+  - list_files() / read_file() / search() / create_file()
+       ↕
+Obsidian Vault (知识存储)
+  ~/Documents/test-interview-kb/
+```
+
+**知识库 7 分类：**
+
+| 分类 | 目录 | 说明 |
+|------|------|------|
+| 历史优质用例 | `🏆 历史用例/` | 评审通过的优质用例，按项目维度分层（项目→批次→文件） |
+| 业务规则 | `📋 业务规则/` | 字段限制、校验规则、业务逻辑 |
+| 业务规范文档 | `📘 业务规范/` | 产品功能说明、状态流转规则、权限矩阵 |
+| 数据字典 | `📖 数据字典/` | 表字段释义、枚举值、关联关系 |
+| 线上问题沉淀 | `⚠️ 线上坑点/` | 历史 Bug、常见边界坑点、易漏场景 |
+| 团队模板规范 | `📝 用例模板/` | 用例编写模板、命名规范、断言规则 |
+| 团队规范 | `📐 团队规范/` | 测试流程规范等 |
+
+**功能特性：**
+- ✅ MCP 协议统一访问 Obsidian Vault
+- ✅ 关键词检索（`search`）
+- ✅ 导出增强上下文（`export`）→ Markdown 注入后续环节
+- ✅ 回灌优质产物（`ingest`）→ Excel 用例自动拆分写入
+- ✅ 添加单条知识（`add`）
+- ✅ 知识库状态统计（`status`）
+- ✅ 历史用例按项目维度分层归档（项目名→批次→用例文件）
+
 **版本历史：**
-- v1.0.0: 初始版本，完整报告生成功能
+- v1.0.0: 初始版本，本地文件系统 + BM25 检索
+- v2.0.0: 重构为 MCP 层架构，直接访问 Obsidian Vault
+- v2.1.0: 修复 search/export 检索逻辑不一致，统一多关键词 OR 匹配
+
+---
+
+### 7. 全流程串联 Skill (pipeline v1.1.0)
+
+**文件位置：** `skills/pipeline/`
+**脚本位置：** `skills/pipeline/scripts/pipeline.py`
+
+**功能特性：**
+- ✅ 一键串联 7 个环节：需求文档 → 需求分析 → 知识库检索 → 测试点 → 生成用例 → 用例评审 → 测试报告
+- ✅ 断点续跑（记录执行进度，失败后从断点恢复）
+- ✅ 人工检查点（关键节点暂停等待确认）
+- ✅ 知识库 RAG 全程增强（Step 2 检索 → Step 3 注入 → 回灌）
+- ✅ 自动识别 AI 实时处理环节 vs 脚本自动化环节
+
+**执行方式：**
+
+| 环节 | 执行方式 | 典型耗时 |
+|------|---------|---------|
+| Step 1 需求分析 | 🤖 AI 实时处理 | ~2min |
+| Step 2 知识库检索 | 📜 脚本自动化 | <1s |
+| Step 3 测试点梳理 | 🤖 AI 实时处理 | ~3min |
+| Step 4 生成用例 | 📜 脚本自动化 | <3s |
+| Step 5 用例评审 | 🤖 AI 实时处理 | ~2min |
+| Step 6 执行测试 | 👤 人工执行 | — |
+| Step 7 生成报告 | 📜 脚本自动化 | <3s |
+| 回灌知识库 | 📜 脚本自动化 | <2s |
+
+> **关键认知：** Step 1/3/5 是 AI 实时处理环节，无独立脚本。pipeline 全自动模式实际依赖 AI agent 连续调用，不是纯脚本自动化。
+
+---
+
+## 🧪 全流程验证结果
+
+以本项目自身为被测产品，跑通完整 pipeline 全流程自验证（2026-07-14）。
+
+### 执行总览
+
+| 步骤 | 环节 | 状态 | 耗时 | 输出 |
+|------|------|------|------|------|
+| 准备 | 需求文档 + 原型图 | ✅ | ~3min | requirements.md + prototype.md (21KB) |
+| Step 1 | 需求分析 | ✅ | ~2min | 需求拆解 + 待确认事项 (6.4KB) |
+| Step 2 | 知识库检索 | ✅ | <1s | knowledge-context.md (2.2KB) |
+| Step 3 | 测试点梳理 | ✅ | ~3min | testpoints.md (16.2KB) |
+| Step 4 | 生成测试用例 | ✅ | <3s | testcases.xlsx + .xmind (23.7KB) |
+| Step 5 | 用例评审 | ✅ | ~2min | 评审报告 (7.6KB) |
+| Step 6 | 执行测试（模拟） | ✅ | <5s | 78 条用例已填结果 |
+| Step 7 | 生成报告 | ✅ | <3s | test_report.md (5.5KB) |
+| 回灌 | 知识库回灌 | ✅ | <2s | 知识库 +80 条 |
+
+**Pipeline 总耗时：约 12 分钟**（含 AI 分析时间，脚本执行部分 < 15 秒）
+
+### 质量评估
+
+| 维度 | 满分 | 初评 | 修复后 | 说明 |
+|------|------|------|--------|------|
+| 完整性 | 30 | 24 | — | 缺少并发、部分安全场景 |
+| 清晰性 | 30 | 22 | — | 步骤模板回退（已修复） |
+| 准确性 | 20 | 17 | — | 优先级分配偏差（已修复） |
+| 可执行性 | 20 | 14 | — | 35% 步骤不可直接执行（已修复） |
+| **总计** | **100** | **77** | **89** | 中等偏上 → 良好 |
+
+**最终通过率：100%**（78 条用例全部通过，P0 修复后）
+
+### 已修复的 P0 问题
+
+1. **generate_excel.py 步骤模板优化** — 增加按模块类型生成步骤的逻辑，减少通用模板回退
+2. **generate_excel.py 优先级分配优化** — 增加基于模块优先级的兜底逻辑，提高 P0 覆盖率
+3. **kb_manager_mcp.py ingest 格式错位** — 正确解析 testcases.xlsx 12 列格式
+
+完整验证报告：`test-run/output/pipeline_validation_report.md`
 
 ---
 
 ## 🚧 计划中功能
 
-### 1. 需求读取 MCP 集成 (计划中)
+### 1. 需求读取 MCP 集成（计划中）
 
-**功能规划：**
-- 蓝湖 MCP：读取蓝湖原型链接，解析页面结构、UI元素、交互规则
+- 蓝湖 MCP：读取蓝湖原型链接，解析页面结构、UI 元素、交互规则
 - Figma MCP：读取 Figma 原型，解析布局、组件、设计规范
 - Axure Parser：读取 Axure 原型，解析交互流程
 - 飞书文档：读取飞书需求文档，解析结构化需求
 
-**输出格式：**
-- 统一的 Markdown 需求文档
-- 作为后续所有环节的输入
+### 2. 脚本逻辑优化（已完成）
 
----
+- ✅ `knowledge-base` search/export 检索逻辑统一（多词 OR 一致）— v2.1.0
+- ✅ `generate_xmind.py` 支持 `-d` 维度过滤参数（与 Excel 脚本对齐）— v1.3.0
+- ✅ `test-points` 维度分布自动校验（7 项校验规则）— v1.3.0
+- ✅ `generate-report` 失败原因推断增强（4 类→11 类，减少"待确认"）— v1.1.0
+- ✅ `pipeline.py` 脚本路径修正 + 知识库脚本 MCP 优先 — v1.1.0
 
-### 4. 全流程自动化 (计划中)
+### 3. Web UI 界面（计划中）
 
-**功能规划：**
+- 可视化操作界面
+- 进度跟踪
+- 报告查看
+
+### 4. 全流程 Cron 自动化（计划中）
+
 - Cron Job 定时触发
 - 自动读取新需求文档
-- 自动执行：需求分析 → 测试点梳理 → 生成用例 → 用例评审
-- 自动发送通知（QQ、邮件等）
-- 知识库自动回灌
-
-**Cron 配置示例：**
-```bash
-# 每天早上9点检查新需求并生成测试用例
-hermes cron create "0 9 * * *" --prompt """
-检查工作目录中的新需求文档（requirements/*.md），
-依次执行：
-1. 需求分析 → 2. 测试点梳理 → 3. 生成用例 → 4. 用例评审
-输出文件保存到 outputs/ 目录，并发送通知。
-"""
-```
+- 自动通知（QQ、邮件等）
 
 ---
 
@@ -321,116 +342,145 @@ hermes cron create "0 9 * * *" --prompt """
 ```
 ~/Documents/ai-test-system/
 │
-├── README.md                               📖 项目文档（本文件）
+├── README.md                                📖 项目文档（本文件）
 ├── .gitignore
 │
-├── skills/                                 🔧 7 个核心 Skill 源码
-│   ├── requirement-analysis/               ✅ v1.2.0
+├── skills/                                  🔧 7 个核心 Skill 源码
+│   ├── requirement-analysis/                ✅ v1.2.0
 │   │   └── SKILL.md
-│   ├── test-points/                        ✅ v1.1.0
+│   ├── test-points/                         ✅ v1.3.0
 │   │   └── SKILL.md
-│   ├── generate-testcases/                 ✅ v1.0.0
+│   ├── generate-testcases/                  ✅ v1.3.0
 │   │   ├── SKILL.md
-│   │   ├── scripts/generate_excel.py       (Excel 生成脚本)
-│   │   ├── scripts/generate_xmind.py       (XMind 生成脚本)
+│   │   ├── scripts/generate_excel.py        (Excel 生成脚本)
+│   │   ├── scripts/generate_xmind.py        (XMind 生成脚本)
 │   │   └── references/pipeline-overview.md
-│   ├── test-case-review/                   ✅ v1.0.0
+│   ├── test-case-review/                    ✅ v1.0.0
 │   │   └── SKILL.md
-│   ├── generate-report/                    ✅ v1.0.0
+│   ├── generate-report/                     ✅ v1.1.0
 │   │   ├── SKILL.md
-│   │   └── scripts/generate_report.py      (报告生成脚本)
-│   ├── knowledge-base/                     ✅ v1.0.0
-│   │   ├── SKILL.md
-│   │   └── scripts/kb_manager.py           (知识库管理脚本)
-│   └── pipeline/                           ✅ v1.0.0
+│   │   └── scripts/generate_report.py       (报告生成脚本)
+│   ├── knowledge-base/                      ✅ v2.1.0 (MCP 层)
+│   │   └── SKILL.md
+│   └── pipeline/                            ✅ v1.1.0 (编排层)
 │       ├── SKILL.md
-│       └── scripts/pipeline.py             (全流程串联引擎)
+│       └── scripts/pipeline.py              (全流程串联引擎)
 │
-├── knowledge-base/                         🧠 本地知识库数据
-│   ├── business-rules/                     (业务规则)
-│   ├── historical-cases/                   (历史优质用例)
-│   ├── pitfalls/                           (线上坑点)
-│   ├── templates/                          (用例模板)
-│   └── index.json                          (自动索引)
+├── scripts/                                 🔧 知识库 MCP 层脚本
+│   ├── mcp_client.py                        (Obsidian Vault 文件访问)
+│   ├── kb_manager_mcp.py                    (知识库管理：search/export/ingest)
+│   ├── kb_manager.py                        (本地知识库管理，旧版)
+│   ├── migrate_to_obsidian.py               (迁移脚本：本地→Obsidian)
+│   └── test_obsidian_*.py                   (Obsidian API 测试脚本)
 │
-├── examples/                               📁 示例需求文档
-│   ├── demo_requirements.md               (示例需求文档)
-│   └── order_requirements.md              (订单系统需求文档)
+├── test-run/                                🧪 全流程验证测试数据
+│   ├── requirements.md                      (输入：需求文档 v1)
+│   ├── requirements_v2.md                   (输入：需求文档 v2)
+│   ├── prototype.md                         (输入：原型图)
+│   ├── output/                              (v1 输出产物)
+│   │   ├── requirements_analysis.md
+│   │   ├── clarification_needed.md
+│   │   ├── knowledge-context.md
+│   │   ├── testpoints.md
+│   │   ├── testcases.xlsx / .xmind
+│   │   ├── testcases_fixed.xlsx             (修复后用例)
+│   │   ├── test_case_review_report.md
+│   │   ├── test_report.md / _final.md
+│   │   └── pipeline_validation_report.md    (完整验证报告)
+│   └── output-v2/                           (v2 输出产物)
+│       ├── requirements_analysis.md
+│       ├── clarification_needed.md
+│       ├── testpoints.md
+│       ├── testcases.xlsx / .xmind
+│       └── test_report.md
 │
-├── sample-output/                          📁 各环节输出产物示例
-│   ├── requirements_analysis.md            (需求拆解)
-│   ├── clarification_needed.md             (待确认清单)
-│   ├── requirements_quality_report.md      (质量报告)
-│   ├── testpoints.md                       (测试点清单)
-│   ├── testpoints_extended.md              (性能安全测试补充)
-│   ├── testcases.xlsx                      (Excel 用例)
-│   ├── testcases.xmind                     (XMind 用例)
-│   ├── testcases_executed.xlsx             (带执行结果的用例)
-│   └── test_report.md                      (测试报告)
+├── knowledge-base/                          🧠 本地知识库（旧版，已迁移到 Obsidian）
+│   ├── business-rules/
+│   ├── historical-cases/
+│   ├── pitfalls/
+│   ├── templates/
+│   └── index.json
 │
-├── reference/                              📚 参考资料和原始文章
+├── examples/                                📁 示例需求文档
+│   ├── demo_requirements.md
+│   └── order_requirements.md
+│
+├── sample-output/                           📁 各环节输出产物示例
+│   ├── requirements_analysis.md
+│   ├── clarification_needed.md
+│   ├── requirements_quality_report.md
+│   ├── testpoints.md / _extended.md
+│   ├── testcases.xlsx / .xmind
+│   ├── testcases_executed.xlsx
+│   └── test_report.md
+│
+├── reference/                               📚 参考资料和原始文章
 │   └── 我搭建了一套AI生成测试用例的全流程方案....html
 │
-└── docs/                                   📝 额外文档（预留）
+└── docs/                                    📝 额外文档（预留）
+
+知识库存储（运行时）：
+~/Documents/test-interview-kb/                ← Obsidian Vault（MCP 访问）
+  ├── 🏆 历史用例/   (按项目→批次分层归档)
+  ├── 📋 业务规则/
+  ├── 📘 业务规范/
+  ├── 📖 数据字典/
+  ├── ⚠️ 线上坑点/
+  ├── 📝 用例模板/
+  └── 📐 团队规范/
 
 安装位置（运行时）：
-~/.hermes/skills/                           ← Hermes 自动加载的 Skill 目录
+~/.hermes/skills/                             ← Hermes 自动加载的 Skill 目录
 ```
 
 ---
 
 ## 🎯 使用流程
 
-### 完整流程
+### 方式一：pipeline 一键串联
+
+```
+用户：用 pipeline 跑一遍这个需求文档：requirements.md
+
+AI：[自动调用 pipeline Skill，依次执行 7 步]
+✅ Step 1 需求分析完成
+✅ Step 2 知识库检索完成
+✅ Step 3 测试点梳理完成
+⏸️  人工检查点：请确认测试点清单 testpoints.md
+✅ Step 4 生成测试用例完成
+✅ Step 5 用例评审完成
+✅ Step 7 生成报告完成
+✅ 知识库回灌完成
+```
+
+### 方式二：渐进式使用
 
 ```bash
 # 1. 需求分析
-引用 requirement-analysis Skill
-输入：需求文档（requirements.md）
-输出：需求拆解 + 待确认清单
+用户：帮我分析这个需求文档：requirements.md
+→ 输出：requirements_analysis.md + clarification_needed.md
 
 # 2. 与产品/开发确认待确认事项
 人工确认后更新需求文档
 
 # 3. 测试点梳理
-引用 test-points Skill
-输入：需求拆解文档（requirements_analysis.md）
-输出：测试点清单（testpoints.md）
+用户：梳理测试点，包含性能和安全测试
+→ 输出：testpoints.md
 
 # 4. 生成测试用例
-引用 generate-testcases Skill
-输入：测试点清单
-输出：Excel/XMind 测试用例
+用户：生成测试用例
+→ 输出：testcases.xlsx + testcases.xmind
 
 # 5. 用例评审
-引用 test-case-review Skill
-输入：测试用例文件
-输出：评审报告 + 整改建议
+用户：评审测试用例
+→ 输出：test_case_review_report.md
 
 # 6. 执行测试用例
 人工执行或自动化测试
 
 # 7. 生成测试报告
-引用 generate-report Skill
-输入：执行结果（Excel）
-输出：测试质量报告（Markdown）
-```
-
-### 渐进式使用
-
-**阶段1：基础功能（当前可用）**
-```
-需求分析 → 测试点梳理 → 生成用例 → 用例评审 → 生成报告
-```
-
-**阶段2：完整流程（当前可用）**
-```
-需求文档 → 需求分析 → 测试点梳理 → 生成用例 → 用例评审 → 执行测试 → 生成报告
-```
-
-**阶段3：全自动化（计划中）**
-```
-需求读取(MCP) → 需求分析 → 测试点梳理 → 生成用例 → 用例评审 → 执行测试 → 生成报告 → 知识库回灌
+用户：生成测试报告
+→ 输出：test_report.md
 ```
 
 ---
@@ -438,20 +488,25 @@ hermes cron create "0 9 * * *" --prompt """
 ## 📊 技术栈
 
 ### 核心技术
-- **Hermes Agent** - AI 智能体平台
-- **Mem0** - 外置记忆系统（RAG）
-- **Skills** - 可复用的技能模块
+- **Hermes Agent** — AI 智能体平台
+- **Skills** — 可复用的技能模块（7 个核心 Skill）
+- **MCP 协议** — 知识库统一访问层
+- **Obsidian Vault** — 知识库存储（本地优先）
 
 ### 文件格式
-- **Markdown** - 需求文档、测试点、评审报告
-- **Excel** - 测试用例、执行结果
-- **XMind** - 测试用例脑图（计划中）
+- **Markdown** — 需求文档、测试点、评审报告
+- **Excel** — 测试用例（12 列标准结构）、执行结果
+- **XMind** — 测试用例脑图（标准 xmind 库）
+
+### 依赖库
+- `openpyxl` — Excel 读写
+- `xmind` — XMind 生成
+- Python 标准库（json, zipfile, os, re 等）
 
 ### 可选集成（计划中）
-- **MCP (Model Context Protocol)** - 需求平台集成
-- **蓝湖 API** - 原型读取
-- **Figma API** - 设计稿读取
-- **飞书 API** - 文档读取
+- **蓝湖 API** — 原型读取
+- **Figma API** — 设计稿读取
+- **飞书 API** — 文档读取
 
 ---
 
@@ -459,21 +514,28 @@ hermes cron create "0 9 * * *" --prompt """
 
 ### 前置要求
 
-1. 安装 Hermes Agent
-2. 配置 Mem0 API key
-3. 安装必要的 Skills
+1. 安装 [Hermes Agent](https://hermes-agent.nousresearch.com/docs/)
+2. 安装 [Obsidian](https://obsidian.md/)（知识库存储）
+3. 配置 Mem0 API key（可选，跨会话记忆）
+4. Python 依赖：`openpyxl`、`xmind`
 
-### 安装 Steps
+### 安装步骤
 
 ```bash
-# 1. 确认 Mem0 已配置
-hermes config get memory.provider
-
-# 2. 复制 Skills 到 Hermes 技能目录
+# 1. 复制 Skills 到 Hermes 技能目录
 cp -R skills/* ~/.hermes/skills/
 
-# 3. 确认 Skills 已安装
-hermes skills list | grep -E "requirement-analysis|test-points|generate-testcases|test-case-review|generate-report"
+# 2. 确认 Skills 已加载
+hermes skills list | grep -E "requirement-analysis|test-points|generate-testcases|test-case-review|generate-report|knowledge-base|pipeline"
+
+# 3. 创建 Obsidian Vault（知识库存储）
+mkdir -p ~/Documents/test-interview-kb
+
+# 4. 复制知识库 MCP 脚本
+cp scripts/*.py ~/.hermes/skills/knowledge-base/scripts/ 2>/dev/null || true
+
+# 5. 安装 Python 依赖
+pip install openpyxl xmind
 ```
 
 ### 使用示例
@@ -483,17 +545,17 @@ hermes skills list | grep -E "requirement-analysis|test-points|generate-testcase
 hermes
 
 # 在会话中使用
-```
-
-```
 用户：帮我分析这个需求文档：~/Documents/requirements.md
 AI：[自动调用 requirement-analysis Skill]
 
 用户：梳理测试点，包含性能和安全测试
 AI：[自动调用 test-points Skill]
 
-用户：评审这个测试用例文件：testcases.xlsx
+用户：评审这个测试用例文件
 AI：[自动调用 test-case-review Skill]
+
+用户：用 pipeline 跑一遍完整流程
+AI：[自动调用 pipeline Skill，串联 7 步]
 ```
 
 ---
@@ -502,59 +564,28 @@ AI：[自动调用 test-case-review Skill]
 
 ### 已完成
 - ✅ 需求分析 Skill (v1.2.0)
-- ✅ 测试点梳理 Skill (v1.1.0)
-- ✅ 测试用例生成 Skill (v1.0.0)
+- ✅ 测试点梳理 Skill (v1.3.0)
+- ✅ 测试用例生成 Skill (v1.3.0)
 - ✅ 用例评审 Skill (v1.0.0)
-- ✅ 测试报告生成 Skill (v1.0.0)
-- ✅ 知识库 & RAG Skill (v1.0.0)
-- ✅ 全流程自动串联 Skill (v1.0.0)
+- ✅ 测试报告生成 Skill (v1.1.0)
+- ✅ 知识库管理 Skill (v2.1.0，MCP 层)
+- ✅ 全流程串联 Skill (pipeline v1.1.0)
 - ✅ Mem0 记忆系统集成
 - ✅ 示例数据和文档
+- ✅ **全流程自验证完成**（78 条用例，100% 通过率，质量评分 77→89）
+- ✅ **P0 修复 3 项**（步骤模板、优先级分配、ingest 格式）
+- ✅ **P1/P2 修复 5 项**（检索逻辑统一、XMind -d 参数、维度校验、失败推断增强、pipeline 路径修正）
 
 ### 计划中
-- 🚧 需求读取 MCP 集成
+- 🚧 需求读取 MCP 集成（蓝湖/Figma/飞书）
 - 🚧 Web UI 界面
 
 ### 完成度
 - **核心 Skills：** 7/7 (100%) 🎉
-- **辅助功能：** 3/4 (75%)
-- **整体完成度：** ~92%
-
----
-
-## 🎯 下一步计划
-
-### 短期计划（1-2周）
-1. **全流程联调测试**
-   - 用真实需求文档跑通完整 pipeline
-   - 修复发现的问题
-   - 完善各 Skill 之间的数据传递
-
-2. **generate-testcases v1.1 增强**
-   - 用例模板自定义
-   - 更多业务场景的步骤模板
-
-### 中期计划（1-2月）
-3. **需求读取 MCP 集成**
-   - 蓝湖 MCP
-   - Figma MCP
-   - 飞书文档
-
-4. **全流程自动化**
-   - Cron Job 配置
-   - 自动通知
-   - 知识库回灌
-
-### 长期计划（3-6月）
-5. **Web UI 界面**
-   - 可视化操作界面
-   - 进度跟踪
-   - 报告查看
-
-6. **性能优化**
-   - 大文档处理优化
-   - 并发处理
-   - 缓存机制
+- **全流程验证：** ✅ 已完成
+- **P0 修复：** ✅ 3/3 完成
+- **P1/P2 修复：** ✅ 5/5 完成
+- **整体完成度：** ~95%
 
 ---
 
@@ -563,14 +594,14 @@ AI：[自动调用 test-case-review Skill]
 ### 开发环境
 
 ```bash
-# 进入技能目录
-cd ~/.hermes/skills/[skill-name]
+# 进入项目目录
+cd ~/Documents/ai-test-system
 
-# 编辑 SKILL.md
-vim SKILL.md
+# 编辑 Skill
+vim skills/[skill-name]/SKILL.md
 
-# 测试技能
-hermes -s [skill-name]
+# 编辑脚本
+vim skills/[skill-name]/scripts/[script].py
 
 # 提交改进
 git add .
@@ -578,25 +609,24 @@ git commit -m "improve: [description]"
 git push
 ```
 
-### 技能开发规范
+### Skill 开发规范
 
 1. SKILL.md 必须包含：
    - Frontmatter（name, description, version, tags）
    - 触发条件
    - 执行步骤
-   - 输入参数
+   - 输入/输出
    - 注意事项
-   - 示例对话
    - 与其他 Skill 的协作
 
 2. 版本号规范：
    - v1.0.0: 初始版本
-   - v1.1.0: 小功能增加
-   - v2.0.0: 重大功能变更
+   - v1.x.0: 小功能增加
+   - v2.0.0: 重大架构变更
 
 3. 文档更新：
-   - 每次更新同步更新版本号
-   - 记录更新日志
+   - 每次更新同步版本号
+   - 记录版本历史
 
 ---
 
@@ -616,11 +646,11 @@ MIT License
 
 ## 🙏 致谢
 
-- **Nous Research** - Hermes Agent 平台
-- **Raina测试** - 原始方案作者
-- **Hermes 社区** - 技术支持
+- **Nous Research** — Hermes Agent 平台
+- **Raina测试** — 原始方案作者
+- **Hermes 社区** — 技术支持
 
 ---
 
-*最后更新：2026-07-14*
-*当前版本：v0.7.0*
+*最后更新：2026-07-15*
+*当前版本：v1.0.0*

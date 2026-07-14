@@ -133,10 +133,19 @@ class MCPClient:
     def search(self, query: str, category: str = None, limit: int = 20) -> List[Dict]:
         """
         MCP: search
-        搜索知识库
+        搜索知识库（多关键词 OR 逻辑：任一关键词命中即返回）
+
+        匹配策略：将 query 按空格分词，任一词命中（content 或 filepath）即算匹配。
+        多词命中数越多，排序越靠前。
         """
         files = self.list_files(category)
         results = []
+
+        # 分词：支持中文短语 + 英文单词
+        keywords = [kw.strip().lower() for kw in query.split() if kw.strip()]
+        # 如果整体 query 不含空格，保留完整 query 作为一个关键词
+        if not keywords:
+            keywords = [query.strip().lower()]
 
         for filepath in files:
             file_data = self.read_file(filepath)
@@ -144,34 +153,46 @@ class MCPClient:
                 continue
 
             content = file_data['content']
+            content_lower = content.lower()
+            filepath_lower = filepath.lower()
 
-            # 简单的文本匹配
-            if query.lower() in content.lower() or query.lower() in filepath.lower():
-                frontmatter = self._parse_yaml_frontmatter(content)
+            # 统计命中关键词数（用于排序）
+            hit_count = 0
+            for kw in keywords:
+                if kw in content_lower or kw in filepath_lower:
+                    hit_count += 1
 
-                # 提取标题
-                title = Path(filepath).stem
-                if 'title' in frontmatter:
-                    title = frontmatter['title']
+            if hit_count == 0:
+                continue
 
-                # 确定分类
-                cat_match = None
-                for cat, cat_path in CATEGORY_PATHS.items():
-                    if cat_path in filepath:
-                        cat_match = cat
-                        break
+            frontmatter = self._parse_yaml_frontmatter(content)
 
-                results.append({
-                    'id': frontmatter.get('id', self._generate_id(content[:200])),
-                    'title': title,
-                    'content': content,
-                    'category': cat_match or 'unknown',
-                    'module': frontmatter.get('module', ''),
-                    'severity': frontmatter.get('severity'),
-                    'filepath': filepath,
-                    'source': 'mcp'
-                })
+            # 提取标题
+            title = Path(filepath).stem
+            if 'title' in frontmatter:
+                title = frontmatter['title']
 
+            # 确定分类
+            cat_match = None
+            for cat, cat_path in CATEGORY_PATHS.items():
+                if cat_path in filepath:
+                    cat_match = cat
+                    break
+
+            results.append({
+                'id': frontmatter.get('id', self._generate_id(content[:200])),
+                'title': title,
+                'content': content,
+                'category': cat_match or 'unknown',
+                'module': frontmatter.get('module', ''),
+                'severity': frontmatter.get('severity'),
+                'filepath': filepath,
+                'source': 'mcp',
+                'hit_count': hit_count,
+            })
+
+        # 按命中数降序排序
+        results.sort(key=lambda x: x.get('hit_count', 0), reverse=True)
         return results[:limit]
 
     def create_file(self, item: KnowledgeItem) -> bool:

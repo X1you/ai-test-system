@@ -393,6 +393,11 @@ class KnowledgeBaseManager:
 
         # 本地文件搜索 (fallback 或补充)
         if not all_items or not self.use_obsidian:
+            # 分词：多关键词 OR 匹配（与 MCP 层 search 逻辑一致）
+            keywords = [kw.strip().lower() for kw in query.split() if kw.strip()]
+            if not keywords:
+                keywords = [query.strip().lower()]
+
             for cat, cat_dir in self.category_paths.items():
                 if category and cat != category:
                     continue
@@ -404,17 +409,22 @@ class KnowledgeBaseManager:
                 for md_file in cat_path.glob("*.md"):
                     with open(md_file, 'r', encoding='utf-8') as f:
                         content = f.read()
-                        if query.lower() in content.lower() or query.lower() in md_file.stem.lower():
-                            all_items.append({
-                                'id': self._generate_id(content[:200]),
-                                'title': md_file.stem,
-                                'content': content,
-                                'category': cat,
-                                'module': '',
-                                'severity': None,
-                                'source': 'local',
-                                'filepath': str(md_file)
-                            })
+                        content_lower = content.lower()
+                        stem_lower = md_file.stem.lower()
+
+                    # 多关键词 OR 匹配
+                    matched = any(kw in content_lower or kw in stem_lower for kw in keywords)
+                    if matched:
+                        all_items.append({
+                            'id': self._generate_id(content[:200]),
+                            'title': md_file.stem,
+                            'content': content,
+                            'category': cat,
+                            'module': '',
+                            'severity': None,
+                            'source': 'local',
+                            'filepath': str(md_file)
+                        })
 
         # BM25 重排序
         if all_items:

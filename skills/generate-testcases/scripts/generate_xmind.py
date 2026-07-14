@@ -77,32 +77,99 @@ class TestPointParser:
 
 
 # ═══════════════════════════════════════════════════════════════
+# 维度过滤
+# ═══════════════════════════════════════════════════════════════
+
+# 维度关键词映射（英文 -> 中文）
+DIMENSION_ALIASES = {
+    "positive": ["正向"],
+    "negative": ["负向"],
+    "boundary": ["边界"],
+    "exception": ["异常"],
+    "performance": ["性能"],
+    "security": ["安全"],
+    "basic": ["正向", "负向", "边界", "异常"],
+}
+
+
+def filter_by_dimensions(test_points: list, dimensions: str) -> list:
+    """按测试维度过滤（与 generate_excel.py 的 filter_by_dimensions 逻辑一致）"""
+    if dimensions == "all":
+        return test_points
+
+    keywords = []
+    for part in dimensions.split(","):
+        part = part.strip()
+        if part in DIMENSION_ALIASES:
+            keywords.extend(DIMENSION_ALIASES[part])
+        else:
+            keywords.append(part)
+
+    return [tp for tp in test_points
+            if any(k in tp["dimension"] for k in keywords)]
+
+
+# ═══════════════════════════════════════════════════════════════
 # 优先级分配
 # ═══════════════════════════════════════════════════════════════
 
 def assign_priority(tp: dict) -> str:
     title = tp["title"]
     dimension = tp["dimension"]
+    module = tp.get("module", "")
+    feature = tp.get("feature", "")
+
+    # 与 generate_excel.py 的 __assign_priority 保持一致的核心模块/功能点定义
+    CORE_MODULES = {
+        "用户管理", "用户注册", "用户登录", "密码找回",
+        "认证", "权限", "订单", "支付", "交易",
+    }
+    CORE_FEATURES = {
+        "注册", "登录", "认证", "授权", "权限",
+        "创建", "新建", "提交", "下单", "支付",
+        "核心流程", "主流程", "全流程",
+    }
+    CORE_ACTION_KW = [
+        "登录", "注册", "创建", "新增", "提交", "支付", "下单",
+        "核心", "主流程", "关键", "基础", "全流程",
+    ]
+
+    is_core = any(k in module for k in CORE_MODULES) or any(k in feature for k in CORE_FEATURES)
 
     if "正向" in dimension:
-        if any(k in title for k in ["登录", "注册", "创建", "新增", "提交", "支付",
-                                     "核心", "主流程", "关键", "基础", "校验", "验证"]):
+        if any(k in title for k in CORE_ACTION_KW):
+            return "P0"
+        if any(k in title for k in ["校验", "验证", "完整性"]):
+            return "P0"
+        if any(k in title for k in ["集成", "串联", "全流程", "恢复", "续跑"]):
+            return "P0"
+        if is_core:
             return "P0"
         return "P1"
     if "安全" in dimension:
-        if any(k in title for k in ["越权", "篡改", "注入", "泄露", "认证", "敏感"]):
+        high_risk = ["越权", "篡改", "注入", "泄露", "认证", "敏感", "暴力", "破解"]
+        if any(k in title for k in high_risk):
             return "P0"
         return "P1"
     if "异常" in dimension:
-        if any(k in title for k in ["并发", "核心", "关键"]):
+        critical = ["并发", "支付", "核心", "关键", "数据丢失", "中断", "失败"]
+        if any(k in title for k in critical):
+            return "P0"
+        if is_core:
             return "P0"
         return "P1"
     if "负向" in dimension:
-        if any(k in title for k in ["越权", "未授权", "未登录", "注入"]):
+        if any(k in title for k in ["越权", "未授权", "未登录", "注入", "锁定", "限制", "封禁"]):
+            return "P0"
+        if is_core and any(k in title for k in ["错误", "失败", "无效", "重复", "空"]):
+            return "P0"
+        return "P1"
+    if "边界" in dimension:
+        if is_core and any(k in title for k in ["密码", "Token", "有效期", "锁定", "次数", "频率"]):
             return "P0"
         return "P1"
     if "性能" in dimension:
-        if any(k in title for k in ["核心", "主流程", "并发", "高并发"]):
+        if is_core or any(k in title for k in ["核心", "主流程", "并发", "高并发"]):
             return "P1"
         return "P2"
     return "P1"
@@ -211,6 +278,10 @@ def main():
     parser.add_argument("input", help="测试点 Markdown 文件路径")
     parser.add_argument("-o", "--output", default="testcases.xmind", help="输出文件路径")
     parser.add_argument("--project", default="", help="项目名称（可选）")
+    parser.add_argument(
+        "-d", "--dimensions", default="all",
+        help="测试维度过滤: all|basic|positive,negative,boundary,exception,performance,security"
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -227,6 +298,15 @@ def main():
         return 1
 
     print(f"✅ 解析到 {len(test_points)} 个测试点")
+
+    # 维度过滤
+    if args.dimensions != "all":
+        test_points = filter_by_dimensions(test_points, args.dimensions)
+        print(f"🔍 过滤后剩余 {len(test_points)} 个测试点")
+
+    # 如果输出文件已存在，先删除，避免 xmind 追加旧 sheet
+    if Path(args.output).exists():
+        Path(args.output).unlink()
 
     print("🔨 生成 XMind 脑图文件...")
     generator = XMindGenerator()

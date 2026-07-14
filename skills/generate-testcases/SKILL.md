@@ -1,7 +1,7 @@
 ---
 name: generate-testcases
 description: 根据测试点清单生成测试用例，支持 Excel 和 XMind 两种格式，可按测试维度过滤
-version: 1.2.0
+version: 1.3.0
 tags: [testing, testcases, generation, excel, xmind]
 author: AI Assistant
 created_by: agent
@@ -335,6 +335,11 @@ Excel 脚本支持 `-d positive,negative,basic,all` 维度过滤，但 XMind 脚
 6. 测试数据为示例数据，实际执行时需要根据环境调整
 
 ## 更新日志
+
+### v1.3.0 (2026-07-15)
+- ✅ **XMind 生成器支持 -d 维度过滤参数**（与 Excel 脚本参数对齐）
+- ✅ **XMind 生成器优先级逻辑与 Excel 统一**（新增 CORE_MODULES/CORE_FEATURES 多级决策）
+- ✅ 输出文件已存在时先删除，避免 xmind 库追加旧 sheet
 
 ### v1.2.0 (2026-07-14)
 - 🔧 **P0修复：步骤模板优化** — `__generate_steps()` 改用 `ACTION_TEMPLATES` 动作映射表（16类操作模板），通用模板回退率 19%→1%

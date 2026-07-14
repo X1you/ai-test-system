@@ -40,8 +40,9 @@ SKILLS_DIR = Path.home() / ".hermes" / "skills"
 # 脚本路径
 SCRIPT_GEN_EXCEL = SKILLS_DIR / "generate-testcases" / "scripts" / "generate_excel.py"
 SCRIPT_GEN_XMIND = SKILLS_DIR / "generate-testcases" / "scripts" / "generate_xmind.py"
-SCRIPT_GEN_REPORT = SKILLS_DIR / "testing" / "generate-report" / "scripts" / "generate_report.py"
-SCRIPT_KB = SKILLS_DIR / "testing" / "knowledge-base" / "scripts" / "kb_manager.py"
+SCRIPT_GEN_REPORT = SKILLS_DIR / "generate-report" / "scripts" / "generate_report.py"
+SCRIPT_KB_MCP = SKILLS_DIR / "knowledge-base" / "scripts" / "kb_manager_mcp.py"
+SCRIPT_KB_LOCAL = SKILLS_DIR / "knowledge-base" / "scripts" / "kb_manager.py"
 
 PROJECT_DIR = Path.home() / "Documents" / "ai-test-system"
 DEFAULT_KB_DIR = PROJECT_DIR / "knowledge-base"
@@ -311,20 +312,20 @@ class Pipeline:
     def step2_kb_search(self, keywords: str) -> dict:
         log("Step 2/7: 知识库检索 (RAG)", "STEP")
 
-        if not self.kb_available:
-            log("知识库未初始化，跳过 RAG 检索", "WARN")
-            return {"ok": True, "skipped": True, "hits": 0}
-
-        if not SCRIPT_KB.exists():
-            log("kb_manager.py 未找到，跳过", "WARN")
+        # 优先使用 MCP 层知识库（kb_manager_mcp.py），fallback 到本地知识库
+        kb_script = None
+        if SCRIPT_KB_MCP.exists():
+            kb_script = SCRIPT_KB_MCP
+        elif SCRIPT_KB_LOCAL.exists():
+            kb_script = SCRIPT_KB_LOCAL
+        else:
+            log("知识库脚本未找到，跳过 RAG 检索", "WARN")
             return {"ok": True, "skipped": True, "hits": 0}
 
         context_path = self._out("knowledge-context.md")
-        result = run_script(str(SCRIPT_KB), [
+        result = run_script(str(kb_script), [
             "export", keywords,
             "--output", context_path,
-            "--kb-dir", self.kb_dir,
-            "--limit", "15",
         ], timeout=60)
 
         if result["returncode"] == 0:
@@ -389,9 +390,10 @@ class Pipeline:
         # XMind
         if "xmind" in formats:
             xmind_path = self._out("testcases.xmind")
-            result = run_script(str(SCRIPT_GEN_XMIND), [
-                tp_path, "-o", xmind_path,
-            ], timeout=120)
+            xmind_args = [tp_path, "-o", xmind_path]
+            if dimensions != "all":
+                xmind_args.extend(["-d", dimensions])
+            result = run_script(str(SCRIPT_GEN_XMIND), xmind_args, timeout=120)
             if result["returncode"] == 0:
                 log(f"XMind 用例生成完成", "OK")
             else:
@@ -415,17 +417,24 @@ class Pipeline:
     # ─── Step 5+: 知识库回灌 ───
     def step5_kb_ingest(self) -> dict:
         log("知识库回灌：优质用例", "KB")
-        if not self.kb_available:
-            return {"ok": True, "skipped": True}
 
         xlsx_path = self._out("testcases.xlsx")
         if not Path(xlsx_path).exists():
             return {"ok": True, "skipped": True}
 
-        result = run_script(str(SCRIPT_KB), [
+        # 优先使用 MCP 层知识库
+        kb_script = None
+        if SCRIPT_KB_MCP.exists():
+            kb_script = SCRIPT_KB_MCP
+        elif SCRIPT_KB_LOCAL.exists():
+            kb_script = SCRIPT_KB_LOCAL
+        else:
+            log("知识库脚本未找到，跳过回灌", "WARN")
+            return {"ok": True, "skipped": True}
+
+        result = run_script(str(kb_script), [
             "ingest", xlsx_path,
             "--category", "historical-cases",
-            "--kb-dir", self.kb_dir,
         ], timeout=60)
 
         if result["returncode"] == 0:
@@ -477,17 +486,24 @@ class Pipeline:
     # ─── Step 7+: 知识库回灌坑点 ───
     def step7_kb_ingest(self) -> dict:
         log("知识库回灌：失败分析 + 坑点", "KB")
-        if not self.kb_available:
-            return {"ok": True, "skipped": True}
 
         report_path = self._out("test_report.md")
         if not Path(report_path).exists():
             return {"ok": True, "skipped": True}
 
-        result = run_script(str(SCRIPT_KB), [
+        # 优先使用 MCP 层知识库
+        kb_script = None
+        if SCRIPT_KB_MCP.exists():
+            kb_script = SCRIPT_KB_MCP
+        elif SCRIPT_KB_LOCAL.exists():
+            kb_script = SCRIPT_KB_LOCAL
+        else:
+            log("知识库脚本未找到，跳过回灌", "WARN")
+            return {"ok": True, "skipped": True}
+
+        result = run_script(str(kb_script), [
             "ingest", report_path,
             "--category", "pitfalls",
-            "--kb-dir", self.kb_dir,
         ], timeout=60)
 
         if result["returncode"] == 0:

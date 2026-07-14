@@ -1,7 +1,7 @@
 ---
 name: pipeline
 description: 测试用例生成全流程自动串联 — 从需求文档一键跑到测试报告，知识库 RAG 全程增强，含人工检查点
-version: 1.0.0
+version: 1.1.0
 tags: [testing, pipeline, automation]
 author: AI Assistant
 created_by: agent
@@ -252,6 +252,12 @@ AI：
 6. 断点续跑时，已完成的步骤会自动跳过（检查输出文件是否存在）
 
 ## 更新日志
+
+### v1.1.0 (2026-07-15)
+- 🐛 修复脚本路径错误（generate-report 和 knowledge-base 不应在 testing/ 子目录下）
+- 🐛 修复知识库脚本调用：优先使用 MCP 层 kb_manager_mcp.py，fallback 到本地 kb_manager.py
+- ✅ pipeline Step 4 XMind 生成支持维度过滤参数传递
+- ✅ 知识库检索/回灌不再依赖 kb_available（改为检查脚本文件是否存在）
 
 ### v1.0.0 (2026-07-14)
 - ✅ 初始版本

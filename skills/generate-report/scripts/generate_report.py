@@ -260,16 +260,50 @@ class ReportAnalyzer:
         return "较差 ❌", "质量不达标"
 
     def infer_failure_cause(self, case: dict) -> str:
-        """推断失败原因"""
+        """推断失败原因（增强版：综合标题、维度、优先级、备注多维信息）"""
         title = case.get("title", "")
         remark = case.get("remark", "")
-        combined = f"{title} {remark}"
+        dimension = case.get("dimension", "")
+        priority = case.get("priority", "")
+        steps = case.get("steps", "")
+        expected = case.get("expected", "")
+
+        combined = f"{title} {remark} {dimension} {steps} {expected}"
+
+        # 扩展后的失败原因关键词映射（权重递减排列）
+        FAILURE_CAUSE_KEYWORDS_ENHANCED = {
+            "接口/服务异常": ["超时", "timeout", "502", "503", "500", "服务不可用", "连接",
+                          "网络", "接口", "网关", "响应", "空指针", "null", "undefined"],
+            "权限/认证问题": ["权限", "越权", "认证", "鉴权", "token", "未授权", "无权",
+                           "登录", "会话", "过期", "身份", "401", "403"],
+            "数据校验失败": ["校验", "验证", "唯一性", "重复", "冲突", "为空", "格式",
+                          "长度", "范围", "枚举", "必填", "非法", "无效"],
+            "状态流转错误": ["状态", "流转", "流程", "跳转", "返回", "回调", "待支付",
+                          "已完成", "已取消", "已关闭"],
+            "并发/竞态": ["并发", "同时", "竞态", "锁", "死锁", "超卖", "重复扣减"],
+            "边界值问题": ["最小", "最大", "边界", "临界", "上限", "下限", "溢出",
+                         "零", "0", "负数", "空"],
+            "兼容性": ["兼容", "编码", "GBK", "UTF", "乱码", "版本", "浏览器"],
+            "环境配置": ["环境", "配置", "部署", "Docker", "端口", "SSL", "证书"],
+            "功能缺陷": ["金额", "计算", "显示", "保存", "提交", "跳转", "排序",
+                        "筛选", "查询", "按钮", "页面", "渲染"],
+            "数据问题": ["数据", "库存", "不存在", "脏数据", "同步", "一致性"],
+            "用例缺陷": ["预期", "步骤", "用例", "描述"],
+        }
 
         scores = {}
-        for cause, keywords in FAILURE_CAUSE_KEYWORDS.items():
-            scores[cause] = sum(1 for kw in keywords if kw in combined)
+        for cause, keywords in FAILURE_CAUSE_KEYWORDS_ENHANCED.items():
+            score = sum(1 for kw in keywords if kw in combined)
+            # 维度加权：异常测试更可能是接口/环境问题
+            if "异常" in dimension and cause in ("接口/服务异常", "环境配置"):
+                score += 1
+            # 安全测试更可能是权限问题
+            if "安全" in dimension and cause == "权限/认证问题":
+                score += 1
+            if score > 0:
+                scores[cause] = score
 
-        if max(scores.values(), default=0) > 0:
+        if scores:
             return max(scores, key=scores.get)
         return "待确认"
 
@@ -583,6 +617,14 @@ def _get_fix_suggestion(cause: str, case: dict) -> str:
         "环境问题": "检查测试环境配置和网络连接，确认服务状态正常后重试。",
         "数据问题": "检查测试数据准备是否充分，清理脏数据后重新执行。",
         "用例缺陷": "核对预期结果是否正确，必要时更新用例描述和步骤。",
+        "接口/服务异常": "检查后端接口返回状态码和响应体，确认服务可用性和超时配置。",
+        "权限/认证问题": "检查用户权限配置和 Token/Session 有效性，确认鉴权中间件正确拦截。",
+        "数据校验失败": "检查前后端校验规则是否一致，确认必填项、格式、范围限制实现完整。",
+        "状态流转错误": "检查状态机配置和流程引擎，确认状态转移条件与需求一致。",
+        "并发/竞态": "检查锁机制和事务隔离级别，确认并发控制（乐观锁/悲观锁）正确实现。",
+        "边界值问题": "检查边界条件的代码处理，确认 off-by-one 和边界判断逻辑。",
+        "兼容性": "检查不同编码/浏览器/版本下的兼容处理，确认字符集和 API 版本兼容。",
+        "环境配置": "检查环境变量、端口、SSL 证书等配置项，确认与生产环境一致。",
         "待确认": "需要开发人员排查具体原因后确定修复方案。",
     }
     return suggestions.get(cause, suggestions["待确认"])
