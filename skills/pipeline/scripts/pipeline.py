@@ -117,12 +117,13 @@ def count_cases(xlsx_path: str) -> int:
         pass
     try:
         result = run_script(str(HERMES_VENV), ["-c", (
+            "import sys\n"
             "from openpyxl import load_workbook\n"
-            f"wb = load_workbook('{xlsx_path}', data_only=True)\n"
+            "wb = load_workbook(sys.argv[1], data_only=True)\n"
             "ws = wb.active\n"
             "print(ws.max_row - 1)\n"
             "wb.close()\n"
-        )], timeout=30)
+        ), xlsx_path], timeout=30)
         if result["returncode"] == 0:
             return int(result["stdout"].strip())
     except Exception:
@@ -163,10 +164,11 @@ def check_has_results(xlsx_path: str) -> bool:
         except ImportError:
             pass
 
-        # 回退：用 subprocess，但通过环境变量避免编码问题
+        # 回退：用 subprocess 通过 sys.argv 安全传参（避免 f-string 路径注入）
         result = run_script(str(HERMES_VENV), ["-c", (
+            "import sys\n"
             "from openpyxl import load_workbook\n"
-            f"wb = load_workbook('{xlsx_path}', data_only=True)\n"
+            "wb = load_workbook(sys.argv[1], data_only=True)\n"
             "ws = wb.active\n"
             "result_col = None\n"
             "for col in range(1, ws.max_column + 1):\n"
@@ -190,7 +192,7 @@ def check_has_results(xlsx_path: str) -> bool:
             "            filled += 1\n"
             "    print(filled)\n"
             "wb.close()\n"
-        )], timeout=30)
+        ), xlsx_path], timeout=30)
         if result["returncode"] != 0:
             return False
         val = result["stdout"].strip()

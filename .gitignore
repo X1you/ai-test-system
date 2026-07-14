@@ -20,3 +20,7 @@ _meta.json
 
 # Temporary output (use sample-output/ for committed examples)
 output/
+test-run/
+
+# Large reference HTML (keep .md references, ignore raw HTML)
+reference/*.html

@@ -102,13 +102,13 @@ class MCPClient:
             if cat_path:
                 cat_dir = self.vault_path / cat_path
                 if cat_dir.exists():
-                    files = [str(f.relative_to(self.vault_path)) for f in cat_dir.glob("*.md")]
+                    files = [str(f.relative_to(self.vault_path)) for f in cat_dir.rglob("*.md")]
         else:
-            # 列出所有分类下的文件
+            # 列出所有分类下的文件（含子目录，如历史用例的 项目名/批次/ 分层）
             for cat, cat_path in CATEGORY_PATHS.items():
                 cat_dir = self.vault_path / cat_path
                 if cat_dir.exists():
-                    files.extend([str(f.relative_to(self.vault_path)) for f in cat_dir.glob("*.md")])
+                    files.extend([str(f.relative_to(self.vault_path)) for f in cat_dir.rglob("*.md")])
 
         return files
 
