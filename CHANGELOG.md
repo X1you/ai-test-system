@@ -14,6 +14,7 @@
   - 改为 `rglob("*.md")`，51 条历史用例从「不可见」恢复为可检索
 - **P1.5**: 抽取 `generate_excel.py` 和 `generate_xmind.py` 的重复代码为 `common.py` 共享模块
   - `TestPointParser`、`assign_priority`、`filter_by_dimensions`、`CORE_*` 常量统一维护
+  - 删减 140 行重复代码，三份独立实现合并为一份
 - **P1.7**: 新增 `requirements.txt` 依赖声明文件
 - **P1.9**: 修复 `pipeline.py` subprocess `-c` 的 f-string 路径注入风险
   - `load_workbook('{xlsx_path}')` → `load_workbook(sys.argv[1])` 安全传参
