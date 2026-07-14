@@ -29,9 +29,9 @@ except ImportError:
 # 配置
 # ============================================================================
 
-OBSIDIAN_API_BASE = "https://localhost:27124"
-OBSIDIAN_API_KEY = "0cf2c62343bb2f9fed9e8e40ac5be1c2a124380969a1802100b4c6216b96ef2f"
-OBSIDIAN_VAULT = "/Users/x1you/Documents/test-interview-kb"
+OBSIDIAN_API_BASE = os.environ.get("OBSIDIAN_API_BASE", "https://localhost:27124")
+OBSIDIAN_API_KEY = os.environ.get("OBSIDIAN_API_KEY", "")
+OBSIDIAN_VAULT = os.environ.get("OBSIDIAN_VAULT", str(Path.home() / "Documents" / "test-interview-kb"))
 OBSIDIAN_SSL_VERIFY = False  # 本地测试，忽略证书验证
 
 LOCAL_KB_DIR = os.path.expanduser("~/Documents/ai-test-system/knowledge-base")

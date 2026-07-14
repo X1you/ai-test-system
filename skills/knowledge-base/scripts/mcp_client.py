@@ -17,7 +17,7 @@ import re
 # 配置
 # ============================================================================
 
-OBSIDIAN_VAULT = Path("/Users/x1you/Documents/test-interview-kb")
+OBSIDIAN_VAULT = Path.home() / "Documents" / "test-interview-kb"
 
 # 分类目录映射
 CATEGORY_PATHS = {

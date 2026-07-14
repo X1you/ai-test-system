@@ -571,7 +571,7 @@ class TestCaseGenerator:
                 "precondition": self.__generate_precondition(tp),
                 "steps": self.__generate_steps(tp),
                 "test_data": tp["test_data"],
-                "预留": tp["expected"],
+                "expected": tp["expected"],
             })
         return test_cases
 
@@ -664,7 +664,7 @@ class ExcelWriter:
             row_data = [
                 tc["id"], tc["module"], tc["feature"], tc["dimension"],
                 tc["title"], tc["priority"], tc["precondition"],
-                tc["steps"], tc["test_data"], tc["预留"], "", ""
+                tc["steps"], tc["test_data"], tc["expected"], "", ""
             ]
             for col, value in enumerate(row_data, 1):
                 cell = ws.cell(row=row_idx, column=col, value=value)

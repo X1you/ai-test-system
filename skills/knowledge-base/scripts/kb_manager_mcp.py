@@ -22,8 +22,8 @@ from mcp_client import MCPClient, create_mcp_client, KnowledgeItem
 # 配置
 # ============================================================================
 
-HERMES_PYTHON = os.path.expanduser("$HOME/.hermes/hermes-agent/venv/bin/python")
-OBSIDIAN_VAULT = "/Users/x1you/Documents/test-interview-kb"
+HERMES_PYTHON = str(Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "python")
+OBSIDIAN_VAULT = str(Path.home() / "Documents" / "test-interview-kb")
 
 # ============================================================================
 # 知识库管理器 (MCP 层)

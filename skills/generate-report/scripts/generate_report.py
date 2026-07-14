@@ -435,11 +435,11 @@ class ReportGenerator:
         lines.append("| 指标 | 数值 | 说明 |")
         lines.append("|------|------|------|")
         lines.append(f"| 总用例数 | {stats['total']} 个 | — |")
-        lines.append(f"| ✅ 通过 | {stats['pass']} 个 | {_fmt_pct(stats['pass'], stats['total'])} |")
-        lines.append(f"| ❌ 失败 | {stats['fail']} 个 | {_fmt_pct(stats['fail'], stats['total'])} |")
-        lines.append(f"| ⛔ 阻塞 | {stats['block']} 个 | {_fmt_pct(stats['block'], stats['total'])} |")
-        lines.append(f"| ⏭️ 跳过 | {stats['skip']} 个 | {_fmt_pct(stats['skip'], stats['total'])} |")
-        lines.append(f"| ⏳ 未执行 | {stats['not_run']} 个 | {_fmt_pct(stats['not_run'], stats['total'])} |")
+        lines.append(f"| ✅ 通过 | {stats['pass']} 个 | {self._fmt_percent(stats['pass'] / stats['total']) if stats['total'] else '0%'} |")
+        lines.append(f"| ❌ 失败 | {stats['fail']} 个 | {self._fmt_percent(stats['fail'] / stats['total']) if stats['total'] else '0%'} |")
+        lines.append(f"| ⛔ 阻塞 | {stats['block']} 个 | {self._fmt_percent(stats['block'] / stats['total']) if stats['total'] else '0%'} |")
+        lines.append(f"| ⏭️ 跳过 | {stats['skip']} 个 | {self._fmt_percent(stats['skip'] / stats['total']) if stats['total'] else '0%'} |")
+        lines.append(f"| ⏳ 未执行 | {stats['not_run']} 个 | {self._fmt_percent(stats['not_run'] / stats['total']) if stats['total'] else '0%'} |")
         lines.append(f"| **通过率** | **{self._fmt_percent(stats['pass_rate'])}** | 通过/(通过+失败+阻塞+跳过) |")
         lines.append(f"| **执行率** | **{self._fmt_percent(stats['execution_rate'])}** | 已执行/总数 |")
         lines.append(f"| **质量评级** | **{grade}** | {grade_desc} |")
@@ -602,13 +602,6 @@ class ReportGenerator:
 # ═══════════════════════════════════════════════════════════════
 # 辅助函数
 # ═══════════════════════════════════════════════════════════════
-
-def _fmt_pct(part: int, total: int) -> str:
-    """计算占比"""
-    if total == 0:
-        return "0%"
-    return f"{part / total:.1%}"
-
 
 def _get_fix_suggestion(cause: str, case: dict) -> str:
     """根据失败原因生成修复建议"""
