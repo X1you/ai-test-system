@@ -259,6 +259,27 @@ class ReportAnalyzer:
                 return grade, desc
         return "较差 ❌", "质量不达标"
 
+    # 失败原因关键词映射（提升为类常量，避免每次调用重建字典）
+    FAILURE_CAUSE_MAP = {
+        "接口/服务异常": ["超时", "timeout", "502", "503", "500", "服务不可用", "连接",
+                      "网络", "接口", "网关", "响应", "空指针", "null", "undefined"],
+        "权限/认证问题": ["权限", "越权", "认证", "鉴权", "token", "未授权", "无权",
+                       "登录", "会话", "过期", "身份", "401", "403"],
+        "数据校验失败": ["校验", "验证", "唯一性", "重复", "冲突", "为空", "格式",
+                      "长度", "范围", "枚举", "必填", "非法", "无效"],
+        "状态流转错误": ["状态", "流转", "流程", "跳转", "返回", "回调", "待支付",
+                      "已完成", "已取消", "已关闭"],
+        "并发/竞态": ["并发", "同时", "竞态", "锁", "死锁", "超卖", "重复扣减"],
+        "边界值问题": ["最小", "最大", "边界", "临界", "上限", "下限", "溢出",
+                     "零", "0", "负数", "空"],
+        "兼容性": ["兼容", "编码", "GBK", "UTF", "乱码", "版本", "浏览器"],
+        "环境配置": ["环境", "配置", "部署", "Docker", "端口", "SSL", "证书"],
+        "功能缺陷": ["金额", "计算", "显示", "保存", "提交", "跳转", "排序",
+                    "筛选", "查询", "按钮", "页面", "渲染"],
+        "数据问题": ["数据", "库存", "不存在", "脏数据", "同步", "一致性"],
+        "用例缺陷": ["预期", "步骤", "用例", "描述"],
+    }
+
     def infer_failure_cause(self, case: dict) -> str:
         """推断失败原因（增强版：综合标题、维度、优先级、备注多维信息）"""
         title = case.get("title", "")
@@ -270,29 +291,8 @@ class ReportAnalyzer:
 
         combined = f"{title} {remark} {dimension} {steps} {expected}"
 
-        # 扩展后的失败原因关键词映射（权重递减排列）
-        FAILURE_CAUSE_KEYWORDS_ENHANCED = {
-            "接口/服务异常": ["超时", "timeout", "502", "503", "500", "服务不可用", "连接",
-                          "网络", "接口", "网关", "响应", "空指针", "null", "undefined"],
-            "权限/认证问题": ["权限", "越权", "认证", "鉴权", "token", "未授权", "无权",
-                           "登录", "会话", "过期", "身份", "401", "403"],
-            "数据校验失败": ["校验", "验证", "唯一性", "重复", "冲突", "为空", "格式",
-                          "长度", "范围", "枚举", "必填", "非法", "无效"],
-            "状态流转错误": ["状态", "流转", "流程", "跳转", "返回", "回调", "待支付",
-                          "已完成", "已取消", "已关闭"],
-            "并发/竞态": ["并发", "同时", "竞态", "锁", "死锁", "超卖", "重复扣减"],
-            "边界值问题": ["最小", "最大", "边界", "临界", "上限", "下限", "溢出",
-                         "零", "0", "负数", "空"],
-            "兼容性": ["兼容", "编码", "GBK", "UTF", "乱码", "版本", "浏览器"],
-            "环境配置": ["环境", "配置", "部署", "Docker", "端口", "SSL", "证书"],
-            "功能缺陷": ["金额", "计算", "显示", "保存", "提交", "跳转", "排序",
-                        "筛选", "查询", "按钮", "页面", "渲染"],
-            "数据问题": ["数据", "库存", "不存在", "脏数据", "同步", "一致性"],
-            "用例缺陷": ["预期", "步骤", "用例", "描述"],
-        }
-
         scores = {}
-        for cause, keywords in FAILURE_CAUSE_KEYWORDS_ENHANCED.items():
+        for cause, keywords in self.FAILURE_CAUSE_MAP.items():
             score = sum(1 for kw in keywords if kw in combined)
             # 维度加权：异常测试更可能是接口/环境问题
             if "异常" in dimension and cause in ("接口/服务异常", "环境配置"):
@@ -316,27 +316,20 @@ class ReportAnalyzer:
         if p0_fail > 0:
             risks["high"].append(f"P0 高优先级用例失败 {p0_fail} 个")
 
-        # 核心模块通过率 < 70%
+        # P1 用例失败 → 中风险
+        p1_fail = stats["by_priority"].get("P1", {}).get("fail", 0)
+        if p1_fail > 0:
+            risks["medium"].append(f"P1 用例失败 {p1_fail} 个")
+
+        # 模块通过率 — 单次遍历完成分级（避免重复遍历+字符串去重）
         for module, data in stats["by_module"].items():
             executed = data["pass"] + data["fail"] + data["block"] + data["skip"]
             if executed > 0:
                 rate = data["pass"] / executed
                 if rate < 0.70:
                     risks["high"].append(f"模块「{module}」通过率仅 {rate:.0%}")
-
-        # P1 用例失败 → 中风险
-        p1_fail = stats["by_priority"].get("P1", {}).get("fail", 0)
-        if p1_fail > 0:
-            risks["medium"].append(f"P1 用例失败 {p1_fail} 个")
-
-        # 模块通过率 70%-90%
-        for module, data in stats["by_module"].items():
-            executed = data["pass"] + data["fail"] + data["block"] + data["skip"]
-            if executed > 0:
-                rate = data["pass"] / executed
-                if 0.70 <= rate < 0.90:
-                    if f"模块「{module}」通过率仅 {rate:.0%}" not in str(risks["high"]):
-                        risks["medium"].append(f"模块「{module}」通过率 {rate:.0%}，需关注")
+                elif rate < 0.90:
+                    risks["medium"].append(f"模块「{module}」通过率 {rate:.0%}，需关注")
 
         # 阻塞用例
         if stats["block"] > 0:

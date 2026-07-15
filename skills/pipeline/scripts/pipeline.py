@@ -79,7 +79,7 @@ def extract_keywords_from_md(md_path: str, max_keywords: int = 5) -> str:
     content = Path(md_path).read_text(encoding="utf-8")
 
     # 提取模块名称
-    modules = re.findall(r"模块[一二三四五六七八九十]+[：:]\s*(.+)", content)
+    modules = re.findall(r"模块[一二三四五六七八九十百千]+[：:]\s*(.+)", content)
     # 提取功能点
     features = re.findall(r"功能点\s*[\d.]+[：:]\s*(.+)", content)
 
@@ -306,7 +306,7 @@ class Pipeline:
 
         if analysis_path.exists():
             # 统计模块和功能点
-            modules = len(re.findall(r"模块[一二三四五六七八九十]+[：:]", content))
+            modules = len(re.findall(r"模块[一二三四五六七八九十百千]+[：:]", content))
             features = len(re.findall(r"功能点\s*[\d.]+[：:]", content))
             log(f"需求分析完成 — {modules} 模块, {features} 功能点", "OK")
             return {"ok": True, "modules": modules, "features": features}

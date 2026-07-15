@@ -64,7 +64,7 @@ class TestPointParser:
             line = line.rstrip()
 
             # 模块
-            m = re.match(r"^##\s+模块[一二三四五六七八九十]+[：:]\s*(.+)", line)
+            m = re.match(r"^##\s+模块[一二三四五六七八九十百千]+[：:]\s*(.+)", line)
             if m:
                 current_module = m.group(1).strip()
                 continue

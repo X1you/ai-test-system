@@ -69,6 +69,20 @@ class MCPClient:
         """生成唯一ID"""
         return hashlib.md5(content.encode('utf-8')).hexdigest()[:12]
 
+    def _safe_path(self, filepath: str) -> Path:
+        """
+        安全路径校验 — 防止路径穿越攻击。
+        解析后确保路径在 vault_path 内，否则抛出 ValueError。
+        """
+        vault_resolved = self.vault_path.resolve()
+        full_path = (self.vault_path / filepath).resolve()
+        # 确保解析后的路径在 vault 目录内
+        try:
+            full_path.relative_to(vault_resolved)
+        except ValueError:
+            raise ValueError(f"非法路径访问被拒绝: {filepath}")
+        return full_path
+
     def _parse_yaml_frontmatter(self, content: str) -> Dict:
         """解析 YAML frontmatter"""
         frontmatter = {}
@@ -84,6 +98,9 @@ class MCPClient:
                         if ':' in line:
                             key, value = line.split(':', 1)
                             frontmatter[key.strip()] = value.strip()
+                except Exception:
+                    # yaml.YAMLError 等格式损坏的 frontmatter → 安全降级为空 dict
+                    frontmatter = {}
         return frontmatter
 
     # -------------------------------------------------------------------------
@@ -117,12 +134,18 @@ class MCPClient:
         MCP: read_file
         读取文件内容
         """
-        full_path = self.vault_path / filepath
+        try:
+            full_path = self._safe_path(filepath)
+        except ValueError:
+            return None
         if not full_path.exists():
             return None
 
-        with open(full_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        try:
+            with open(full_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except OSError:
+            return None
 
         return {
             'content': content,
@@ -172,10 +195,10 @@ class MCPClient:
             if 'title' in frontmatter:
                 title = frontmatter['title']
 
-            # 确定分类
+            # 确定分类（路径前缀匹配，避免子串误匹配）
             cat_match = None
             for cat, cat_path in CATEGORY_PATHS.items():
-                if cat_path in filepath:
+                if filepath.startswith(cat_path + '/') or filepath == cat_path:
                     cat_match = cat
                     break
 
@@ -221,7 +244,6 @@ class MCPClient:
             actual_module = parts[2] if len(parts) > 2 else ''
             # 目录: 🏆 历史用例/项目名/批次/
             category_display = CATEGORY_PATHS.get(item.category, item.category)
-            date_prefix = datetime.now().strftime("%Y-%m-%d")
             filename = f"{safe_title}.md"
             filepath = f"{category_display}/{project}/{batch}/{filename}"
             # YAML frontmatter 中保存真实模块名
@@ -239,11 +261,17 @@ class MCPClient:
         content = self._format_obsidian_note(item)
 
         # 写入文件
-        full_path = self.vault_path / filepath
+        try:
+            full_path = self._safe_path(filepath)
+        except ValueError:
+            return False
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(full_path, 'w', encoding='utf-8') as f:
-            f.write(content)
+        try:
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except OSError:
+            return False
 
         item.filepath = filepath
         return True
@@ -253,12 +281,18 @@ class MCPClient:
         MCP: update_file
         更新文件内容
         """
-        full_path = self.vault_path / filepath
+        try:
+            full_path = self._safe_path(filepath)
+        except ValueError:
+            return False
         if not full_path.exists():
             return False
 
-        with open(full_path, 'w', encoding='utf-8') as f:
-            f.write(content)
+        try:
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except OSError:
+            return False
 
         return True
 
@@ -267,7 +301,10 @@ class MCPClient:
         MCP: delete_file
         删除文件
         """
-        full_path = self.vault_path / filepath
+        try:
+            full_path = self._safe_path(filepath)
+        except ValueError:
+            return False
         if not full_path.exists():
             return False
 
@@ -276,8 +313,7 @@ class MCPClient:
 
     def _format_obsidian_note(self, item: KnowledgeItem) -> str:
         """格式化为 Obsidian Note (YAML frontmatter + wikilinks)"""
-        now = datetime.now().isoformat()
-
+        # 直接使用已设置的 updated_at，避免重复调用 datetime.now() 造成不一致
         # YAML frontmatter
         frontmatter = {
             'id': item.id,
@@ -285,18 +321,26 @@ class MCPClient:
             'module': item.module,
             'tags': item.tags,
             'created_at': item.created_at,
-            'updated_at': now,
+            'updated_at': item.updated_at,
         }
 
         if item.severity:
             frontmatter['severity'] = item.severity
 
+        # 安全序列化 YAML frontmatter — 使用 yaml.safe_dump 转义特殊字符
         fm_lines = ['---']
-        for k, v in frontmatter.items():
-            if isinstance(v, list):
-                fm_lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
-            else:
-                fm_lines.append(f"{k}: {v}")
+        try:
+            import yaml
+            for k, v in frontmatter.items():
+                fm_lines.append(f"{yaml.safe_dump({k: v}, allow_unicode=True, default_flow_style=True).strip()}")
+        except ImportError:
+            # fallback: 手动序列化（列表用 json，字符串用 json 确保转义）
+            import json
+            for k, v in frontmatter.items():
+                if isinstance(v, list):
+                    fm_lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+                else:
+                    fm_lines.append(f"{k}: {json.dumps(str(v), ensure_ascii=False)}")
         fm_lines.append('---')
 
         # 内容

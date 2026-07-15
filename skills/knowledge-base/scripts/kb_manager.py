@@ -304,6 +304,9 @@ class KnowledgeBaseManager:
                         if ':' in line:
                             key, value = line.split(':', 1)
                             frontmatter[key.strip()] = value.strip()
+                except Exception:
+                    # yaml.YAMLError 等格式损坏的 frontmatter → 安全降级为空 dict
+                    frontmatter = {}
         return frontmatter
 
     def _format_obsidian_note(self, item: KnowledgeItem) -> str:
@@ -322,13 +325,13 @@ class KnowledgeBaseManager:
         if item.severity:
             frontmatter['severity'] = item.severity
 
-        # YAML frontmatter
+        # YAML frontmatter（安全序列化，使用 json 转义特殊字符）
         fm_lines = ['---']
         for k, v in frontmatter.items():
             if isinstance(v, list):
                 fm_lines.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
             else:
-                fm_lines.append(f"{k}: {v}")
+                fm_lines.append(f"{k}: {json.dumps(str(v), ensure_ascii=False)}")
         fm_lines.append('---')
 
         # 内容 (支持 wikilinks)
@@ -522,7 +525,7 @@ class KnowledgeBaseManager:
                     tags=[category, module]
                 )
                 if self.add(item):
-                    count = 1
+                    count += 1
 
         else:
             print(f"❌ 不支持的文件格式: {source_file}")
@@ -597,12 +600,14 @@ class KnowledgeBaseManager:
             try:
                 files = self.obsidian.list_files()
                 for filepath in files:
-                    if isinstance(filepath, str) and not filepath.endswith('.md'):
+                    # filepath 可能是 str 或 dict（API 返回），统一处理
+                    fp_str = filepath if isinstance(filepath, str) else filepath.get('path', '') if isinstance(filepath, dict) else ''
+                    if not fp_str or not fp_str.endswith('.md'):
                         continue
 
                     category = 'unknown'
                     for cat, cat_path in self.category_paths.items():
-                        if cat_path in filepath:
+                        if fp_str.startswith(cat_path + '/') or fp_str == cat_path:
                             category = cat
                             break
 

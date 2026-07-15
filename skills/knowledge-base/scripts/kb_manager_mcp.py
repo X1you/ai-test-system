@@ -88,14 +88,14 @@ class KnowledgeBaseManager:
                         tc_id = str(row[0] or '')
                         tc_module = str(row[1] or '')
                         tc_feature = str(row[2] or '')
-                        tc_dimension = str(row[3] or '')
-                        tc_title = str(row[4] or '')
-                        tc_priority = str(row[5] or '')
-                        tc_precondition = str(row[6] or '')
-                        tc_steps = str(row[7] or '')
-                        tc_test_data = str(row[8] or '')
-                        tc_expected = str(row[9] or '')
-                        tc_result = str(row[11] or '')
+                        tc_dimension = str(row[3] or '') if len(row) > 3 else ''
+                        tc_title = str(row[4] or '') if len(row) > 4 else ''
+                        tc_priority = str(row[5] or '') if len(row) > 5 else ''
+                        tc_precondition = str(row[6] or '') if len(row) > 6 else ''
+                        tc_steps = str(row[7] or '') if len(row) > 7 else ''
+                        tc_test_data = str(row[8] or '') if len(row) > 8 else ''
+                        tc_expected = str(row[9] or '') if len(row) > 9 else ''
+                        tc_result = str(row[11] or '') if len(row) > 11 else ''
 
                         if not tc_title:
                             continue
@@ -152,6 +152,8 @@ class KnowledgeBaseManager:
             except ImportError:
                 print("❌ openpyxl 未安装，无法处理 Excel 文件")
                 print("   安装: pip install openpyxl")
+            except Exception as e:
+                print(f"❌ Excel 文件读取失败（可能已损坏）: {e}")
 
         elif source_file.endswith('.md'):
             # Markdown 回灌

@@ -66,7 +66,7 @@ class XMindGenerator:
                     dim_topic.setTitle(f"[{dim_name}] ({len(tps)} 条)")
 
                     for tp in tps:
-                        priority = assign_priority(tp)
+                        priority = tp.get("_priority") or assign_priority(tp)
                         tc_title = f"[{priority}] {tp['title']}"
 
                         tc_topic = dim_topic.addSubTopic()
@@ -90,9 +90,11 @@ class XMindGenerator:
     def _add_stats(self, root, test_points: list):
         """添加统计信息节点"""
         total = len(test_points)
-        p0 = sum(1 for tp in test_points if assign_priority(tp) == "P0")
-        p1 = sum(1 for tp in test_points if assign_priority(tp) == "P1")
-        p2 = sum(1 for tp in test_points if assign_priority(tp) == "P2")
+        # 预计算优先级（避免重复调用 assign_priority）
+        priorities = [tp.get("_priority") or assign_priority(tp) for tp in test_points]
+        p0 = sum(1 for p in priorities if p == "P0")
+        p1 = sum(1 for p in priorities if p == "P1")
+        p2 = sum(1 for p in priorities if p == "P2")
 
         dims = {}
         mods = set()
@@ -161,9 +163,11 @@ def main():
     generator = XMindGenerator()
     generator.generate(test_points, args.output, args.project)
 
-    p0 = sum(1 for tp in test_points if assign_priority(tp) == "P0")
-    p1 = sum(1 for tp in test_points if assign_priority(tp) == "P1")
-    p2 = sum(1 for tp in test_points if assign_priority(tp) == "P2")
+    # 预计算优先级（复用缓存，避免重复遍历）
+    priorities = [tp.get("_priority") or assign_priority(tp) for tp in test_points]
+    p0 = sum(1 for p in priorities if p == "P0")
+    p1 = sum(1 for p in priorities if p == "P1")
+    p2 = sum(1 for p in priorities if p == "P2")
 
     print(f"\n✅ 测试用例生成完成！")
     print(f"📊 统计信息：")
