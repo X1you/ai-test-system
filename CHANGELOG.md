@@ -9,18 +9,33 @@
 ## [1.3.0] — 2026-07-15
 
 ### 🔧 优化
-- **P0.3**: 修复 `mcp_client.py` 的 `list_files` 使用 `glob` 只扫顶层目录的 Bug
+|- **P0.1**: 修复 `generate_report.py` 的 `_fmt_pct` 方法调用错误
+  - 统一使用 `self._fmt_percent()` 并添加除零保护
+|- **P0.3**: 修复 `mcp_client.py` 的 `list_files` 使用 `glob` 只扫顶层目录的 Bug
   - 历史用例按 `🏆 历史用例/项目名/批次/` 三层存储，`glob("*.md")` 无法发现
   - 改为 `rglob("*.md")`，51 条历史用例从「不可见」恢复为可检索
-- **P1.5**: 抽取 `generate_excel.py` 和 `generate_xmind.py` 的重复代码为 `common.py` 共享模块
+|- **P0.4**: 修复 `generate_excel.py` 字段名语义错误
+  - 字段名 `"预留"` 修正为 `"expected"`
+|- **P1.4**: 新增单元测试框架
+  - 添加 `pytest` 和 `pytest-cov` 依赖
+  - 完成核心模块 `TestPointParser`、`assign_priority`、`filter_by_dimensions` 的测试覆盖（15个测试用例）
+|- **P1.5**: 抽取 `generate_excel.py` 和 `generate_xmind.py` 的重复代码为 `common.py` 共享模块
   - `TestPointParser`、`assign_priority`、`filter_by_dimensions`、`CORE_*` 常量统一维护
   - 删减 140 行重复代码，三份独立实现合并为一份
-- **P1.7**: 新增 `requirements.txt` 依赖声明文件
-- **P1.9**: 修复 `pipeline.py` subprocess `-c` 的 f-string 路径注入风险
+|- **P1.7**: 新增 `requirements.txt` 依赖声明文件
+|- **P1.9**: 修复 `pipeline.py` subprocess `-c` 的 f-string 路径注入风险
   - `load_workbook('{xlsx_path}')` → `load_workbook(sys.argv[1])` 安全传参
-- **P2.10**: `.gitignore` 新增 `test-run/` 和 `reference/*.html` 规则
-- **P2.13**: 新增 `LICENSE`（MIT）
-- **P2.14**: 新增本 `CHANGELOG.md`
+|- **P2.3**: 移除版本控制中的大 HTML 文件
+  - 从 git 中移除 `reference/*.html` (4.3MB)
+  - 完善 `.gitignore` 规则
+|- **P2.6**: 统一 README 版本号与 CHANGELOG 一致
+  - Pipeline: v1.1.0 → v1.3.0
+  - Knowledge-base: v2.0.1 → v2.1.0
+  - 新增 OPTIMIZATION_STATUS.md 优化完成状态报告
+|- **P2.10**: `.gitignore` 新增 `test-run/` 和 `reference/*.html` 规则
+|- **P2.11**: 删除 `.DS_Store`
+|- **P2.13**: 新增 `LICENSE`（MIT）
+|- **P2.14**: 新增本 `CHANGELOG.md`
 
 ## [1.2.0] — 2026-07-14
 

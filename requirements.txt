@@ -9,3 +9,7 @@ XMind>=1.2.0
 
 # YAML frontmatter 解析（可选，缺失时自动降级为简单解析）
 PyYAML>=6.0
+
+# 单元测试
+pytest>=7.0.0
+pytest-cov>=4.0.0

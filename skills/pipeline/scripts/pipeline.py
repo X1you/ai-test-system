@@ -240,11 +240,18 @@ def load_state(output_dir: str) -> dict:
 
 
 def save_state(output_dir: str, state: dict):
-    """保存 pipeline 状态"""
+    """保存 pipeline 状态（带并发保护）"""
+    from file_lock import file_lock
+    
     state["updated"] = datetime.now().isoformat()
     state_path = Path(output_dir) / STATE_FILE
+    lock_path = state_path.parent / f"{STATE_FILE}.lock"
+    
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+    # 使用文件锁保护写入
+    with file_lock(str(lock_path), timeout=10):
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def mark_step_done(output_dir: str, state: dict, step_id: int, result_info: dict = None):

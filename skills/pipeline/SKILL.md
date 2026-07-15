@@ -1,13 +1,15 @@
 ---
 name: pipeline
 description: 测试用例生成全流程自动串联 — 从需求文档一键跑到测试报告，知识库 RAG 全程增强，含人工检查点
-version: 1.1.0
+version: 1.3.0
 tags: [testing, pipeline, automation]
 author: AI Assistant
 created_by: agent
 ---
 
 # 全流程自动串联 Skill
+
+> **重要说明：** Pipeline 是「编排引导」层，而非完全自动化的 CLI 工具。Step 1/3/5 为 AI 实时处理步骤，需要 Hermes Agent 连续调用配合，不能独立脚本运行。
 
 将 6 个环节的 Skill 串联为一键 pipeline：需求文档 → 需求分析 → 知识库检索 → 测试点梳理 → 生成用例 → 用例评审 → 测试报告。全自动执行，在关键节点保留人工确认选项。
 
