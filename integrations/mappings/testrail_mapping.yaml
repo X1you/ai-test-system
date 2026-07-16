@@ -1,0 +1,51 @@
+# TestRail 字段映射配置
+platform: testrail
+
+field_mapping:
+  title: title
+  module:
+    field: section_id
+    transform: section_name_to_id
+  priority:
+    field: priority_id
+    transform: priority_map
+  precondition:
+    field: custom_preconds
+  steps:
+    field: custom_steps
+    transform: steps_to_text
+  expected_result:
+    field: custom_expected
+  test_data:
+    field: custom_testdata
+  dimension:
+    field: custom_dimension
+  status:
+    field: status_id
+    transform: status_map
+
+custom_fields:
+  precondition: custom_preconds
+  test_data: custom_testdata
+  dimension: custom_dimension
+
+transforms:
+  priority_map:
+    P0: 1
+    P1: 2
+    P2: 3
+    P3: 4
+    default: 2
+  status_map:
+    passed: 1
+    failed: 5
+    blocked: 2
+    skipped: 3
+    retest: 4
+    default: 3
+  steps_to_text:
+    type: join
+    separator: "\n"
+  section_name_to_id:
+    type: lookup
+    cache: true

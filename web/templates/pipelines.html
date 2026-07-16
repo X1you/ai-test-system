@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block nav_pipelines_active %}class="active"{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h2>Pipeline 任务</h2>
+    <div class="flex items-center gap-md">
+        <span class="text-sm text-muted" id="refresh-time"></span>
+        <button class="btn btn-secondary btn-sm" onclick="loadPipelines()" aria-label="刷新列表">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 9A9 9 0 005.6 5.6L4 7M4 15a9 9 0 0014.4 3.4L20 17"/></svg>
+            刷新
+        </button>
+    </div>
+</div>
+
+<!-- 统计仪表盘 -->
+<div class="pipeline-stats" id="pipeline-stats">
+    <div class="pipeline-stat">
+        <div class="stat-icon stat-icon-blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        </div>
+        <div class="stat-num" id="stat-total">0</div>
+        <div class="stat-text">总任务</div>
+    </div>
+    <div class="pipeline-stat">
+        <div class="stat-icon stat-icon-violet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+        <div class="stat-num" id="stat-running">0</div>
+        <div class="stat-text">运行中</div>
+    </div>
+    <div class="pipeline-stat">
+        <div class="stat-icon stat-icon-green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+        </div>
+        <div class="stat-num" id="stat-done">0</div>
+        <div class="stat-text">已完成</div>
+    </div>
+    <div class="pipeline-stat">
+        <div class="stat-icon stat-icon-amber">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        </div>
+        <div class="stat-num" id="stat-other">0</div>
+        <div class="stat-text">等待/异常</div>
+    </div>
+</div>
+
+<!-- Pipeline 列表 -->
+<div id="pipeline-list-container"
+     hx-get="/api/pipeline/list"
+     hx-trigger="load, every 10s"
+     hx-target="this"
+     hx-swap="innerHTML">
+    <div style="text-align:center; padding:40px 0;">
+        <div class="spinner spinner-lg"></div>
+        <p class="text-muted mt-md">加载中...</p>
+    </div>
+</div>
+
+<script>
+function loadPipelines() {
+    var container = document.getElementById('pipeline-list-container');
+    if (container) {
+        htmx.trigger(container, 'load');
+    }
+}
+
+function renderPipelines(data) {
+    var container = document.getElementById('pipeline-list-container');
+    var pipelines = data.pipelines || [];
+
+    var timeEl = document.getElementById('refresh-time');
+    if (timeEl) {
+        timeEl.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+    }
+
+    // 统计
+    var total = pipelines.length;
+    var running = 0, done = 0, other = 0;
+    pipelines.forEach(function(p) {
+        if (p.status === 'running' || p.status === 'pending') running++;
+        else if (p.status === 'done') done++;
+        else other++;
+    });
+    var statEl;
+    if (statEl = document.getElementById('stat-total')) statEl.textContent = total;
+    if (statEl = document.getElementById('stat-running')) statEl.textContent = running;
+    if (statEl = document.getElementById('stat-done')) statEl.textContent = done;
+    if (statEl = document.getElementById('stat-other')) statEl.textContent = other;
+
+    if (pipelines.length === 0) {
+        container.innerHTML =
+            '<div class="empty-state">' +
+            '<div class="empty-icon">' +
+                '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>' +
+            '</div>' +
+            '<div class="empty-title">暂无 Pipeline 记录</div>' +
+            '<div class="empty-desc">启动一个 Pipeline 后，记录将显示在这里</div>' +
+            '<div class="action-bar" style="justify-content:center;">' +
+            '<a href="/" class="btn btn-primary btn-lg">启动新 Pipeline</a>' +
+            '</div>' +
+            '</div>';
+        return;
+    }
+
+    var html = '<div class="pipeline-list">';
+    pipelines.forEach(function(p) {
+        var statusBadge = '';
+        var statusClass = '';
+        switch (p.status) {
+            case 'running':
+            case 'pending':
+                statusBadge = '<span class="badge badge-info">运行中</span>';
+                statusClass = 'running';
+                break;
+            case 'done':
+                statusBadge = '<span class="badge badge-success">已完成</span>';
+                break;
+            case 'paused':
+                statusBadge = '<span class="badge badge-warning">等待中</span>';
+                break;
+            case 'error':
+                statusBadge = '<span class="badge badge-danger">错误</span>';
+                break;
+            case 'cancelled':
+                statusBadge = '<span class="badge badge-neutral">已取消</span>';
+                break;
+            default:
+                statusBadge = '<span class="badge badge-neutral">' + escapeHtml(p.status) + '</span>';
+        }
+
+        var href = '/pipeline/' + p.pipeline_id;
+        if (p.status === 'done') {
+            href = '/results/' + p.pipeline_id;
+        }
+
+        // 进度条
+        var pct = p.total_steps > 0 ? Math.round((p.completed_steps / p.total_steps) * 100) : 0;
+        var barClass = p.status === 'done' ? 'success' : (p.status === 'error' || p.status === 'cancelled' ? 'error' : '');
+
+        html += '<a href="' + href + '" class="pipeline-item">' +
+            '<div class="pipeline-item-left">' +
+                '<span class="pipeline-id">' + escapeHtml(p.pipeline_id) + '</span>' +
+                '<span class="pipeline-file">' + escapeHtml(p.requirements || '未知文件') + '</span>' +
+            '</div>' +
+            statusBadge +
+            '<div class="pipeline-item-right">' +
+                '<div class="pipeline-progress">' +
+                    '<span class="pipeline-progress-text">' + p.completed_steps + '/' + p.total_steps + ' 步</span>' +
+                    '<div class="progress-bar" style="width:100px;">' +
+                        '<div class="progress-bar-fill ' + barClass + '" style="width:' + pct + '%;"></div>' +
+                    '</div>' +
+                '</div>' +
+                '<span class="pipeline-time">' + relativeTime(p.started_at) + '</span>' +
+            '</div>' +
+            '</a>';
+    });
+    html += '</div>';
+
+    html += '<div class="action-bar mt-lg">' +
+        '<a href="/" class="btn btn-primary">启动新 Pipeline</a>' +
+        '</div>';
+
+    container.innerHTML = html;
+}
+
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'pipeline-list-container') {
+        try {
+            var rawText = evt.detail.xhr.responseText;
+            var data = JSON.parse(rawText);
+            renderPipelines(data);
+        } catch(e) {
+            document.getElementById('pipeline-list-container').innerHTML =
+                '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
+                '<strong>加载失败</strong>' +
+                '<p class="text-sm text-muted mt-sm">' + escapeHtml(e.message) + '</p>' +
+                '<button class="btn btn-secondary btn-sm mt-md" onclick="loadPipelines()">重试</button>' +
+                '</div>';
+        }
+    }
+});
+</script>
+
+{% endblock %}

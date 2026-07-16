@@ -1,0 +1,54 @@
+# AI 测试用例生成系统 — 生产环境配置模板
+#
+# 使用方法：
+#   cp config.production.yaml config.yaml
+#   修改 JWT_SECRET、LLM_API_KEY 等敏感配置
+
+llm:
+  provider: deepseek
+  api_key: ${LLM_API_KEY}
+  base_url: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
+  model: ${LLM_MODEL:-deepseek-chat}
+  temperature: 0.3
+  max_tokens: 8192
+  timeout: 120
+  retry: 3
+
+  # LLM Gateway 备选 Provider（故障转移链）
+  fallback:
+    - provider: glm
+      api_key: ${GLM_API_KEY:-}
+      base_url: https://open.bigmodel.cn/api/paas/v4
+      model: glm-4-flash
+      temperature: 0.3
+      max_tokens: 8192
+
+knowledge_base:
+  enabled: true
+  vault_path: ${VAULT_PATH:-/vault}
+
+pipeline:
+  default_mode: semi
+  default_dimensions: basic
+  default_formats: excel
+  self_check: true
+  max_concurrent: 2
+
+output:
+  dir: ./output
+
+# 生产环境特有配置
+server:
+  host: 0.0.0.0
+  port: 8080
+  workers: 1                    # SQLite 模式建议单 worker
+
+security:
+  jwt_secret: ${JWT_SECRET}     # 必须 ≥ 32 字符
+  jwt_expire_hours: 24
+  rate_limit: "60/minute"       # API 限流
+  cors_origins: []              # CORS 白名单（空=不允许跨域）
+
+logging:
+  level: INFO                   # DEBUG / INFO / WARNING / ERROR
+  format: json                  # json / text

@@ -4,17 +4,17 @@
 覆盖：表头模糊匹配、执行结果归一化、数据行读取、边界条件
 """
 
-import pytest
-import tempfile
 import sys
+import tempfile
 from pathlib import Path
 
+import pytest
+
 # 延迟导入：generate_report.py 在 import 时检查 openpyxl
-scripts_dir = Path(__file__).parent.parent / "skills" / "generate-report" / "scripts"
+scripts_dir = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 
 from generate_report import ExcelReader
-
 
 # ═══════════════════════════════════════════════════════════════
 # 辅助函数：构造测试用 Excel

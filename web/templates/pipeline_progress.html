@@ -1,0 +1,415 @@
+{# ──────────────────────────────────────────────────────────────
+   Pipeline 进度片段 — HTMX 轮询返回的局部 HTML
+   ──────────────────────────────────────────────────────────────
+   由 GET /api/pipeline/{id}/progress（HX-Request=true）返回。
+   渲染目标：#progress-area（内联替换）。
+   设计要点：
+     · 状态徽章、进度颜色等公共逻辑集中在宏 step_status_badge 中维护。
+     · 仅在用户本就处于日志底部时才自动滚动，避免强制拉回破坏阅读。
+     · error 字段超长时折叠展示，避免撑破布局。
+     · 日志级别通过 _log_level_class 映射到 CSS 类，未知级别回退 neutral。
+   ────────────────────────────────────────────────────────────── #}
+
+{# ── 宏：步骤状态徽章 ── #}
+{% macro step_status_badge(status) -%}
+    {% if status == "done" %}<span class="badge badge-success" aria-label="已完成">✓ 完成</span>
+    {% elif status == "running" %}<span class="badge badge-info" aria-label="执行中">⟳ 执行中</span>
+    {% elif status == "error" %}<span class="badge badge-danger" aria-label="错误">✕ 错误</span>
+    {% else %}<span class="badge badge-neutral" aria-label="待执行">○ 待执行</span>{% endif %}
+{%- endmacro %}
+
+{# ── 宏：日志级别 → CSS 类映射 ── #}
+{# _on_log 中出现的 level: OK / WARN / ERR / STEP / HUMAN。
+   CSS 仅有 info/ok/warn/error/step/human；其他统一回退 neutral。 #}
+{% macro log_level_class(level) -%}
+    {% set lvl = (level or '')|lower -%}
+    {% if lvl in ('ok', 'success') %}ok
+    {%- elif lvl == 'warn' or lvl == 'warning' %}warn
+    {%- elif lvl in ('err', 'error') %}error
+    {%- elif lvl == 'info' %}info
+    {%- elif lvl == 'step' %}step
+    {%- elif lvl == 'human' %}human
+    {%- else %}neutral{% endif -%}
+{%- endmacro %}
+
+{# ── 宏：千分位格式化（无内置过滤器时使用 Python 风格） ── #}
+{% macro fmt_number(value) -%}
+    {% if value is none %}—
+    {%- else %}{{ "{:,}".format(value|int) if value|string|length > 0 and value != "" else "—" }}{% endif -%}
+{%- endmacro %}
+
+
+{# ───────────────── ① 进度头 ───────────────── #}
+<div class="card mb-md">
+    <div class="flex items-center justify-between mb-sm">
+        <span class="text-lg" style="font-weight:600; color:var(--text-primary);" aria-live="polite">
+            {% if progress.status == "running" %}执行中
+            {% elif progress.status == "done" %}已完成
+            {% elif progress.status == "paused" %}等待人工执行
+            {% elif progress.status == "error" %}执行出错
+            {% elif progress.status == "cancelled" %}已取消
+            {% else %}等待中
+            {% endif %}
+        </span>
+        <span class="text-sm text-muted" aria-label="进度百分比与已完成步数">
+            {{ progress.percent }}% · {{ progress.completed_steps | length }}/7 步
+        </span>
+    </div>
+    {# 进度条 — 带 ARIA，进度值在 aria-valuenow 中暴露 #}
+    <div class="progress-bar" role="progressbar"
+         aria-label="Pipeline 执行进度"
+         aria-valuenow="{{ progress.percent }}"
+         aria-valuemin="0"
+         aria-valuemax="100">
+        <div class="progress-bar-fill
+                    {%- if progress.status == 'done' %} success
+                    {%- elif progress.status in ('error', 'cancelled') %} error
+                    {%- endif %}"
+             style="width:{{ progress.percent }}%"></div>
+    </div>
+</div>
+
+
+{# ───────────────── ② 步骤可视化（水平时间轴） ───────────────── #}
+<div class="steps" aria-label="7 步执行进度">
+    {% for step in progress.steps %}
+    <div class="step-item {{ step.status }}">
+        <div class="step-dot" aria-hidden="true">
+            {% if step.status == "done" %}✓
+            {% elif step.status == "running" %}⟳
+            {% elif step.status == "error" %}✕
+            {% else %}{{ step.id }}
+            {% endif %}
+        </div>
+        <div class="step-name">{{ step.name }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+
+{# ───────────────── ③ 步骤详情表 ───────────────── #}
+<div class="card mb-md" style="padding:0; overflow:hidden;">
+    <table class="data-table">
+        <caption class="sr-only">Pipeline 各步骤执行状态详情</caption>
+        <thead>
+            <tr>
+                <th scope="col" style="width:50px;">#</th>
+                <th scope="col">步骤</th>
+                <th scope="col" style="width:120px;">状态</th>
+                <th scope="col">详情</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for step in progress.steps %}
+            <tr>
+                <td>{{ step.id }}</td>
+                <td style="font-weight:500;">{{ step.name }}</td>
+                <td>{{ step_status_badge(step.status) }}</td>
+                <td class="text-sm text-muted">{{ step.detail }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+
+{# ───────────────── ④ 日志流 ───────────────── #}
+{% if progress.logs %}
+<details class="panel" open aria-label="实时日志流">
+    <summary>
+        <span aria-hidden="true">—</span> 日志流 ({{ progress.logs | length }})
+    </summary>
+    <div class="panel-body" style="padding:0;">
+        {# role=log + aria-live=polite：让屏幕阅读器在日志追加时播报
+           但 aria-relevant=text：仅播报文本节点，不打断用户 #}
+        <div class="log-panel"
+             id="log-panel"
+             role="log"
+             aria-live="polite"
+             aria-relevant="additions"
+             aria-label="Pipeline 实时日志">
+            {% for log in progress.logs %}
+            <div class="log-line">
+                <span class="log-ts" aria-hidden="true">{{ log.ts }}</span>
+                <span class="log-level-{{ log_level_class(log.level) }}"
+                      aria-label="日志级别 {{ log.level }}">{{ log.level }}</span>
+                <span>{{ log.msg }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</details>
+{% endif %}
+
+
+{# ───────────────── ⑤ LLM 统计 ───────────────── #}
+{% if progress.llm_stats and progress.llm_stats.call_count and progress.llm_stats.call_count > 0 %}
+<div class="card mt-md" style="padding:12px 16px;">
+    <div class="stats-bar" style="margin:0;">
+        <div class="stat-item">
+            <span aria-hidden="true">Calls</span> <span class="stat-value">{{ fmt_number(progress.llm_stats.call_count) }}</span>
+        </div>
+        <div class="stat-item">
+            <span aria-hidden="true">Tokens</span> <span class="stat-value">{{ fmt_number(progress.llm_stats.total_tokens) }}</span>
+        </div>
+        <div class="stat-item">
+            <span aria-hidden="true">Model</span> <span class="stat-value">{{ progress.llm_stats.model or '—' }}</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+
+{# ───────────────── ⑥ AI 检查点确认区（半自动模式 Step 1/3/5 暂停） ───────────────── #}
+{% if progress.status == "paused" and progress.current_step|int in [1, 3, 5] %}
+<div class="card mt-md" style="background:var(--primary-light); border-color:var(--primary);">
+    <div class="flex items-center gap-md flex-wrap">
+        <div class="flex-1" style="min-width:200px;">
+            <strong>Step {{ progress.current_step }} — {{ progress.steps[progress.current_step|int - 1].name }} 已完成</strong>
+            <p class="text-sm text-muted mt-0 mb-0">
+                请确认该步骤的产出，确认后将继续执行下一步。产物可前往结果页查看。
+            </p>
+        </div>
+        <div class="action-bar mt-0">
+            <a href="/results/{{ progress.pipeline_id }}" class="btn btn-secondary btn-sm"
+               aria-label="查看产物">
+                查看产物
+            </a>
+            <button type="button"
+                    class="btn btn-primary"
+                    onclick="resumePipeline('{{ progress.pipeline_id }}')"
+                    aria-label="确认并继续执行">
+                确认继续
+            </button>
+            <button type="button"
+                    class="btn btn-outline-danger btn-sm"
+                    onclick="cancelPipeline('{{ progress.pipeline_id }}')"
+                    aria-label="取消当前 Pipeline">
+                取消
+            </button>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ───────────────── ⑥b 逐步骤模式触发区（step 模式任何步骤暂停） ───────────────── #}
+{% if progress.status == "paused" and progress.mode == "step" and progress.current_step|int not in [6] %}
+<div class="card mt-sm" style="background:var(--info-light); border-color:var(--info);">
+    <div class="flex items-center gap-md flex-wrap">
+        <div class="flex-1">
+            <strong>逐步骤模式 — 等待手动触发</strong>
+            <p class="text-sm text-muted mt-0 mb-0">
+                当前步骤已完成，点击按钮执行下一步（Step {{ progress.current_step }}）。
+            </p>
+        </div>
+        <button type="button"
+                class="btn btn-primary"
+                onclick="resumePipeline('{{ progress.pipeline_id }}')"
+                aria-label="执行下一步">
+            执行下一步
+        </button>
+    </div>
+</div>
+{% endif %}
+
+{# ───────────────── ⑦ 暂停态操作区（人工执行 Step 6） ───────────────── #}
+{% if progress.status == "paused" %}
+<div class="card mt-md" style="background:var(--warning-light); border-color:var(--warning);">
+    <div class="flex items-center gap-md flex-wrap">
+        <div class="flex-1" style="min-width:200px;">
+            <strong>等待人工执行</strong>
+            <p class="text-sm text-muted mt-0 mb-0">
+                请下载测试用例，执行测试并填写结果列，完成后上传继续。
+            </p>
+        </div>
+        <div class="action-bar mt-0">
+            <a href="/api/pipeline/{{ progress.pipeline_id }}/artifacts/testcases.xlsx"
+               class="btn btn-success"
+               download="testcases.xlsx"
+               aria-label="下载测试用例 Excel">
+                下载 testcases.xlsx
+            </a>
+            <button type="button"
+                    class="btn btn-outline-danger"
+                    onclick="cancelPipeline('{{ progress.pipeline_id }}')"
+                    aria-label="取消当前 Pipeline">
+                取消任务
+            </button>
+        </div>
+    </div>
+
+    {# 上传执行结果 #}
+    <form hx-post="/api/pipeline/{{ progress.pipeline_id }}/resume"
+          hx-encoding="multipart/form-data"
+          hx-target="#progress-area"
+          hx-swap="innerHTML"
+          class="mt-md"
+          aria-label="上传测试结果并继续执行">
+        <div class="form-group mb-sm">
+            <label class="form-label" for="resume-file">上传执行结果（Excel）</label>
+            {# 复用 app.js 的 initUploadZone（统一交互：点击/拖拽 + 文件名展示） #}
+            <div class="file-upload-zone" id="resume-upload-zone">
+                <div class="upload-icon" style="font-size:1.5rem;" aria-hidden="true">↑</div>
+                <div class="upload-text">点击选择或拖拽 Excel 文件</div>
+                <div class="file-name" id="resume-file-name" style="display:none;"></div>
+                <input type="file" id="resume-file" name="file" accept=".xlsx"
+                       aria-label="选择已执行测试结果的 Excel 文件">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary" aria-label="上传结果并继续 Pipeline">
+            继续执行
+        </button>
+    </form>
+</div>
+{% endif %}
+
+
+{# ───────────────── ⑦ 完成态操作区 ───────────────── #}
+{% if progress.status == "done" %}
+<div class="card mt-md" style="background:var(--success-light); border-color:var(--success);">
+    <div class="flex items-center gap-md flex-wrap">
+        <div class="flex-1">
+            <strong>Pipeline 执行完成</strong>
+            <p class="text-sm text-muted mt-0 mb-0">
+                所有步骤已成功执行，可以查看和下载产物。
+            </p>
+        </div>
+        <a href="/results/{{ progress.pipeline_id }}" class="btn btn-success"
+           aria-label="查看 Pipeline 执行结果">
+            查看结果
+        </a>
+    </div>
+</div>
+{% endif %}
+
+
+{# ───────────────── ⑧ 取消态操作区 ───────────────── #}
+{% if progress.status == "cancelled" %}
+<div class="card mt-md" style="background:var(--neutral-75); border-color:var(--neutral-300);">
+    <div class="flex items-center gap-md flex-wrap">
+        <div class="flex-1">
+            <strong>Pipeline 已取消</strong>
+            <p class="text-sm text-muted mt-0 mb-0">
+                任务已手动终止。已生成的产物可前往结果页查看。
+            </p>
+        </div>
+        <div class="action-bar mt-0">
+            <a href="/results/{{ progress.pipeline_id }}" class="btn btn-secondary"
+               aria-label="查看已生成的产物">
+                查看产物
+            </a>
+            <a href="/" class="btn btn-primary" aria-label="返回首页">
+                返回首页
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+
+{# ───────────────── ⑨ 错误态操作区 ───────────────── #}
+{% if progress.status == "error" %}
+<div class="card mt-md" style="background:var(--danger-light); border-color:var(--danger);">
+    <strong>执行出错</strong>
+    {# error 可能为 traceback 等长文本，用 <details> 折叠以避免撑破布局 #}
+    <details class="mt-sm" {% if not progress.error %}hidden{% endif %}>
+        <summary class="text-sm text-muted">查看错误详情</summary>
+        <pre class="text-sm mt-sm"
+             style="white-space:pre-wrap; word-break:break-word;
+                    background:var(--neutral-50); padding:12px;
+                    border-radius:var(--radius-sm);
+                    max-height:240px; overflow:auto;">{{ progress.error }}</pre>
+    </details>
+    <div class="action-bar">
+        {# "重新启动"返回首页复用同一需求文件（不强制，提示用户重新上传） #}
+        <a href="/" class="btn btn-primary" aria-label="返回首页重新启动">
+            重新启动
+        </a>
+        <a href="/pipelines" class="btn btn-secondary" aria-label="返回任务列表">
+            任务列表
+        </a>
+    </div>
+</div>
+{% endif %}
+
+
+{# ───────────────── ⑩ 客户端脚本 ───────────────── #}
+<script>
+(function() {
+    'use strict';
+
+    // ─── 日志自动滚动：仅在用户本就处于底部（或非常接近）时滚动，
+    //      避免强制拉回破坏用户向上翻阅历史日志的体验。───
+    var STICK_TO_BOTTOM_THRESHOLD = 32; // px
+    var panel = document.getElementById('log-panel');
+    if (panel) {
+        var distanceFromBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+        if (distanceFromBottom <= STICK_TO_BOTTOM_THRESHOLD) {
+            requestAnimationFrame(function() {
+                panel.scrollTop = panel.scrollHeight;
+            });
+        }
+    }
+
+    // ─── "继续执行"上传区交互 ───
+    var resumeZone = document.getElementById('resume-upload-zone');
+    if (resumeZone) {
+        if (typeof window.initUploadZone === 'function') {
+            window.initUploadZone(
+                'resume-upload-zone',
+                'input[type="file"]',
+                'resume-file-name'
+            );
+        } else {
+            var resumeInput = resumeZone.querySelector('input[type="file"]');
+            var resumeFileName = document.getElementById('resume-file-name');
+            if (resumeInput) {
+                resumeInput.addEventListener('change', function() {
+                    if (this.files && this.files.length > 0 && resumeFileName) {
+                        resumeFileName.textContent = this.files[0].name;
+                        resumeFileName.style.display = 'block';
+                        resumeZone.classList.add('has-file');
+                    }
+                });
+            }
+            resumeZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                resumeZone.classList.add('dragover');
+            });
+            resumeZone.addEventListener('dragleave', function() {
+                resumeZone.classList.remove('dragover');
+            });
+            resumeZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                resumeZone.classList.remove('dragover');
+            });
+        }
+    }
+})();
+
+// 从 AI 检查点或逐步骤模式恢复执行
+function resumePipeline(pipelineId) {
+    var btns = document.querySelectorAll('.action-bar button, .action-bar .btn');
+    btns.forEach(function(b) { b.disabled = true; });
+
+    fetch('/api/pipeline/' + pipelineId + '/resume', { method: 'POST' })
+        .then(function(r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(function(data) {
+            showToast('Pipeline 继续执行', 'success');
+            // 恢复轮询
+            var area = document.getElementById('progress-area');
+            if (area) {
+                area.setAttribute('hx-trigger', 'every 2s');
+                htmx.process(area);
+                htmx.trigger(area, 'load');
+            }
+        })
+        .catch(function(err) {
+            showToast('恢复失败: ' + err.message, 'error');
+            btns.forEach(function(b) { b.disabled = false; });
+        });
+}
+</script>

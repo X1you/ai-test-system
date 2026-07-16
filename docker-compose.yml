@@ -1,0 +1,28 @@
+# AI 测试用例生成系统 — Docker Compose
+# 一键启动：docker-compose up -d
+
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=sqlite:////data/app.db
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-32-chars-min}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./uploads:/app/uploads
+      # 知识库 Vault（只读挂载）
+      # - ~/Documents/test-interview-kb:/vault:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

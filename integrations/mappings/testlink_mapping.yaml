@@ -1,0 +1,31 @@
+# TestLink 字段映射配置（XML-RPC 差异示例）
+platform: testlink
+transport: xmlrpc
+
+field_mapping:
+  title: testcaseexternalid
+  external_id: testcaseexternalid
+  priority:
+    field: importance
+    transform: tl_importance
+  module:
+    field: testsuite_name
+  precondition: executionduration
+  steps: steps
+  expected_result: expected_results
+  status:
+    field: execution_status
+    transform: tl_status
+
+transforms:
+  tl_importance:
+    P0: HIGH
+    P1: MEDIUM
+    P2: LOW
+    default: MEDIUM
+  tl_status:
+    passed: p
+    failed: f
+    blocked: b
+    skipped: n
+    default: n

@@ -1,0 +1,1 @@
+"""integrations/mappings — 字段映射配置"""

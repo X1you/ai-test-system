@@ -4,14 +4,13 @@
 测试 TestPointParser 的解析逻辑
 """
 
-import pytest
-import tempfile
-import json
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pytest
 
 # 添加 scripts 目录到路径
-scripts_dir = Path(__file__).parent.parent / "skills" / "generate-testcases" / "scripts"
+scripts_dir = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 
 from common import TestPointParser, assign_priority, filter_by_dimensions

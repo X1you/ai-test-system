@@ -15,12 +15,28 @@ venv/
 *.swp
 *.swo
 
-# Hermes local state (do not commit)
+# Local state
 _meta.json
 
-# Temporary output (use sample-output/ for committed examples)
+# Runtime output (do not commit)
 output/
 test-run/
 
-# Large reference HTML (keep .md references, ignore raw HTML)
-reference/*.html
+# Runtime data (do not commit)
+data/
+
+# Test & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime uploads (keep dir, ignore files)
+uploads/*
+!uploads/.gitkeep
+web/uploads/*
+!web/uploads/.gitkeep
+
+# Environment files (contain API keys)
+.env

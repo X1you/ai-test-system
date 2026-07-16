@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block nav_kb_active %}class="active"{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h2>知识库管理</h2>
+</div>
+
+<!-- 知识库状态 -->
+<div id="kb-status"
+     hx-get="/api/kb/status"
+     hx-trigger="load"
+     hx-target="this"
+     hx-swap="innerHTML"
+     aria-live="polite">
+    <div class="kb-status-grid">
+        <div class="kb-stat-card">
+            <div class="skeleton" style="width:60px; height:36px; margin:0 auto 8px;"></div>
+            <div class="skeleton" style="width:80px; height:14px; margin:0 auto;"></div>
+        </div>
+        <div class="kb-stat-card">
+            <div class="skeleton" style="width:60px; height:36px; margin:0 auto 8px;"></div>
+            <div class="skeleton" style="width:80px; height:14px; margin:0 auto;"></div>
+        </div>
+    </div>
+</div>
+
+<hr style="border:none; border-top:1px solid var(--border-subtle); margin:36px 0;">
+
+<!-- 搜索 -->
+<div class="kb-section-title">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    搜索知识库
+</div>
+<form id="kb-search-form"
+      hx-get="/api/kb/search"
+      hx-target="#search-results"
+      hx-swap="innerHTML"
+      hx-vals='js:{q: document.getElementById("search-q").value}'
+      aria-label="搜索知识库">
+    <div class="search-box">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input type="search" id="search-q" name="q" class="form-input"
+               placeholder="输入关键词搜索知识库..." required
+               autocomplete="off"
+               aria-label="搜索关键词">
+    </div>
+    <div class="mt-md">
+        <button type="submit" class="btn btn-primary">搜索</button>
+        <span class="text-xs text-muted" style="margin-left:8px;">快捷键: <kbd>Ctrl+K</kbd></span>
+    </div>
+</form>
+
+<div class="search-results" id="search-results" aria-live="polite">
+    <div class="empty-state" style="padding:40px 24px;">
+        <div class="empty-icon">⌕</div>
+        <div class="empty-title">搜索知识库</div>
+        <div class="empty-desc">输入关键词后点击搜索，查找相关知识条目</div>
+    </div>
+</div>
+
+<hr style="border:none; border-top:1px solid var(--border-subtle); margin:36px 0;">
+
+<!-- 添加知识条目 -->
+<div class="kb-section-title">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16m8-8H4"/></svg>
+    添加知识条目
+</div>
+<div class="card">
+    <form id="kb-add-form" aria-label="添加单条知识条目">
+        <div class="form-group">
+            <label class="form-label" for="kb-add-title">标题</label>
+            <input type="text" id="kb-add-title" name="title" class="form-input" required placeholder="知识条目标题">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="kb-add-category">分类</label>
+            <select id="kb-add-category" name="category" class="form-select" required>
+                <option value="">请选择分类</option>
+                <option value="business-rules">业务规则</option>
+                <option value="historical-cases">历史用例</option>
+                <option value="pitfalls">常见坑点</option>
+                <option value="templates">用例模板</option>
+                <option value="data-dictionary">数据字典</option>
+                <option value="business-specs">业务规范</option>
+                <option value="team-standards">团队标准</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="kb-add-content">内容</label>
+            <textarea id="kb-add-content" name="content" class="form-textarea" rows="4" required placeholder="知识条目内容..."></textarea>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="kb-add-tags">标签 (可选)</label>
+            <input type="text" id="kb-add-tags" name="tags" class="form-input" placeholder="逗号分隔，如: 登录,鉴权">
+        </div>
+        <button type="submit" class="btn btn-primary" id="kb-add-btn">添加</button>
+    </form>
+    <div id="kb-add-result" class="mt-md" style="display:none;"></div>
+</div>
+
+<hr style="border:none; border-top:1px solid var(--border-subtle); margin:36px 0;">
+
+<!-- 导入用例 -->
+<div class="kb-section-title">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+    导入用例
+</div>
+<div class="card">
+    <form id="kb-import-form" enctype="multipart/form-data" aria-label="导入 Excel 用例回灌知识库">
+        <div class="flex items-center gap-md flex-wrap">
+            <div class="flex-1" style="min-width:200px;">
+                <p class="text-sm text-muted mb-sm">从 Excel 文件导入测试用例到知识库，自动识别 12 列标准格式</p>
+                <div class="file-upload-zone" id="kb-import-zone" style="padding:20px;">
+                    <div class="upload-icon" id="kb-import-icon" aria-hidden="true">↑</div>
+                    <div class="upload-text" id="kb-import-text">选择 Excel 文件 (.xlsx)</div>
+                    <div class="file-name" id="kb-import-filename" style="display:none;"></div>
+                    <input type="file" id="kb-import-file" name="file" accept=".xlsx,.xls"
+                           aria-label="选择 Excel 文件导入">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="kb-import-btn">导入</button>
+        </div>
+    </form>
+    <div id="kb-import-result" class="mt-md" style="display:none;"></div>
+</div>
+
+<script>
+// 知识库状态渲染
+document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'kb-status') {
+        try {
+            var rawText = evt.detail.xhr.responseText;
+            var data = JSON.parse(rawText);
+
+            if (data.error) {
+                evt.detail.target.innerHTML =
+                    '<div class="card" style="background:var(--warning-light); border-color:var(--warning);">' +
+                    '<strong>⚠️ 知识库加载异常</strong>' +
+                    '<p class="text-sm text-muted mt-sm">' + escapeHtml(data.error) + '</p>' +
+                    '<button class="btn btn-secondary btn-sm mt-md" onclick="htmx.trigger(document.getElementById(\'kb-status\'), \'load\')">🔄 重试</button>' +
+                    '</div>';
+                return;
+            }
+
+            if (!data.enabled) {
+                evt.detail.target.innerHTML =
+                    '<div class="card text-center" style="padding:32px;">' +
+                    '<div style="font-size:2rem; margin-bottom:12px;">📚</div>' +
+                    '<strong>知识库未启用</strong>' +
+                    '<p class="text-sm text-muted mt-sm">请在配置文件中启用知识库功能</p></div>';
+                return;
+            }
+
+            var categories = data.categories || {};
+            var catCards = '';
+            var totalKeys = Object.keys(categories);
+            totalKeys.forEach(function(cat) {
+                catCards += '<div class="kb-stat-card">' +
+                           '<div class="stat-number">' + categories[cat] + '</div>' +
+                           '<div class="stat-label">' + escapeHtml(cat) + '</div></div>';
+            });
+
+            evt.detail.target.innerHTML =
+                '<div class="kb-status-grid">' +
+                '<div class="kb-stat-card"><div class="stat-number">' + (data.total || 0) + '</div><div class="stat-label">总条目</div></div>' +
+                catCards +
+                '</div>';
+        } catch(e) {}
+    }
+
+    // 搜索结果渲染
+    if (evt.detail.target.id === 'search-results') {
+        try {
+            var rawText = evt.detail.xhr.responseText;
+            var data = JSON.parse(rawText);
+
+            if (data.error) {
+                evt.detail.target.innerHTML =
+                    '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
+                    '<strong>❌ 搜索失败</strong>' +
+                    '<p class="text-sm text-muted mt-sm">' + escapeHtml(data.error) + '</p></div>';
+                return;
+            }
+
+            if (!data.results || data.results.length === 0) {
+                evt.detail.target.innerHTML =
+                    '<div class="empty-state" style="padding:40px 24px;">' +
+                    '<div class="empty-icon">—</div>' +
+                    '<div class="empty-title">未找到相关结果</div>' +
+                    '<div class="empty-desc">尝试使用不同的关键词</div></div>';
+                return;
+            }
+
+            var html = '<p class="text-sm text-muted mb-md">找到 ' + data.total + ' 条结果</p>';
+            data.results.forEach(function(r) {
+                html += '<div class="search-result-item">' +
+                       '<div class="result-title">' + escapeHtml(r.title || '无标题') + '</div>' +
+                       '<div class="result-category">' + escapeHtml(r.category || '') + (r.module ? ' · ' + escapeHtml(r.module) : '') + '</div>' +
+                       '<div class="result-preview">' + escapeHtml(r.preview) + '</div>' +
+                       '</div>';
+            });
+            evt.detail.target.innerHTML = html;
+        } catch(e) {}
+    }
+});
+
+// 回车搜索
+document.getElementById('search-q').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('kb-search-form').dispatchEvent(new Event('submit'));
+    }
+});
+
+// 初始化导入上传区
+initUploadZone('kb-import-zone', 'input[type="file"]', 'kb-import-filename', 'kb-import-icon', 'kb-import-text');
+
+// 添加知识条目
+document.getElementById('kb-add-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var btn = document.getElementById('kb-add-btn');
+    var resultEl = document.getElementById('kb-add-result');
+    var formData = new FormData(this);
+
+    btn.disabled = true;
+    btn.textContent = '添加中...';
+    resultEl.style.display = 'none';
+
+    fetch('/api/kb/add', { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            resultEl.style.display = 'block';
+            if (data.ok) {
+                resultEl.innerHTML = '<div class="card" style="background:var(--success-light); border-color:var(--success);">' +
+                    '<strong>添加成功</strong></div>';
+                showToast('知识条目添加成功', 'success');
+                htmx.trigger(document.getElementById('kb-status'), 'load');
+                document.getElementById('kb-add-form').reset();
+            } else {
+                resultEl.innerHTML = '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
+                    '<strong>添加失败</strong><p class="text-sm mt-sm">' + escapeHtml(data.message) + '</p></div>';
+                showToast('添加失败', 'error');
+            }
+        })
+        .catch(function(err) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
+                '<strong>请求失败</strong><p class="text-sm mt-sm">' + escapeHtml(err.message) + '</p></div>';
+            showToast('请求失败', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.textContent = '添加';
+        });
+});
+
+// 导入用例
+document.getElementById('kb-import-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('kb-import-file');
+    var btn = document.getElementById('kb-import-btn');
+    var resultEl = document.getElementById('kb-import-result');
+
+    if (!fileInput.files || !fileInput.files.length) {
+        showToast('请选择 Excel 文件', 'warning');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '导入中...';
+    resultEl.style.display = 'none';
+
+    var formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    fetch('/api/kb/import', { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            resultEl.style.display = 'block';
+            if (data.ok) {
+                resultEl.innerHTML = '<div class="card" style="background:var(--success-light); border-color:var(--success);">' +
+                    '<strong>导入成功</strong>' +
+                    '<p class="text-sm mt-sm">已导入 ' + data.imported + ' 条用例到知识库</p></div>';
+                showToast('导入成功: ' + data.imported + ' 条', 'success');
+                // 刷新知识库状态
+                htmx.trigger(document.getElementById('kb-status'), 'load');
+            } else {
+                resultEl.innerHTML = '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
+                    '<strong>导入失败</strong>' +
+                    '<p class="text-sm mt-sm">' + escapeHtml(data.message) + '</p></div>';
+                showToast('导入失败', 'error');
+            }
+        })
+        .catch(function(err) {
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
+                '<strong>请求失败</strong>' +
+                '<p class="text-sm mt-sm">' + escapeHtml(err.message) + '</p></div>';
+            showToast('请求失败', 'error');
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.textContent = '导入';
+        });
+});
+</script>
+
+{% endblock %}

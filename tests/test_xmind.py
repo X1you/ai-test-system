@@ -4,12 +4,13 @@
 覆盖：树结构构建、优先级缓存、统计节点、mock xmind 库
 """
 
-import pytest
-import tempfile
 import sys
+import tempfile
 import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # 先 mock xmind 库（generate_xmind.py import 时会检查）
 _mock_xmind = types.ModuleType("xmind")
@@ -17,7 +18,7 @@ _mock_xmind.load = MagicMock(return_value=MagicMock())
 _mock_xmind.save = MagicMock()
 sys.modules["xmind"] = _mock_xmind
 
-scripts_dir = Path(__file__).parent.parent / "skills" / "generate-testcases" / "scripts"
+scripts_dir = Path(__file__).parent.parent / "scripts"
 sys.path.insert(0, str(scripts_dir))
 
 

@@ -4,19 +4,15 @@
 覆盖：基本加解锁、重入、并发竞争、超时、异常清理
 """
 
-import pytest
-import tempfile
 import os
-import time
+import tempfile
 import threading
-import sys
+import time
 from pathlib import Path
 
-# 添加 pipeline scripts 到路径
-scripts_dir = Path(__file__).parent.parent / "skills" / "pipeline" / "scripts"
-sys.path.insert(0, str(scripts_dir))
+import pytest
 
-from file_lock import file_lock
+from core.utils import file_lock
 
 
 class TestBasicLock:
@@ -28,8 +24,10 @@ class TestBasicLock:
             lock_file = str(Path(d) / "test.lock")
             with file_lock(lock_file, timeout=1):
                 pass  # 获取后自动释放
-            # 锁文件应该被清理
-            assert not Path(lock_file).exists()
+            # 锁文件保留（flock 绑定 inode，删除会导致竞态）
+            # 重复加锁不阻塞即可验证锁已正确释放
+            with file_lock(lock_file, timeout=1):
+                pass
 
     def test_consecutive_locks(self):
         """连续加锁不阻塞"""
@@ -144,13 +142,14 @@ class TestLockCleanup:
     """锁文件清理"""
 
     def test_cleanup_on_success(self):
-        """成功获取并释放后，锁文件被清理"""
+        """成功获取并释放后，锁可用"""
         with tempfile.TemporaryDirectory() as d:
             lock_file = str(Path(d) / "cleanup.lock")
             with file_lock(lock_file, timeout=1):
                 assert Path(lock_file).exists()
-            # 退出后应清理
-            assert not Path(lock_file).exists()
+            # 退出后锁已释放，可再次获取
+            with file_lock(lock_file, timeout=1):
+                pass
 
     def test_cleanup_on_exception(self):
         """即使上下文内抛异常，锁仍应被释放"""
