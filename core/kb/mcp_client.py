@@ -573,12 +573,20 @@ class MCPClient:
         if item.severity:
             frontmatter['severity'] = item.severity
 
-        # 安全序列化 YAML frontmatter — 使用 yaml.safe_dump 转义特殊字符
+        # 安全序列化 YAML frontmatter — 标准格式（每行一个 key: value）
         fm_lines = ['---']
         try:
             import yaml
-            for k, v in frontmatter.items():
-                fm_lines.append(f"{yaml.safe_dump({k: v}, allow_unicode=True, default_flow_style=True).strip()}")
+            # 一次性 safe_dump 整个 dict，默认 block style 输出标准多行 YAML
+            # （每行 `key: value`，列表用 inline `[a, b]` 或 block `- a`，均合法）
+            fm_lines.append(
+                yaml.safe_dump(
+                    frontmatter,
+                    allow_unicode=True,
+                    default_flow_style=False,
+                    sort_keys=False,
+                ).rstrip('\n')
+            )
         except ImportError:
             # fallback: 手动序列化（列表用 json，字符串用 json 确保转义）
             import json

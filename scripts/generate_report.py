@@ -63,15 +63,6 @@ QUALITY_GRADES = [
     (0.00, "较差 ❌", "质量不达标，不建议发布"),
 ]
 
-# 失败原因关键词推断
-FAILURE_CAUSE_KEYWORDS = {
-    "功能缺陷": ["金额", "计算", "数据", "显示", "跳转", "状态", "保存", "提交", "返回"],
-    "环境问题": ["超时", "timeout", "连接", "网络", "500", "502", "503", "服务不可用", "接口"],
-    "数据问题": ["数据", "库存", "不存在", "为空", "重复", "冲突"],
-    "用例缺陷": ["预期", "步骤", "用例", "描述"],
-}
-
-
 # ═══════════════════════════════════════════════════════════════
 # Excel 读取器
 # ═══════════════════════════════════════════════════════════════
@@ -117,15 +108,23 @@ class ExcelReader:
         return ""
 
     def _normalize_result(self, raw_value) -> str:
-        """将执行结果归一化为标准状态"""
+        """将执行结果归一化为标准状态
+
+        查找顺序：精确匹配 RESULT_NORMALIZE → 模糊关键词匹配 → 默认 not_run。
+        """
         if raw_value is None:
             return "not_run"
         text = str(raw_value).strip()
+        if not text:
+            return "not_run"
+
         normalized = text.lower()
-        # 查表
-        for key, status in RESULT_NORMALIZE.items():
-            if text == key or normalized == key.lower():
-                return status
+        # 精确查表（用 .get 避免 O(n) 遍历）
+        if text in RESULT_NORMALIZE:
+            return RESULT_NORMALIZE[text]
+        if normalized in RESULT_NORMALIZE:
+            return RESULT_NORMALIZE[normalized]
+
         # 模糊匹配
         for keyword, status in [("pass", "pass"), ("fail", "fail"),
                                  ("block", "block"), ("skip", "skip")]:
@@ -267,7 +266,24 @@ class ReportAnalyzer:
         return "较差 ❌", "质量不达标"
 
     # 失败原因关键词映射（提升为类常量，避免每次调用重建字典）
+    # ⚠️ 顺序很重要：infer_failure_cause 在同分时返回本字典中定义顺序最靠前的类别，
+    #    因此更具体的类别必须放在前面：
+    #    1)「代码缺陷」先于「功能未实现」：TC-006 文本同时含"未发现"+"不验证"，
+    #       语义上"缺校验逻辑"属于代码缺陷而非整功能缺失，需让代码缺陷在平局时胜出；
+    #       而纯"功能未实现"用例（TC-010/016）的文本不含代码缺陷关键词，不受影响。
+    #    2) 两个新类别都先于"数据校验失败"等运行时类别：因为"未发现校验"比"校验"更具体，
+    #       代码审查型失败（无运行时报错）若不优先匹配会被"接口/服务异常"/"权限/认证问题"
+    #       等"功能测试型"类别误判。
     FAILURE_CAUSE_MAP = {
+        # ── 代码审查型失败（优先匹配，无运行时报错）──
+        # 关键词设计为"代码审查场景"的强信号短语，避免与运行时失败类别冲突：
+        # 「校验」单独出现会命中"数据校验失败"，故此处用"未校验/无校验/不验证"
+        # 等"否定+校验"组合，专指"代码缺校验逻辑"。
+        "代码缺陷": ["未校验", "缺失", "无校验", "不验证", "漏掉", "缺少",
+                    "未检查", "未做", "完整性校验"],
+        "功能未实现": ["未发现", "不存在", "未实现", "未支持", "该功能",
+                     "规划中", "未承诺", "不支持", "无法通过"],
+        # ── 运行时失败（功能测试型）──
         "接口/服务异常": ["超时", "timeout", "502", "503", "500", "服务不可用", "连接",
                       "网络", "接口", "网关", "响应", "空指针", "null", "undefined"],
         "权限/认证问题": ["权限", "越权", "认证", "鉴权", "token", "未授权", "无权",
@@ -288,31 +304,81 @@ class ReportAnalyzer:
     }
 
     def infer_failure_cause(self, case: dict) -> str:
-        """推断失败原因（增强版：综合标题、维度、优先级、备注多维信息）"""
+        """推断失败原因（增强版：综合标题、维度、优先级、备注多维信息）
+
+        当多个原因类别得分相同时，返回 FAILURE_CAUSE_MAP 中定义顺序最靠前的类别，
+        确保结果稳定可复现（不依赖字典遍历顺序）。
+
+        代码审查型失败（功能未实现 / 代码缺陷）优先级高于运行时失败类别：
+        当文本命中这两个类别时，运行时类别不再享受维度加权，避免"安全测试"
+        维度的"缺校验逻辑"被加权成"权限/认证问题"，或"异常测试"维度的"功能
+        未实现"被加权成"接口/服务异常"。
+        """
         title = case.get("title", "")
         remark = case.get("remark", "")
         dimension = case.get("dimension", "")
-        priority = case.get("priority", "")
         steps = case.get("steps", "")
         expected = case.get("expected", "")
 
         combined = f"{title} {remark} {dimension} {steps} {expected}"
 
-        scores = {}
+        # 先算代码审查型类别的原始命中数；若 >0 则本用例属"代码审查型失败"
+        review_causes = ("代码缺陷", "功能未实现")
+        review_hit = sum(
+            1 for c in review_causes
+            for kw in self.FAILURE_CAUSE_MAP[c] if kw in combined
+        )
+
+        best_cause = "待确认"
+        best_score = 0
         for cause, keywords in self.FAILURE_CAUSE_MAP.items():
             score = sum(1 for kw in keywords if kw in combined)
-            # 维度加权：异常测试更可能是接口/环境问题
-            if "异常" in dimension and cause in ("接口/服务异常", "环境配置"):
-                score += 1
-            # 安全测试更可能是权限问题
-            if "安全" in dimension and cause == "权限/认证问题":
-                score += 1
-            if score > 0:
-                scores[cause] = score
 
-        if scores:
-            return max(scores, key=scores.get)
-        return "待确认"
+            # 代码审查型失败已确定：跳过运行时类别的维度加权，避免误判
+            if review_hit > 0 and cause not in review_causes:
+                pass
+            else:
+                # 维度加权：异常测试更可能是接口/环境问题
+                if "异常" in dimension and cause in ("接口/服务异常", "环境配置"):
+                    score += 1
+                # 安全测试更可能是权限问题
+                if "安全" in dimension and cause == "权限/认证问题":
+                    score += 1
+
+            # 代码审查型类别自身加权：安全测试缺校验→代码缺陷；异常测试缺功能→功能未实现
+            if review_hit > 0:
+                if "安全" in dimension and cause == "代码缺陷":
+                    score += 1
+                if "异常" in dimension and cause == "功能未实现":
+                    score += 1
+
+            # 严格大于：相同得分时保留先出现的类别（稳定排序）
+            if score > best_score:
+                best_score = score
+                best_cause = cause
+
+        return best_cause
+
+    def get_fix_suggestion(self, cause: str) -> str:
+        """根据失败原因生成修复建议"""
+        suggestions = {
+            "功能缺陷": "检查功能实现代码，确认逻辑是否正确，修复后回归测试。",
+            "环境问题": "检查测试环境配置和网络连接，确认服务状态正常后重试。",
+            "数据问题": "检查测试数据准备是否充分，清理脏数据后重新执行。",
+            "用例缺陷": "核对预期结果是否正确，必要时更新用例描述和步骤。",
+            "功能未实现": "确认该功能是否在需求范围内；若在则补实现，若不在则修正用例预期。",
+            "代码缺陷": "补充对应的校验/检查逻辑，参考用例的预期结果。",
+            "接口/服务异常": "检查后端接口返回状态码和响应体，确认服务可用性和超时配置。",
+            "权限/认证问题": "检查用户权限配置和 Token/Session 有效性，确认鉴权中间件正确拦截。",
+            "数据校验失败": "检查前后端校验规则是否一致，确认必填项、格式、范围限制实现完整。",
+            "状态流转错误": "检查状态机配置和流程引擎，确认状态转移条件与需求一致。",
+            "并发/竞态": "检查锁机制和事务隔离级别，确认并发控制（乐观锁/悲观锁）正确实现。",
+            "边界值问题": "检查边界条件的代码处理，确认 off-by-one 和边界判断逻辑。",
+            "兼容性": "检查不同编码/浏览器/版本下的兼容处理，确认字符集和 API 版本兼容。",
+            "环境配置": "检查环境变量、端口、SSL 证书等配置项，确认与生产环境一致。",
+            "待确认": "需要开发人员排查具体原因后确定修复方案。",
+        }
+        return suggestions.get(cause, suggestions["待确认"])
 
     def assess_risk(self, stats: dict) -> dict:
         """风险评估"""
@@ -414,8 +480,12 @@ class ReportGenerator:
             return "🔴"
 
     def generate(self, test_cases: list, file_path: str, source_file: str = "",
-                 requirements_path: str = "") -> str:
-        """生成完整 Markdown 报告"""
+                 requirements_path: str = "") -> tuple:
+        """生成完整 Markdown 报告
+
+        Returns:
+            (content, stats, risks): 报告文本、统计数据、风险信息
+        """
         stats = self.analyzer.analyze(test_cases)
         grade, grade_desc = self.analyzer.get_quality_grade(stats["pass_rate"])
         risks = self.analyzer.assess_risk(stats)
@@ -514,7 +584,7 @@ class ReportGenerator:
                 lines.append(f"- **失败原因（推断）：** {cause}")
                 if remark and remark != "—":
                     lines.append(f"- **备注：** {remark}")
-                lines.append(f"- **修复建议：** {_get_fix_suggestion(cause, case)}")
+                lines.append(f"- **修复建议：** {self.analyzer.get_fix_suggestion(cause)}")
                 lines.append("")
         else:
             lines.append("## 🔍 失败用例分析\n")
@@ -596,31 +666,7 @@ class ReportGenerator:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(content, encoding="utf-8")
 
-        return content
-
-
-# ═══════════════════════════════════════════════════════════════
-# 辅助函数
-# ═══════════════════════════════════════════════════════════════
-
-def _get_fix_suggestion(cause: str, case: dict) -> str:
-    """根据失败原因生成修复建议"""
-    suggestions = {
-        "功能缺陷": "检查功能实现代码，确认逻辑是否正确，修复后回归测试。",
-        "环境问题": "检查测试环境配置和网络连接，确认服务状态正常后重试。",
-        "数据问题": "检查测试数据准备是否充分，清理脏数据后重新执行。",
-        "用例缺陷": "核对预期结果是否正确，必要时更新用例描述和步骤。",
-        "接口/服务异常": "检查后端接口返回状态码和响应体，确认服务可用性和超时配置。",
-        "权限/认证问题": "检查用户权限配置和 Token/Session 有效性，确认鉴权中间件正确拦截。",
-        "数据校验失败": "检查前后端校验规则是否一致，确认必填项、格式、范围限制实现完整。",
-        "状态流转错误": "检查状态机配置和流程引擎，确认状态转移条件与需求一致。",
-        "并发/竞态": "检查锁机制和事务隔离级别，确认并发控制（乐观锁/悲观锁）正确实现。",
-        "边界值问题": "检查边界条件的代码处理，确认 off-by-one 和边界判断逻辑。",
-        "兼容性": "检查不同编码/浏览器/版本下的兼容处理，确认字符集和 API 版本兼容。",
-        "环境配置": "检查环境变量、端口、SSL 证书等配置项，确认与生产环境一致。",
-        "待确认": "需要开发人员排查具体原因后确定修复方案。",
-    }
-    return suggestions.get(cause, suggestions["待确认"])
+        return content, stats, risks
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -670,19 +716,16 @@ def main():
     # 生成报告
     print("\n🔨 生成测试报告...")
     generator = ReportGenerator()
-    content = generator.generate(
+    content, stats, risks = generator.generate(
         test_cases, args.output,
         source_file=args.input,
         requirements_path=args.requirements
     )
+    grade, _ = generator.analyzer.get_quality_grade(stats["pass_rate"])
 
     report_size = Path(args.output).stat().st_size
 
     # 打印汇总
-    analyzer = ReportAnalyzer()
-    stats = analyzer.analyze(test_cases)
-    grade, _ = analyzer.get_quality_grade(stats["pass_rate"])
-
     print(f"\n{'='*50}")
     print("✅ 测试报告生成完成！")
     print(f"{'='*50}")
