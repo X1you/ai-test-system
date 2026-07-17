@@ -38,8 +38,14 @@ from fastapi.testclient import TestClient
 # ─── 性能补充测试 ───
 
 
+@pytest.mark.slow
 class TestKBAPIPerformance:
-    """知识库 API 性能"""
+    """知识库 API 性能。
+
+    标 slow：依赖真实 Vault 文件系统遍历（子进程调用），响应时间随 Vault 规模
+    增长。当前 Vault ~200 文件时 status/search 约 6-7 秒（>5s 阈值），属已知
+    性能问题（见 docs/OPTIMIZATION_ROADMAP.md）。
+    """
 
     @pytest.fixture
     def client(self):

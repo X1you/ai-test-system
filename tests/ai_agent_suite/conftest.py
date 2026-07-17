@@ -28,6 +28,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault("LLM_API_KEY", "sk-test-dummy-for-agent-suite")
 os.environ.setdefault("AI_TEST_ENV", "development")
 
+# 注：整个 ai_agent_suite 套件的 slow 标记由顶层 tests/conftest.py 的
+# pytest_collection_modifyitems 钩子统一打，无需在此重复声明。
+
 # ─── 全局状态 ───
 
 _suite_start_time: datetime | None = None

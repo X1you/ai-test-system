@@ -111,6 +111,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# 默认跳过 slow 测试（真实 LLM/Pipeline/Web 端到端测试，耗时长）。
+# 单独触发：`pytest -m slow`；全部跑：`pytest -m ""`
+addopts = ["-m", "not slow"]
 
 [tool.ruff]
 target-version = "py311"
