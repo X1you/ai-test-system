@@ -128,6 +128,42 @@ def cmd_config(args):
     return 0
 
 
+def cmd_ingest(args):
+    """手动回灌知识库"""
+    config = _load_and_validate(args.config)
+    if config is None:
+        return 1
+
+    from pathlib import Path
+
+    source = Path(args.source)
+    if not source.exists():
+        print(f"❌ 源文件不存在: {args.source}", file=sys.stderr)
+        return 1
+
+    # 用 Pipeline 的回灌方法（复用验证逻辑）
+    pipeline = Pipeline(config, args.output)
+    count = pipeline._ingest_to_kb(
+        source_file=str(source),
+        category=args.category,
+        module=args.module,
+        project=args.project,
+        batch=args.batch,
+    )
+
+    print()
+    print(f"{'═' * 50}")
+    if count > 0:
+        print(f"  ✅ 回灌成功 — {count} 条知识写入 Vault")
+    else:
+        print(f"  ⚠️  回灌 0 条（源文件为空/格式不匹配/知识库未启用）")
+    print(f"  📁 分类: {args.category}")
+    kb = config.get("knowledge_base", {})
+    print(f"  📂 Vault: {kb.get('vault_path', 'N/A')}")
+    print(f"{'═' * 50}")
+    return 0 if count > 0 else 1
+
+
 def _load_and_validate(config_path: str = ""):
     """加载并校验配置，失败返回 None"""
     config = load_config(config_path or None)
@@ -153,6 +189,7 @@ def main():
   python cli.py run examples/demo_requirements.md -d all   # 全6维测试
   python cli.py status -o output/                          # 查看进度
   python cli.py resume -o output/                          # 从断点继续
+  python cli.py ingest output/run/testcases.xlsx --category historical-cases --project myproj  # 回灌用例
         """,
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -182,6 +219,31 @@ def main():
     p_status.add_argument("-o", "--output", default=default_output, help="输出目录")
     p_status.add_argument("--config", default=None)
 
+    # ingest — 手动回灌知识库
+    p_ingest = subparsers.add_parser(
+        "ingest", help="手动回灌知识库（用例/坑点/规则）"
+    )
+    p_ingest.add_argument("source", help="源文件路径（Excel 或 Markdown）")
+    p_ingest.add_argument(
+        "--category",
+        required=True,
+        choices=[
+            "historical-cases",
+            "pitfalls",
+            "business-rules",
+            "templates",
+            "data-dictionary",
+            "business-specs",
+            "team-standards",
+        ],
+        help="知识库分类",
+    )
+    p_ingest.add_argument("--module", default="", help="所属模块")
+    p_ingest.add_argument("--project", default="", help="项目名（历史用例归档）")
+    p_ingest.add_argument("--batch", default="", help="批次名（默认当天）")
+    p_ingest.add_argument("-o", "--output", default=default_output, help="输出目录（取 project 默认值）")
+    p_ingest.add_argument("--config", default=None)
+
     # config
     p_config = subparsers.add_parser("config", help="查看当前配置")
     p_config.add_argument("--config", default=None)
@@ -196,6 +258,7 @@ def main():
         "run": cmd_run,
         "resume": cmd_resume,
         "status": cmd_status,
+        "ingest": cmd_ingest,
         "config": cmd_config,
     }
     return commands[args.command](args)
