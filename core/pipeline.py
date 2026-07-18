@@ -200,6 +200,13 @@ class Pipeline:
         if stored_hash:
             current_hash = self._compute_file_hash(path)
             if current_hash != stored_hash:
+                # ⚠️ 特殊豁免：Step4 和 Step6 共用 testcases.xlsx，
+                # 用户填入执行结果后 hash 自然改变，不视为篡改。
+                # 检测到 Excel 已有执行结果 → 跳过警告和强制重跑。
+                if step_id == 4 and output_file == "testcases.xlsx":
+                    if self._has_results(path):
+                        return True
+
                 self._notify_log(
                     "WARN",
                     f"⚠️ Step {step_id} 产物 {output_file} 内容与完成时不一致"
@@ -290,7 +297,7 @@ class Pipeline:
             if r.ok:
                 self.mark_done(state, 1, r)
                 print()
-                if mode == "step":
+                if mode in ("semi", "step"):
                     if not self._pause("Step 1"):
                         return state
             elif mode in ("semi", "step"):
@@ -441,20 +448,28 @@ class Pipeline:
         self._print_summary(state)
         return state
 
-    def resume(self, dimensions: str = "basic", formats: str = "excel"):
-        """从断点继续执行。"""
+    def resume(self, dimensions: str = "basic", formats: str = "excel", mode: str | None = None):
+        """从断点继续执行。
+
+        Args:
+            mode: 执行模式，默认 auto（与 WebUI 对齐）。传 None 使用原始模式。
+        """
         state = self.load_state()
         if not state.get("requirements_file"):
             print("❌ 未找到 pipeline 状态，请先 run", file=sys.stderr)
             return
 
+        # resume 默认 auto 模式（用户 resume 的目标是快速完成后续步骤，不是二次暂停）
+        # 允许 --mode 参数覆盖（如强制 semi 重审评审报告）
+        run_mode = mode or "auto"
+
         print()
-        print(f"▶  继续执行 — 已完成: {state['completed_steps']}")
+        print(f"▶  继续执行 — 已完成: {state['completed_steps']}  (模式: {run_mode})")
         print()
 
         self.run(
             state["requirements_file"],
-            mode=state.get("mode", "semi"),
+            mode=run_mode,
             dimensions=dimensions,
             formats=formats,
         )

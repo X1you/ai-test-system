@@ -72,9 +72,10 @@ def cmd_resume(args):
 
     dimensions = args.dimensions or config.get("pipeline", {}).get("default_dimensions", "basic")
     formats = args.formats or config.get("pipeline", {}).get("default_formats", "excel")
+    mode = args.mode  # None → pipeline.resume 默认 auto
 
     pipeline = Pipeline(config, args.output)
-    pipeline.resume(dimensions=dimensions, formats=formats)
+    pipeline.resume(dimensions=dimensions, formats=formats, mode=mode)
     return 0
 
 
@@ -189,7 +190,8 @@ def main():
   python cli.py run examples/demo_requirements.md -d all   # 全6维测试（含性能/安全）
   python cli.py run examples/order_requirements.md -f excel,xmind  # Excel+XMind 同时输出
   python cli.py status -o output/                          # 查看 Pipeline 进度
-  python cli.py resume -o output/                          # 手工填完测试结果后续跑
+  python cli.py resume -o output/                          # 手工填完测试结果后续跑（默认auto模式，不二次暂停）
+  python cli.py resume -o output/ --mode semi              # 半自动模式resume（如要重审评审报告）
   python cli.py ingest output/run/testcases.xlsx --category historical-cases --project myproj  # 回灌测试用例
         """,
     )
@@ -228,6 +230,8 @@ def main():
                           help="后续步骤的测试维度（默认沿用原始配置）")
     p_resume.add_argument("-f", "--formats", default=None,
                           help="后续步骤的输出格式（默认沿用原始配置）")
+    p_resume.add_argument("--mode", choices=["auto", "semi", "step"], default=None,
+                          help="执行模式（覆盖原始模式，默认 auto：resume 应快速完成后续步骤）")
     p_resume.add_argument("--config", default=None)
 
     # status
