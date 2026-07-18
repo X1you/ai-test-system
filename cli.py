@@ -156,7 +156,7 @@ def cmd_ingest(args):
     if count > 0:
         print(f"  ✅ 回灌成功 — {count} 条知识写入 Vault")
     else:
-        print(f"  ⚠️  回灌 0 条（源文件为空/格式不匹配/知识库未启用）")
+        print("  ⚠️  回灌 0 条（源文件为空/格式不匹配/知识库未启用）")
     print(f"  📁 分类: {args.category}")
     kb = config.get("knowledge_base", {})
     print(f"  📂 Vault: {kb.get('vault_path', 'N/A')}")
@@ -184,12 +184,13 @@ def main():
         epilog="""
 示例:
   python cli.py config                                    # 查看当前配置
-  python cli.py run examples/demo_requirements.md          # 半自动全流程
-  python cli.py run examples/demo_requirements.md --mode auto  # 全自动
-  python cli.py run examples/demo_requirements.md -d all   # 全6维测试
-  python cli.py status -o output/                          # 查看进度
-  python cli.py resume -o output/                          # 从断点继续
-  python cli.py ingest output/run/testcases.xlsx --category historical-cases --project myproj  # 回灌用例
+  python cli.py run examples/demo_requirements.md          # 半自动全流程（推荐首次使用）
+  python cli.py run examples/demo_requirements.md --mode auto  # 全自动模式（无人工干预）
+  python cli.py run examples/demo_requirements.md -d all   # 全6维测试（含性能/安全）
+  python cli.py run examples/order_requirements.md -f excel,xmind  # Excel+XMind 同时输出
+  python cli.py status -o output/                          # 查看 Pipeline 进度
+  python cli.py resume -o output/                          # 手工填完测试结果后续跑
+  python cli.py ingest output/run/testcases.xlsx --category historical-cases --project myproj  # 回灌测试用例
         """,
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -197,21 +198,36 @@ def main():
     default_output = str(PROJECT_ROOT / "output")
 
     # run
-    p_run = subparsers.add_parser("run", help="执行全流程 Pipeline")
-    p_run.add_argument("requirements", help="需求文档路径 (Markdown)")
-    p_run.add_argument("-o", "--output", default=default_output, help="输出目录")
-    p_run.add_argument(
-        "--mode", choices=["auto", "semi", "step"], default=None, help="执行模式"
+    p_run = subparsers.add_parser(
+        "run", help="执行全流程 Pipeline",
+        description="全流程自动化：需求分析→知识库检索→测试点→生成用例→评审→人工执行→报告"
     )
-    p_run.add_argument("-d", "--dimensions", default=None, help="测试维度")
-    p_run.add_argument("-f", "--formats", default=None, help="输出格式")
-    p_run.add_argument("--config", default=None, help="配置文件路径")
+    p_run.add_argument("requirements", help="需求文档路径（.md 格式）")
+    p_run.add_argument("-o", "--output", default=default_output, help="输出目录（默认 ./output/）")
+    p_run.add_argument(
+        "--mode", choices=["auto", "semi", "step"], default=None,
+        help="执行模式: auto(全自动连续) / semi(半自动,AI步骤后暂停确认,默认) / step(逐步骤手动触发)"
+    )
+    p_run.add_argument(
+        "-d", "--dimensions", default=None,
+        help="测试维度: basic(正/负/边界/异常 4维) / all(含性能/安全 6维) / positive,negative(自定义)"
+    )
+    p_run.add_argument(
+        "-f", "--formats", default=None,
+        help="输出格式: excel / xmind / excel,xmind（同时输出）"
+    )
+    p_run.add_argument("--config", default=None, help="配置文件路径（默认 config.yaml）")
 
     # resume
-    p_resume = subparsers.add_parser("resume", help="从断点继续")
-    p_resume.add_argument("-o", "--output", default=default_output, help="输出目录")
-    p_resume.add_argument("-d", "--dimensions", default=None)
-    p_resume.add_argument("-f", "--formats", default=None)
+    p_resume = subparsers.add_parser(
+        "resume", help="从断点继续 Pipeline（Step6 填完执行结果后用）",
+        description="Step6 人工执行测试填完 Excel 后，运行此命令从断点继续生成报告"
+    )
+    p_resume.add_argument("-o", "--output", default=default_output, help="Pipeline 输出目录")
+    p_resume.add_argument("-d", "--dimensions", default=None,
+                          help="后续步骤的测试维度（默认沿用原始配置）")
+    p_resume.add_argument("-f", "--formats", default=None,
+                          help="后续步骤的输出格式（默认沿用原始配置）")
     p_resume.add_argument("--config", default=None)
 
     # status
