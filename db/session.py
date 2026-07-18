@@ -104,6 +104,12 @@ def init_db():
 def reset_engine():
     """重置引擎缓存（主要用于测试切换数据库）"""
     global _engine, _SessionFactory
+    # 释放旧 engine 的连接池资源，防止文件描述符/连接泄漏
+    if _engine is not None:
+        try:
+            _engine.dispose()
+        except Exception:
+            pass
     _engine = None
     _SessionFactory = None
 

@@ -39,15 +39,17 @@ class LLMCache:
     def _init_db(self):
         """初始化 SQLite 缓存表"""
         conn = sqlite3.connect(self._db_path)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS llm_cache (
-                cache_key TEXT PRIMARY KEY,
-                response TEXT NOT NULL,
-                created_at REAL NOT NULL
-            )
-        """)
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS llm_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    response TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            """)
+            conn.commit()
+        finally:
+            conn.close()
 
     def _make_key(self, model: str, system: str, prompt: str, temperature: float) -> str:
         """生成缓存 Key — 仅 temperature=0 时可缓存"""
@@ -87,6 +89,7 @@ class LLMCache:
 
     def _get_from_db(self, key: str, now: float) -> str | None:
         """从 SQLite 查询"""
+        conn = None
         try:
             conn = sqlite3.connect(self._db_path)
             cursor = conn.execute(
@@ -94,11 +97,13 @@ class LLMCache:
                 (key,),
             )
             row = cursor.fetchone()
-            conn.close()
             if row and now - row[1] < self._ttl:
                 return row[0]
         except Exception:
             pass
+        finally:
+            if conn is not None:
+                conn.close()
         return None
 
     def set(self, model: str, system: str, prompt: str, response: str, temperature: float = 0):
@@ -121,6 +126,7 @@ class LLMCache:
 
     def _set_to_db(self, key: str, response: str, now: float):
         """写入 SQLite"""
+        conn = None
         try:
             conn = sqlite3.connect(self._db_path)
             conn.execute(
@@ -128,22 +134,27 @@ class LLMCache:
                 (key, response, now),
             )
             conn.commit()
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn is not None:
+                conn.close()
 
     def clear(self):
         """清空缓存"""
         with self._lock:
             self._mem_cache.clear()
         if self._db_path:
+            conn = None
             try:
                 conn = sqlite3.connect(self._db_path)
                 conn.execute("DELETE FROM llm_cache")
                 conn.commit()
-                conn.close()
             except Exception:
                 pass
+            finally:
+                if conn is not None:
+                    conn.close()
 
     @property
     def stats(self) -> dict:
