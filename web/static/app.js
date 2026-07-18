@@ -21,34 +21,6 @@ function formatFileSize(bytes) {
 }
 
 /**
- * 时间格式化
- */
-function formatTime(isoString) {
-  if (!isoString) return '--';
-  try {
-    const d = new Date(isoString);
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  } catch (e) {
-    return '--';
-  }
-}
-
-/**
- * 日期格式化
- */
-function formatDate(isoString) {
-  if (!isoString) return '--';
-  try {
-    const d = new Date(isoString);
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  } catch (e) {
-    return '--';
-  }
-}
-
-/**
  * 相对时间
  */
 function relativeTime(isoString) {
@@ -101,19 +73,6 @@ function showToast(message, type, duration) {
     toast.style.animation = 'toast-out 0.3s ease forwards';
     setTimeout(function () { toast.remove(); }, 300);
   }, duration);
-}
-
-/**
- * 确认对话框
- */
-function confirmDialog(message, title) {
-  return new Promise(function (resolve) {
-    if (typeof message === 'object' && message.preventDefault) {
-      return resolve(true);
-    }
-    const result = window.confirm(message);
-    resolve(result);
-  });
 }
 
 /**

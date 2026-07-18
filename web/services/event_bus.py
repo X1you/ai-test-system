@@ -20,16 +20,9 @@ class EventBus:
     def __init__(self):
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._lock = threading.Lock()
+        # 记录主事件循环，供 publish_sync 从工作线程跨线程调度。
+        # 在 subscribe（async 上下文）时延迟绑定。
         self._loop: asyncio.AbstractEventLoop | None = None
-
-    def _ensure_loop(self):
-        """获取当前事件循环（延迟绑定）"""
-        if self._loop is None:
-            try:
-                self._loop = asyncio.get_running_loop()
-            except RuntimeError:
-                # 没有运行中的事件循环，在 publish 时用 run_coroutine_threadsafe
-                pass
 
     async def subscribe(self, topic: str) -> asyncio.Queue:
         """订阅主题 — 返回一个 asyncio.Queue 用于接收事件
@@ -40,6 +33,10 @@ class EventBus:
         Returns:
             asyncio.Queue，消费者从中 get() 事件
         """
+        # 延迟绑定事件循环（此时一定在 async 上下文，get_running_loop 不会失败）
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
+
         queue: asyncio.Queue = asyncio.Queue(maxsize=256)
         with self._lock:
             if topic not in self._subscribers:
