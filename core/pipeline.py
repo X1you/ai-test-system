@@ -791,3 +791,16 @@ class Pipeline:
                 f"  🤖 LLM 调用: {stats['call_count']} 次, "
                 f"{stats['total_tokens']} tokens ({stats['provider']})"
             )
+
+        # 下一步指引
+        ingested_cases = state.get("ingested_cases_count", 0)
+        ingested_pitfalls = state.get("ingested_pitfalls_count", 0)
+        if ingested_cases or ingested_pitfalls:
+            print(f"  📚 知识库回灌: {ingested_cases} 用例 + {ingested_pitfalls} 坑点")
+        print()
+        print("  💡 下一步:")
+        report = self.output_dir / "test_report.md"
+        if report.exists():
+            print(f"     📖 查看测试报告: {report}")
+        print(f"     📋 回顾分析结果: see requirements_analysis.md, testpoints.md")
+        print(f"     ▶️  重新开始: python cli.py run <新需求文档.md> -o <输出目录>")
