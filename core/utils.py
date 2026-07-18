@@ -83,3 +83,51 @@ def safe_join_path(base_dir: str, user_path: str) -> Path:
         raise ValueError(f"路径穿越检测：{user_path} 解析后不在允许的目录范围内")
 
     return resolved
+
+
+def excel_has_results(xlsx_path) -> bool:
+    """检查 Excel 是否已填写执行结果（至少一行的"执行结果"列有值）。
+
+    被 Pipeline._has_results 和 Step6HumanTest._check_has_results 共享，
+    消除原先两处独立的重复实现。
+
+    列识别规则：表头完全等于"执行结果"，或同时包含"执行"和"结果"。
+    首行视为表头，从第二行开始检测。
+
+    Args:
+        xlsx_path: Excel 文件路径（str/Path）
+
+    Returns:
+        True 表示至少一行执行结果已填写；False 表示未填写、无执行结果列、
+        文件不存在或 openpyxl 未安装（容错降级，不抛异常）。
+    """
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(str(xlsx_path), data_only=True)
+        ws = wb.active
+        if not ws:
+            wb.close()
+            return False
+
+        # 定位"执行结果"列
+        result_col = None
+        for col in range(1, ws.max_column + 1):
+            header = str(ws.cell(row=1, column=col).value or "").strip()
+            if header == "执行结果" or ("执行" in header and "结果" in header):
+                result_col = col
+                break
+        if not result_col:
+            wb.close()
+            return False
+
+        # 统计已填写行数（首行为表头，从第二行开始）
+        filled = any(
+            str(ws.cell(row=row, column=result_col).value or "").strip()
+            for row in range(2, ws.max_row + 1)
+        )
+        wb.close()
+        return filled
+    except Exception:
+        # openpyxl 未安装或文件损坏均视为无结果
+        return False

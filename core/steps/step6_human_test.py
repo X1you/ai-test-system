@@ -62,28 +62,10 @@ class Step6HumanTest(BaseStep):
 
     @staticmethod
     def _check_has_results(xlsx_path: str) -> bool:
-        try:
-            from openpyxl import load_workbook
-            wb = load_workbook(xlsx_path, data_only=True)
-            ws = wb.active
-            if not ws:
-                wb.close()
-                return False
-            result_col = None
-            for col in range(1, ws.max_column + 1):
-                header = str(ws.cell(row=1, column=col).value or "").strip()
-                if header == "执行结果" or ("执行" in header and "结果" in header):
-                    result_col = col
-                    break
-            if not result_col:
-                wb.close()
-                return False
-            filled = 0
-            for row in range(2, ws.max_row + 1):
-                val = str(ws.cell(row=row, column=result_col).value or "").strip()
-                if val:
-                    filled += 1
-            wb.close()
-            return filled > 0
-        except Exception:
-            return False
+        """检查 Excel 是否已填写执行结果。
+
+        委托给 core.utils.excel_has_results（与 Pipeline._has_results 共享同一实现）。
+        """
+        from core.utils import excel_has_results
+
+        return excel_has_results(xlsx_path)

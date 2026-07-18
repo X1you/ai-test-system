@@ -223,37 +223,13 @@ class Pipeline:
         return True
 
     def _has_results(self, xlsx_path: Path) -> bool:
-        """检查 Excel 是否已填写执行结果（至少一行的"执行结果"列有值）。"""
-        try:
-            from openpyxl import load_workbook
+        """检查 Excel 是否已填写执行结果（至少一行的"执行结果"列有值）。
 
-            wb = load_workbook(str(xlsx_path), data_only=True)
-            ws = wb.active
-            if not ws:
-                wb.close()
-                return False
+        委托给 core.utils.excel_has_results（与 Step6HumanTest 共享同一实现）。
+        """
+        from core.utils import excel_has_results
 
-            # 定位"执行结果"列
-            result_col = None
-            for col in range(1, ws.max_column + 1):
-                header = str(ws.cell(row=1, column=col).value or "").strip()
-                if header == "执行结果" or ("执行" in header and "结果" in header):
-                    result_col = col
-                    break
-            if not result_col:
-                wb.close()
-                return False
-
-            # 统计已填写行数（首行为表头，从第二行开始）
-            filled = any(
-                str(ws.cell(row=row, column=result_col).value or "").strip()
-                for row in range(2, ws.max_row + 1)
-            )
-            wb.close()
-            return filled
-        except Exception:
-            # openpyxl 未安装或文件损坏均视为无结果
-            return False
+        return excel_has_results(xlsx_path)
 
     # ─── 执行 ───
 
