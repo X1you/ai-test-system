@@ -2,7 +2,7 @@
 
 > **版本**：v2.0.0
 > **文档状态**：正式版
-> **最后更新**：2026-07-16
+> **最后更新**：2026-07-17
 > **作者**：AI Test System Team
 
 ---
@@ -411,7 +411,7 @@ Excel 测试用例应包含以下 12 列标准结构：
 |------|------|------|
 | 首页 | `/` | 上传需求文档，启动 Pipeline |
 | Pipeline 进度 | `/pipeline/{id}` | 实时查看 7 步进度 |
-| 结果预览 | `/pipeline/{id}/results` | 查看和下载产物 |
+| 结果预览 | `/results/{id}` | 查看和下载产物 |
 | 知识库管理 | `/knowledge` | 搜索和查看知识库状态 |
 | Pipeline 列表 | `/pipelines` | 历史任务列表 |
 | 登录 | `/login` | 用户登录 |
@@ -1072,9 +1072,9 @@ web/app.py
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| 架构设计文档 | `docs/architecture.md` | 详细架构说明和 Track B 演进路径 |
 | 文件功能分析 | `docs/file-analysis.md` | 全部文件的功能和依赖关系分析 |
-| 迁移指南 | `docs/migration-guide.md` | 从旧版本迁移到 v2.0 |
+| 集成扩展指南 | `docs/integration-extension-guide.md` | 集成适配器扩展开发指南 |
+| Pipeline 布局设计 | `docs/PIPELINE_LAYOUT_V3.md` | Pipeline 进度页面垂直时间轴设计 |
 | 快速开始 | `QUICKSTART.md` | 5 步快速上手指南 |
 | 变更日志 | `CHANGELOG.md` | 版本变更历史 |
 

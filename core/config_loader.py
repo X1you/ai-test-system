@@ -77,15 +77,16 @@ def _load_dotenv(env_path: Path):
 
 
 def _expand_vars(value: Any) -> Any:
-    """递归替换 ${VAR_NAME} 为环境变量值"""
+    """递归替换 ${VAR_NAME} 和 ${VAR_NAME:-default} 为环境变量值"""
     if isinstance(value, str):
-        # 匹配 ${VAR_NAME} 模式
+        # 匹配 ${VAR_NAME} 和 ${VAR_NAME:-default} 模式
         def replacer(match):
             var_name = match.group(1)
-            env_val = os.environ.get(var_name, "")
-            return env_val
+            default_val = match.group(2) or ""
+            env_val = os.environ.get(var_name)
+            return env_val if env_val is not None else default_val
 
-        return re.sub(r"\$\{(\w+)\}", replacer, value)
+        return re.sub(r"\$\{(\w+)(?::-(.*?))?\}", replacer, value)
     elif isinstance(value, dict):
         return {k: _expand_vars(v) for k, v in value.items()}
     elif isinstance(value, list):

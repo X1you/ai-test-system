@@ -19,7 +19,12 @@ except ImportError:
     print("请运行: pip install openpyxl", file=sys.stderr)
     sys.exit(1)
 
-from scripts.common import TestPointParser, assign_priority, filter_by_dimensions
+from scripts.common import (
+    TestPointParser,
+    assign_priority,
+    filter_by_dimensions,
+    filter_by_priorities,
+)
 
 # ═══════════════════════════════════════════════════════════════
 # 常量定义
@@ -255,6 +260,12 @@ class TestCaseGenerator:
                 steps.append("2. 设置时间/有效期刚好在边界值（如刚好 N 分钟/N 秒）")
             elif any(k in title for k in ["次数", "第", "锁定", "限制"]):
                 steps.append("2. 重复操作至边界次数（如第 N-1 次和第 N 次）")
+            elif any(k in title for k in ["空值", "null", "为空", "留空", "不填"]):
+                steps.append("2. 将目标字段设置为空值/null/不填写")
+                steps.append("3. 提交请求，观察系统是否正确处理空值边界")
+            elif any(k in title for k in ["特殊字符", "SQL注入", "XSS", "emoji", "表情"]):
+                steps.append("2. 在目标字段中输入特殊字符（如 ' \" < > & | \\ emoji 等）")
+                steps.append("3. 提交请求，观察系统是否正确转义/过滤")
             else:
                 # 智能兜底：从标题中提取关键信息
                 steps.append(f"2. 针对「{feature}」设置边界值测试数据（详见测试数据字段）")
@@ -352,7 +363,6 @@ class TestCaseGenerator:
         """生成前置条件"""
         title = tp["title"]
         dimension = tp["dimension"]
-        module = tp["module"]
 
         # 根据模块和维度生成前置条件
         if any(k in title for k in ["登录", "注册", "认证"]):
@@ -437,10 +447,11 @@ class ExcelWriter:
     PRIORITY_FILLS = {
         "P0": PatternFill(start_color="FFCDD2", fill_type="solid"),  # 浅红
         "P1": PatternFill(start_color="FFE0B2", fill_type="solid"),  # 浅橙
-        "P2": PatternFill(start_color="C8E6C9", fill_type="solid"),  # 浅绿
+        "P2": PatternFill(start_color="FFF9C4", fill_type="solid"),  # 浅黄
     }
 
-    def __write(self, test_cases: list, output_path: str):
+    def write(self, test_cases: list, output_path: str):
+        """写入 Excel 文件，带格式化"""
         wb = Workbook()
         ws = wb.active
         ws.title = "测试用例"
@@ -494,9 +505,6 @@ class ExcelWriter:
 
         wb.save(output_path)
 
-    def write(self, test_cases: list, output_path: str):
-        self.__write(test_cases, output_path)
-
 
 # ═════════════════════════════════════════ 计数助手 ═══════════════════════════
 
@@ -531,6 +539,10 @@ def main():
         default="all",
         help="测试维度过滤: all|basic|positive,negative,boundary,exception,performance,security"
     )
+    parser.add_argument(
+        "-p", "--priority", default="all",
+        help="优先级过滤: all|P0|P0,P1|P1,P2 等"
+    )
     args = parser.parse_args()
 
     # 1. 解析测试点
@@ -547,12 +559,16 @@ def main():
     # 2. 过滤
     if args.dimensions != "all":
         test_points = filter_by_dimensions(test_points, args.dimensions)
-        print(f"🔍 过滤后剩余 {len(test_points)} 个测试点")
+        print(f"🔍 维度过滤后剩余 {len(test_points)} 个测试点")
 
     # 3. 生成用例
     print("🔨 生成测试用例...")
     generator = TestCaseGenerator()
     test_cases = generator.generate(test_points)
+
+    if args.priority != "all":
+        test_cases = filter_by_priorities(test_cases, args.priority)
+        print(f"🔍 优先级过滤后剩余 {len(test_cases)} 个用例")
 
     # 4. 统计
     stats = count_stats(test_cases)
@@ -577,7 +593,6 @@ def main():
 
     print(f"\n✅ 文件已保存: {args.output}")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

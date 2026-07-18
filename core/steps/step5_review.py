@@ -54,10 +54,42 @@ class Step5Review(BaseStep):
             self.log(f"LLM 调用失败: {e}", "ERR")
             return StepResult(ok=False, error=str(e))
 
-        # 3. 写入文件
+        # 3. 质量自检
+        check_result = self.self_check(
+            response,
+            criteria=(
+                "1. 评审是否覆盖了所有4个维度（完整性/清晰性/准确性/可执行性）？\n"
+                "2. 完整性评审：是否识别了缺失用例、遗漏场景？\n"
+                "3. 清晰性评审：是否指出了步骤含糊、预期结果不明确的用例？\n"
+                "4. 准确性评审：是否发现预期结果与实际不符、逻辑错误的用例？\n"
+                "5. 可执行性评审：是否评估了测试步骤的可操作性、数据依赖性？\n"
+                "6. 整改清单中的建议是否具体可操作（非'需要补充'这种模糊建议）？"
+            ),
+        )
+        score = check_result.get("score", 0)
+        self.log(f"  自检评分: {score}/100", "INFO")
+
+        # 不合格重跑
+        if not check_result.get("passed", False) and score < 70:
+            issues = check_result.get("issues", [])
+            self.log(f"  自检未通过，带着改进意见重跑 (问题: {len(issues)} 个)", "WARN")
+            improvement_hint = "\n".join(f"- {issue}" for issue in issues)
+            retry_prompt = (
+                prompt
+                + f"\n\n## 上次输出的问题（请务必改进）\n{improvement_hint}\n"
+                + "\n请重新生成改进后的版本。"
+            )
+            try:
+                response = self.llm.chat(retry_prompt)
+            except LLMError:
+                self.log("  重跑失败，使用原始输出", "WARN")
+            except Exception:
+                self.log("  重跑异常，使用原始输出", "WARN")
+
+        # 4. 写入文件
         self._write_output("test_case_review_report.md", response)
 
-        # 4. 提取评分
+        # 5. 提取评分
         score = self._extract_score(response)
         if score:
             grade = self._score_to_grade(score)
