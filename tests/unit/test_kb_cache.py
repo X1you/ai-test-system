@@ -13,7 +13,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -293,3 +293,78 @@ class TestSubprocessFallback:
                 result = kc.search("test")
                 assert len(result) == 1
                 mock_sub.assert_called_once_with("test", 20)
+
+
+# ═══════════════════════════════════════════════════════════════
+# LRU 淘汰（防止内存无限增长）
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestSearchCacheLRU:
+    """search 缓存 LRU 上限测试
+
+    场景：高频不同 query 会导致 _search_cache 无限增长（内存泄漏）。
+    LRU 策略：缓存条目上限 SEARCH_CACHE_MAX，超出淘汰最旧条目。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self, mock_config):
+        """每个测试前清空模块级缓存"""
+        import web.services.kb_cache as kc
+
+        with patch("web.services.kb_cache.load_config", return_value=mock_config):
+            kc.invalidate_all()
+            kc._search_cache.clear()
+            yield
+            kc.invalidate_all()
+            kc._search_cache.clear()
+
+    def test_cache_bounded_by_max(self, mock_config):
+        """写入超过 SEARCH_CACHE_MAX 条目后，总数不超过上限"""
+        import web.services.kb_cache as kc
+
+        mock_mgr = MagicMock()
+        mock_mgr.search.side_effect = lambda q, limit: [{"q": q}]
+
+        with patch("web.services.kb_cache.load_config", return_value=mock_config):
+            with patch.object(kc, "get_kb_manager", return_value=mock_mgr):
+                # 写入 SEARCH_CACHE_MAX + 10 个不同 query
+                for i in range(kc.SEARCH_CACHE_MAX + 10):
+                    kc.search(f"query-{i}")
+
+                assert len(kc._search_cache) <= kc.SEARCH_CACHE_MAX
+
+    def test_lru_evicts_oldest(self, mock_config):
+        """LRU 淘汰最旧条目：最早写入的 query 被移除"""
+        import web.services.kb_cache as kc
+
+        mock_mgr = MagicMock()
+        mock_mgr.search.side_effect = lambda q, limit: [{"q": q}]
+
+        with patch("web.services.kb_cache.load_config", return_value=mock_config):
+            with patch.object(kc, "get_kb_manager", return_value=mock_mgr):
+                kc.search("first-query")
+                # 写入足够多新 query 触发淘汰
+                for i in range(kc.SEARCH_CACHE_MAX):
+                    kc.search(f"q-{i}")
+
+                # "first-query" 应已被淘汰
+                assert "first-query:20" not in kc._search_cache
+
+    def test_lru_keeps_recently_accessed(self, mock_config):
+        """命中过的条目被 move_to_end，不会被优先淘汰"""
+        import web.services.kb_cache as kc
+
+        mock_mgr = MagicMock()
+        mock_mgr.search.side_effect = lambda q, limit: [{"q": q}]
+
+        with patch("web.services.kb_cache.load_config", return_value=mock_config):
+            with patch.object(kc, "get_kb_manager", return_value=mock_mgr):
+                kc.search("hot-query")      # 写入
+                kc.search("hot-query")      # 命中（move_to_end）
+                # 写入新 query，但数量不足以淘汰 hot-query
+                for i in range(kc.SEARCH_CACHE_MAX - 1):
+                    kc.search(f"q-{i}")
+
+                # hot-query 应仍在缓存中（最近使用过）
+                assert "hot-query:20" in kc._search_cache

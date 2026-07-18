@@ -249,7 +249,7 @@ def build_phase2_functional(workdir: Path) -> TestSuite:
 
     # 2.4 Report 生成 — 不同通过率
     for rate, label in [(1.0, "100%"), (0.8, "80%"), (0.5, "50%"), (0.0, "0%")]:
-        def _test_report(r=rate, l=label):
+        def _test_report(r=rate, lbl=label):
             tmp = workdir / f"p2_report_{int(r*100)}"
             tmp.mkdir(parents=True, exist_ok=True)
             xlsx = tmp / "tc.xlsx"
@@ -259,7 +259,7 @@ def build_phase2_functional(workdir: Path) -> TestSuite:
             assert r2.returncode == 0
             content = out.read_text(encoding="utf-8")
             assert "测试质量报告" in content
-            return f"通过率 {l}: 报告生成成功"
+            return f"通过率 {lbl}: 报告生成成功"
 
         suite.add_simple(f"func_report_rate_{int(rate*100)}", f"report_{label}", "Phase2-Functional", _test_report, timeout=30)
 
@@ -852,7 +852,7 @@ def build_phase6_concurrency(workdir: Path) -> TestSuite:
                     r = _run_subprocess([VENV_PYTHON, "scripts/generate_excel.py", str(tp), "-o", str(out), "-d", "all"], timeout=20)
                     if r.returncode != 0:
                         errors.append(str(tid))
-                except:
+                except Exception:
                     errors.append("err")
 
             threads = [threading.Thread(target=gen, args=(j,)) for j in range(3)]

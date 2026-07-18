@@ -8,14 +8,16 @@ BaseAdapter — 所有测试管理平台适配器的抽象基类
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from integrations.models import TestCase, TestResult, TestRun, Defect, SyncResult
+from integrations.models import Defect, SyncResult, TestCase, TestResult, TestRun
+
+__all__ = ["AdapterConfig", "BaseAdapter"]
 
 
 @dataclass
 class AdapterConfig:
-    """适配器配置"""
+    """适配器配置 — 各平台适配器的统一配置容器"""
     platform: str
     base_url: str = ""
     api_key: str = ""
@@ -23,14 +25,19 @@ class AdapterConfig:
     password: str = ""                             # Basic Auth / XML-RPC 密码
     project_id: str = ""                           # 项目 ID
     field_mapping_path: str = ""                   # YAML 映射配置路径
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseAdapter(ABC):
-    """适配器抽象基类"""
+    """适配器抽象基类
+
+    子类必须实现所有 ``@abstractmethod`` 方法（authenticate / push_test_cases /
+    pull_test_cases / push_test_results / pull_test_results）。
+    TestRun 管理和缺陷管理为可选实现，默认抛出 NotImplementedError。
+    """
 
     platform_name: str = "base"
-    supported_transports: List[str] = []           # ["rest", "xmlrpc", "soap"]
+    supported_transports: list[str] = []           # ["rest", "xmlrpc", "soap"]
 
     def __init__(self, config: AdapterConfig):
         self.config = config
@@ -45,39 +52,39 @@ class BaseAdapter(ABC):
     # ─── 测试用例 CRUD ───
 
     @abstractmethod
-    def push_test_cases(self, cases: List[TestCase]) -> SyncResult:
+    def push_test_cases(self, cases: list[TestCase]) -> SyncResult:
         """推送用例到外部平台（创建或更新）"""
 
     @abstractmethod
-    def pull_test_cases(self, filters: Optional[dict] = None) -> List[TestCase]:
+    def pull_test_cases(self, filters: dict | None = None) -> list[TestCase]:
         """从外部平台拉取用例"""
 
     # ─── 测试结果 ───
 
     @abstractmethod
     def push_test_results(self, run_id: str,
-                          results: List[TestResult]) -> SyncResult:
+                          results: list[TestResult]) -> SyncResult:
         """推送执行结果到指定 TestRun"""
 
     @abstractmethod
-    def pull_test_results(self, run_id: str) -> List[TestResult]:
+    def pull_test_results(self, run_id: str) -> list[TestResult]:
         """从指定 TestRun 拉取执行结果"""
 
     # ─── TestRun 管理（可选实现）───
 
     def create_test_run(self, name: str,
-                        case_ids: List[str]) -> TestRun:
+                        case_ids: list[str]) -> TestRun:
         raise NotImplementedError(f"{self.platform_name} 不支持创建 TestRun")
 
-    def list_test_runs(self, filters: Optional[dict] = None) -> List[TestRun]:
+    def list_test_runs(self, filters: dict | None = None) -> list[TestRun]:
         raise NotImplementedError(f"{self.platform_name} 不支持列出 TestRun")
 
     # ─── 缺陷（可选实现）───
 
-    def push_defects(self, defects: List[Defect]) -> SyncResult:
+    def push_defects(self, defects: list[Defect]) -> SyncResult:
         raise NotImplementedError(f"{self.platform_name} 不支持推送缺陷")
 
-    def pull_defects(self, filters: Optional[dict] = None) -> List[Defect]:
+    def pull_defects(self, filters: dict | None = None) -> list[Defect]:
         raise NotImplementedError(f"{self.platform_name} 不支持拉取缺陷")
 
     # ─── Webhook ───
@@ -89,7 +96,7 @@ class BaseAdapter(ABC):
         """
         return True
 
-    def handle_webhook(self, event: dict) -> Optional[str]:
+    def handle_webhook(self, event: dict) -> str | None:
         """处理平台推送的事件
 
         子类可覆盖以实现事件驱动同步。

@@ -23,40 +23,33 @@ except ImportError:
 STATIC_DIR = Path(__file__).resolve().parent.parent / "web" / "static"
 DIST_DIR = STATIC_DIR / "dist"
 
+# 待压缩的文件清单：(文件名, 压缩器, 标签)
+_FILES = [
+    ("custom.css", rcssmin.cssmin, "CSS"),
+    ("app.js", rjsmin.jsmin, "JS"),
+]
 
-def minify_css(source: Path, target: Path):
-    """压缩 CSS"""
+
+def _minify(source: Path, target: Path, minifier, label: str):
+    """压缩单个文件并打印压缩率"""
     content = source.read_text(encoding="utf-8")
-    minified = rcssmin.cssmin(content)
+    minified = minifier(content)
     target.write_text(minified, encoding="utf-8")
     ratio = (1 - len(minified) / len(content)) * 100 if content else 0
-    print(f"  CSS: {source.name} {len(content)//1024}KB → {len(minified)//1024}KB (-{ratio:.0f}%)")
-
-
-def minify_js(source: Path, target: Path):
-    """压缩 JS"""
-    content = source.read_text(encoding="utf-8")
-    minified = rjsmin.jsmin(content)
-    target.write_text(minified, encoding="utf-8")
-    ratio = (1 - len(minified) / len(content)) * 100 if content else 0
-    print(f"  JS:  {source.name} {len(content)//1024}KB → {len(minified)//1024}KB (-{ratio:.0f}%)")
+    print(f"  {label}: {source.name} "
+          f"{len(content) // 1024}KB → {len(minified) // 1024}KB (-{ratio:.0f}%)")
 
 
 def main():
     print("🔨 开始压缩前端静态资源...")
     DIST_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 压缩 CSS
-    for css_file in ["custom.css"]:
-        src = STATIC_DIR / css_file
+    for filename, minifier, label in _FILES:
+        src = STATIC_DIR / filename
         if src.exists():
-            minify_css(src, DIST_DIR / css_file)
-
-    # 压缩 JS
-    for js_file in ["app.js"]:
-        src = STATIC_DIR / js_file
-        if src.exists():
-            minify_js(src, DIST_DIR / js_file)
+            _minify(src, DIST_DIR / filename, minifier, label)
+        else:
+            print(f"  ⚠️  跳过不存在的文件: {filename}")
 
     print(f"\n✅ 压缩完成，输出目录: {DIST_DIR}")
 

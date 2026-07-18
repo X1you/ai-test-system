@@ -133,7 +133,7 @@ class TestPipelineExecutionErrors:
         # 应该只保留最近 200 条
         assert len(task.logs) == 200
         # 最旧日志应该被截断
-        assert "log-0" not in [l["msg"] for l in task.logs]
+        assert "log-0" not in [entry["msg"] for entry in task.logs]
         # 最新日志保留
         assert task.logs[-1]["msg"] == "log-249"
 

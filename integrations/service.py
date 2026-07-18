@@ -22,13 +22,14 @@ import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from fastapi import HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
-from integrations.base import BaseAdapter, AdapterConfig
+from integrations.base import AdapterConfig, BaseAdapter
 from integrations.field_mapper import FieldMapper
-from integrations.models import TestCase, TestResult, SyncLogEntry, SyncResult, TestRun, Defect
+from integrations.models import SyncLogEntry, TestCase, TestResult
 from integrations.registry import AdapterRegistry
 
 logger = logging.getLogger("ai-test-system.integrations")
@@ -39,17 +40,28 @@ logger = logging.getLogger("ai-test-system.integrations")
 # ═══════════════════════════════════════════════════════════════
 
 class AuthManager:
-    """认证管理器 — 支持多种认证方式"""
+    """认证管理器 — 支持多种认证方式
+
+    线程安全的令牌存储，支持 OAuth2 令牌和 API Key 两种类型。
+    所有方法都是 classmethod，操作类级别的 ``_tokens`` 字典。
+    """
 
     _lock = threading.RLock()
-    _tokens: Dict[str, Dict[str, Any]] = {}
+    _tokens: dict[str, dict[str, Any]] = {}
 
     @classmethod
-    def store_oauth_token(cls, platform: str, access_token: str,
-                          refresh_token: str = "", expires_at: Optional[int] = None) -> str:
-        """存储 OAuth2 令牌"""
+    def store_oauth_token(
+        cls,
+        platform: str,
+        access_token: str,
+        refresh_token: str = "",
+        expires_at: int | None = None,
+    ) -> str:
+        """存储 OAuth2 令牌，返回 token_id"""
         with cls._lock:
-            token_id = hashlib.sha256(f"{platform}:{access_token}".encode()).hexdigest()[:16]
+            token_id = hashlib.sha256(
+                f"{platform}:{access_token}".encode()
+            ).hexdigest()[:16]
             cls._tokens[token_id] = {
                 "platform": platform,
                 "access_token": access_token,
@@ -61,11 +73,14 @@ class AuthManager:
             return token_id
 
     @classmethod
-    def store_api_key(cls, platform: str, api_key: str,
-                      extra: Optional[Dict[str, Any]] = None) -> str:
-        """存储 API Key"""
+    def store_api_key(
+        cls, platform: str, api_key: str, extra: dict[str, Any] | None = None
+    ) -> str:
+        """存储 API Key，返回 key_id"""
         with cls._lock:
-            key_id = hashlib.sha256(f"{platform}:{api_key}".encode()).hexdigest()[:16]
+            key_id = hashlib.sha256(
+                f"{platform}:{api_key}".encode()
+            ).hexdigest()[:16]
             cls._tokens[key_id] = {
                 "platform": platform,
                 "type": "api_key",
@@ -77,7 +92,7 @@ class AuthManager:
             return key_id
 
     @classmethod
-    def get_token(cls, token_id: str) -> Optional[Dict[str, Any]]:
+    def get_token(cls, token_id: str) -> dict[str, Any] | None:
         """获取令牌"""
         with cls._lock:
             return cls._tokens.get(token_id)
@@ -93,9 +108,10 @@ class AuthManager:
             return False
 
     @classmethod
-    def validate_signature(cls, platform: str, body: bytes,
-                           signature: str, secret: str) -> bool:
-        """验证 HMAC 签名"""
+    def validate_signature(
+        cls, platform: str, body: bytes, signature: str, secret: str
+    ) -> bool:
+        """验证 HMAC-SHA256 签名"""
         expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, signature)
 
@@ -106,16 +122,10 @@ class AuthManager:
 
 @dataclass
 class SimpleSyncResult:
-    """简化版同步结果"""
+    """简化版同步结果 — 用于 API 响应和引擎内部传递"""
     success_count: int = 0
-    success_ids: List[str] = None
-    errors: Dict[str, str] = None
-
-    def __post_init__(self):
-        if self.success_ids is None:
-            self.success_ids = []
-        if self.errors is None:
-            self.errors = {}
+    success_ids: list[str] = field(default_factory=list)
+    errors: dict[str, str] = field(default_factory=dict)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -123,20 +133,29 @@ class SimpleSyncResult:
 # ═══════════════════════════════════════════════════════════════
 
 class SyncEngine:
-    """同步引擎 — 管理双向数据流"""
+    """同步引擎 — 管理双向数据流
+
+    包装 BaseAdapter，提供增量/全量同步、日志记录和结果转换。
+    """
 
     def __init__(self, adapter: BaseAdapter, platform: str):
         self.adapter = adapter
         self.platform = platform
-        self.log: List[SyncLogEntry] = []
+        self.log: list[SyncLogEntry] = []
 
-    def _log(self, level: str, message: str, entity_type: str = "test_case",
-             entity_id: str = "", external_id: str = "", direction: str = "push",
-             details: Optional[Dict[str, Any]] = None):
-        """记录同步日志"""
-        sync_id = str(uuid.uuid4())[:8]
+    def _log(
+        self,
+        level: str,
+        message: str,
+        entity_type: str = "test_case",
+        entity_id: str = "",
+        external_id: str = "",
+        direction: str = "push",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """记录同步日志（内存存储 + logger 输出）"""
         entry = SyncLogEntry(
-            sync_id=sync_id,
+            sync_id=str(uuid.uuid4())[:8],
             ts=datetime.now().isoformat(),
             platform=self.platform,
             direction=direction,
@@ -154,9 +173,10 @@ class SyncEngine:
         elif level == "warn":
             logger.warning(f"[{self.platform}] {message}", extra=details or {})
 
-    def push_test_cases_incremental(self, cases: List[TestCase],
-                                    last_sync: Optional[str] = None) -> SimpleSyncResult:
-        """增量推送用例（仅推送创建时间 > last_sync 的用例）"""
+    def push_test_cases_incremental(
+        self, cases: list[TestCase], last_sync: str | None = None
+    ) -> SimpleSyncResult:
+        """增量推送用例（仅推送 updated_at > last_sync 的用例）"""
         self._log("info", f"开始增量推送用例，总数={len(cases)}")
 
         # 过滤：仅同步新增或修改的用例
@@ -167,32 +187,38 @@ class SyncEngine:
 
         self._log("info", f"过滤后需推送的用例数={len(filtered)}")
 
+        if not filtered:
+            return SimpleSyncResult()
+
         # 调用适配器（返回完整 SyncResult）
         full_result = self.adapter.push_test_cases(filtered)
 
-        # 转换为简化结果
         result = SimpleSyncResult(
             success_count=full_result.pushed,
-            success_ids=[c.id for c in filtered],  # 使用内部 ID
-            errors={},  # full_result.errors 是 List[str]
+            success_ids=[c.id for c in filtered],
+            errors={},
         )
 
-        # 记录日志
+        # 记录逐条日志
         for i, case in enumerate(filtered):
             if i < full_result.pushed:
-                self._log("ok", "推送成功", entity_id=case.id, external_id=case.external_id or "")
+                self._log(
+                    "ok", "推送成功",
+                    entity_id=case.id, external_id=case.external_id or "",
+                )
             elif i < full_result.pushed + full_result.failed:
-                err = full_result.errors[min(i - full_result.pushed, len(full_result.errors) - 1)] if full_result.errors else "unknown"
+                idx = min(i - full_result.pushed, len(full_result.errors) - 1)
+                err = full_result.errors[idx] if full_result.errors else "unknown"
                 self._log("error", f"推送失败: {err}", entity_id=case.id)
 
         return result
 
-    def pull_test_cases_incremental(self, filters: Optional[Dict[str, Any]] = None,
-                                    last_sync: Optional[str] = None) -> SimpleSyncResult:
+    def pull_test_cases_incremental(
+        self, filters: dict[str, Any] | None = None, last_sync: str | None = None
+    ) -> SimpleSyncResult:
         """增量拉取用例"""
         self._log("info", "开始增量拉取用例")
 
-        # 构造时间范围过滤（如果平台支持）
         pull_filters = filters or {}
         if last_sync:
             pull_filters["updated_after"] = last_sync
@@ -203,13 +229,14 @@ class SyncEngine:
             return SimpleSyncResult(
                 success_count=len(cases),
                 success_ids=[c.id for c in cases],
-                errors={}
             )
         except Exception as e:
             self._log("error", f"拉取失败: {e}")
-            return SimpleSyncResult(success_count=0, success_ids=[], errors={"pull": str(e)})
+            return SimpleSyncResult(errors={"pull": str(e)})
 
-    def push_test_results(self, run_id: str, results: List[TestResult]) -> SimpleSyncResult:
+    def push_test_results(
+        self, run_id: str, results: list[TestResult]
+    ) -> SimpleSyncResult:
         """推送执行结果"""
         self._log("info", f"开始推送执行结果，run_id={run_id}，结果数={len(results)}")
 
@@ -218,26 +245,28 @@ class SyncEngine:
         result = SimpleSyncResult(
             success_count=full_result.pushed,
             success_ids=[r.test_case_id for r in results],
-            errors={}
         )
 
         for i, res in enumerate(results):
             if i < full_result.pushed:
-                self._log("ok", "结果推送成功", entity_type="test_result", entity_id=res.test_case_id)
+                self._log(
+                    "ok", "结果推送成功",
+                    entity_type="test_result", entity_id=res.test_case_id,
+                )
 
         return result
 
-    def get_sync_log(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """获取同步日志"""
+    def get_sync_log(self, limit: int = 100) -> list[dict[str, Any]]:
+        """获取同步日志（最近 limit 条）"""
         return [asdict(entry) for entry in self.log[-limit:]]
 
 
 # ═══════════════════════════════════════════════════════════════
-# Integration Service — 主服务类
+# Integration Service — 主服务类（单例）
 # ═══════════════════════════════════════════════════════════════
 
 class IntegrationService:
-    """集成服务 — 统一入口管理所有平台集成"""
+    """集成服务 — 统一入口管理所有平台集成（线程安全单例）"""
 
     _instance = None
     _lock = threading.RLock()
@@ -255,12 +284,15 @@ class IntegrationService:
             return
 
         self._initialized = True
-        self._engines: Dict[str, SyncEngine] = {}
-        self._field_mappers: Dict[str, FieldMapper] = {}
+        self._engines: dict[str, SyncEngine] = {}
+        self._field_mappers: dict[str, FieldMapper] = {}
 
         # 自动发现适配器
         AdapterRegistry.auto_discover()
-        logger.info(f"IntegrationService 初始化完成，已注册平台: {AdapterRegistry.list_platforms()}")
+        logger.info(
+            f"IntegrationService 初始化完成，已注册平台: "
+            f"{AdapterRegistry.list_platforms()}"
+        )
 
     def get_engine(self, platform: str, config: AdapterConfig) -> SyncEngine:
         """获取或创建同步引擎"""
@@ -280,12 +312,12 @@ class IntegrationService:
 
         return self._engines[platform]
 
-    def list_platforms(self) -> List[str]:
+    def list_platforms(self) -> list[str]:
         """列出已注册的平台"""
         return AdapterRegistry.list_platforms()
 
     def validate_config(self, platform: str, config: AdapterConfig) -> bool:
-        """验证配置是否有效"""
+        """验证配置是否有效（尝试创建适配器并健康检查）"""
         try:
             adapter = AdapterRegistry.get_adapter(platform, config)
             return adapter.health_check()
@@ -298,10 +330,6 @@ class IntegrationService:
 # RESTful API 端点（挂载到 FastAPI）
 # ═══════════════════════════════════════════════════════════════
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from dataclasses import dataclass, field
-
 router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 
 
@@ -310,17 +338,17 @@ router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
 class TestCaseCreate(BaseModel):
     """创建用例请求"""
     platform: str = Field(..., description="目标平台")
-    cases: List[Dict[str, Any]] = Field(..., description="用例列表（Canonical Model 格式）")
+    cases: list[dict[str, Any]] = Field(..., description="用例列表（Canonical Model 格式）")
     incremental: bool = Field(False, description="是否增量同步")
-    last_sync: Optional[str] = Field(None, description="上次同步时间（增量模式）")
+    last_sync: str | None = Field(None, description="上次同步时间（增量模式）")
 
 
 class SyncResultResponse(BaseModel):
     """同步结果响应"""
     success_count: int
-    success_ids: List[str]
-    errors: Dict[str, str]
-    log: List[Dict[str, Any]]
+    success_ids: list[str]
+    errors: dict[str, str]
+    log: list[dict[str, Any]]
 
 
 class ConfigValidateRequest(BaseModel):
@@ -328,29 +356,61 @@ class ConfigValidateRequest(BaseModel):
     platform: str = Field(..., description="平台名称")
     base_url: str = Field(..., description="API 基础 URL")
     auth_type: str = Field(..., description="认证类型：api_key/oauth2/basic")
-    api_key: Optional[str] = Field(None, description="API Key")
-    username: Optional[str] = Field(None, description="用户名（Basic Auth）")
-    password: Optional[str] = Field(None, description="密码（Basic Auth）")
+    api_key: str | None = Field(None, description="API Key")
+    username: str | None = Field(None, description="用户名（Basic Auth）")
+    password: str | None = Field(None, description="密码（Basic Auth）")
 
 
 # ─── 依赖注入 ───
 
 def get_integration_service() -> IntegrationService:
-    """获取 IntegrationService 实例"""
+    """获取 IntegrationService 单例"""
     return IntegrationService()
+
+
+# ─── API 辅助函数 ───
+
+def _require_platform(platform: str, service: IntegrationService) -> None:
+    """验证平台是否已注册，未注册时抛出 400"""
+    if platform not in service.list_platforms():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"不支持的 Platform: {platform}",
+        )
+
+
+def _authenticate_engine(engine: SyncEngine, platform: str) -> None:
+    """认证引擎，失败时抛出 401"""
+    try:
+        if not engine.adapter.authenticate():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"{platform} 认证失败",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"{platform} 认证异常: {e}",
+        )
 
 
 # ─── API 端点 ───
 
 @router.get("/platforms")
-async def list_platforms(service: IntegrationService = Depends(get_integration_service)):
+async def list_platforms(
+    service: IntegrationService = Depends(get_integration_service),
+):
     """列出已注册的集成平台"""
     return {"platforms": service.list_platforms()}
 
 
 @router.post("/validate-config")
-async def validate_config(req: ConfigValidateRequest,
-                          service: IntegrationService = Depends(get_integration_service)):
+async def validate_config(
+    req: ConfigValidateRequest,
+    service: IntegrationService = Depends(get_integration_service),
+):
     """验证集成配置是否有效"""
     config = AdapterConfig(
         platform=req.platform,
@@ -360,47 +420,28 @@ async def validate_config(req: ConfigValidateRequest,
         api_key=req.api_key or "",
     )
 
-    valid = service.validate_config(req.platform, config)
-
-    if valid:
+    if service.validate_config(req.platform, config):
         return {"status": "ok", "message": f"{req.platform} 连接成功"}
-    else:
-        return {"status": "error", "message": f"{req.platform} 连接失败"}
+    return {"status": "error", "message": f"{req.platform} 连接失败"}
 
 
 @router.post("/test-cases/push", response_model=SyncResultResponse)
-async def push_test_cases(req: TestCaseCreate,
-                         service: IntegrationService = Depends(get_integration_service)):
+async def push_test_cases(
+    req: TestCaseCreate,
+    service: IntegrationService = Depends(get_integration_service),
+):
     """推送测试用例到外部平台
 
     支持：
       - 全量同步（incremental=False）
       - 增量同步（incremental=True + last_sync）
     """
-    if req.platform not in service.list_platforms():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的 Platform: {req.platform}"
-        )
+    _require_platform(req.platform, service)
 
-    # 从配置中获取认证信息（实际应用中应从用户配置或 DB 读取）
     config = _get_platform_config(req.platform)
     engine = service.get_engine(req.platform, config)
+    _authenticate_engine(engine, req.platform)
 
-    # 自动认证
-    try:
-        if not engine.adapter.authenticate():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"{req.platform} 认证失败"
-            )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"{req.platform} 认证异常: {str(e)}"
-        )
-
-    # Canonical Model ←→ 适配器模型转换
     canonical_cases = [TestCase(**c) for c in req.cases]
 
     if req.incremental:
@@ -410,7 +451,6 @@ async def push_test_cases(req: TestCaseCreate,
         result = SimpleSyncResult(
             success_count=full_result.pushed,
             success_ids=[c.id for c in canonical_cases],
-            errors={}
         )
 
     return SyncResultResponse(
@@ -422,22 +462,20 @@ async def push_test_cases(req: TestCaseCreate,
 
 
 @router.get("/test-cases/pull")
-async def pull_test_cases(platform: str,
-                          incremental: bool = False,
-                          last_sync: Optional[str] = None,
-                          filters: Optional[str] = None,
-                          service: IntegrationService = Depends(get_integration_service)):
+async def pull_test_cases(
+    platform: str,
+    incremental: bool = False,
+    last_sync: str | None = None,
+    filters: str | None = None,
+    service: IntegrationService = Depends(get_integration_service),
+):
     """从外部平台拉取测试用例
 
     支持：
       - 全量拉取
       - 增量拉取（根据 last_sync 过滤）
     """
-    if platform not in service.list_platforms():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的 Platform: {platform}"
-        )
+    _require_platform(platform, service)
 
     config = _get_platform_config(platform)
     engine = service.get_engine(platform, config)
@@ -451,7 +489,6 @@ async def pull_test_cases(platform: str,
         result = SimpleSyncResult(
             success_count=len(cases),
             success_ids=[c.id for c in cases],
-            errors={}
         )
 
     return {
@@ -464,16 +501,14 @@ async def pull_test_cases(platform: str,
 
 
 @router.post("/test-results/push", response_model=SyncResultResponse)
-async def push_test_results(platform: str,
-                           run_id: str,
-                           results: List[Dict[str, Any]],
-                           service: IntegrationService = Depends(get_integration_service)):
+async def push_test_results(
+    platform: str,
+    run_id: str,
+    results: list[dict[str, Any]],
+    service: IntegrationService = Depends(get_integration_service),
+):
     """推送测试执行结果"""
-    if platform not in service.list_platforms():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"不支持的 Platform: {platform}"
-        )
+    _require_platform(platform, service)
 
     config = _get_platform_config(platform)
     engine = service.get_engine(platform, config)
@@ -489,29 +524,28 @@ async def push_test_results(platform: str,
     )
 
 
-# ─── 辅助函数 ───
+# ─── 平台配置 ───
 
 def _get_platform_config(platform: str) -> AdapterConfig:
-    """从环境变量获取平台配置（演示用）
+    """从环境变量获取平台配置
 
     实际应用中应从数据库或用户配置读取。
+    环境变量命名规则：INTEGRATION_{PLATFORM}_{FIELD}
     """
     env_prefix = f"INTEGRATION_{platform.upper()}_"
 
-    # 为 mock_platform 提供默认测试配置
+    # 默认值：mock_platform 提供测试用的有效配置
+    defaults: dict[str, str] = {}
     if platform == "mock_platform":
-        return AdapterConfig(
-            platform=platform,
-            base_url=os.environ.get(f"{env_prefix}BASE_URL", "https://test.example.com"),
-            api_key=os.environ.get(f"{env_prefix}API_KEY", "valid_key"),  # 测试默认有效
-            username=os.environ.get(f"{env_prefix}USERNAME", ""),
-            password=os.environ.get(f"{env_prefix}PASSWORD", ""),
-        )
+        defaults = {
+            "BASE_URL": "https://test.example.com",
+            "API_KEY": "valid_key",
+        }
 
     return AdapterConfig(
         platform=platform,
-        base_url=os.environ.get(f"{env_prefix}BASE_URL", ""),
-        api_key=os.environ.get(f"{env_prefix}API_KEY", ""),
+        base_url=os.environ.get(f"{env_prefix}BASE_URL", defaults.get("BASE_URL", "")),
+        api_key=os.environ.get(f"{env_prefix}API_KEY", defaults.get("API_KEY", "")),
         username=os.environ.get(f"{env_prefix}USERNAME", ""),
         password=os.environ.get(f"{env_prefix}PASSWORD", ""),
     )

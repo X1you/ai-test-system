@@ -74,15 +74,15 @@ def generate_guide(xlsx_path: str, output_path: str = "") -> str:
     lines = []
     lines.append("# 📋 测试执行指引")
     lines.append("")
-    lines.append(f"> 本文档由 testcases.xlsx 自动生成，帮助测试人员高效执行。")
+    lines.append("> 本文档由 testcases.xlsx 自动生成，帮助测试人员高效执行。")
     lines.append(f"> **总用例数**: {total} | **已执行**: {filled} | **待执行**: {total - filled}")
     lines.append("")
 
     # 概览
     lines.append("## 📊 用例概览")
     lines.append("")
-    lines.append(f"- **优先级分布**: " + " / ".join(f"{k}:{v}" for k, v in sorted(pri_count.items())))
-    lines.append(f"- **维度分布**: " + " / ".join(f"{k}:{v}" for k, v in dim_count.most_common()))
+    lines.append("- **优先级分布**: " + " / ".join(f"{k}:{v}" for k, v in sorted(pri_count.items())))
+    lines.append("- **维度分布**: " + " / ".join(f"{k}:{v}" for k, v in dim_count.most_common()))
     lines.append(f"- **模块数**: {len(by_module)}")
     lines.append("")
 

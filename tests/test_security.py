@@ -163,6 +163,36 @@ class TestFileUploadSecurity:
         # 普通文件名应该被正确处理
         assert resp.status_code in (201, 429)
 
+    def test_upload_overlong_filename_truncated(self, client):
+        """超长文件名应被截断（防止目录项溢出/磁盘填充攻击）"""
+        from web.api.pipeline import UPLOAD_DIR
+
+        # 记录上传前的文件列表
+        before = set(UPLOAD_DIR.glob("*.md"))
+
+        # 300 字符的文件名
+        overlong = "a" * 296 + ".md"
+        content = io.BytesIO(b"# test\n")
+        resp = client.post(
+            "/api/pipeline/start",
+            files={"file": (overlong, content, "text/markdown")},
+            data={"mode": "semi"},
+        )
+        # 可能因并发限制返回 429（说明已有任务在跑）
+        if resp.status_code == 429:
+            return
+        assert resp.status_code == 201
+
+        # 找到新创建的文件，验证文件名被截断到合理长度
+        after = set(UPLOAD_DIR.glob("*.md"))
+        new_files = after - before
+        assert len(new_files) >= 1, "上传后应有新文件"
+        for f in new_files:
+            # 8位 upload_id + _ + ≤93字符名 + .md = ≤104 字符
+            assert len(f.name) <= 110, (
+                f"文件名未被截断: {f.name} ({len(f.name)} chars)"
+            )
+
 
 class TestAuthSecurity:
     """认证安全"""
@@ -170,6 +200,7 @@ class TestAuthSecurity:
     def test_protected_endpoint_without_token(self):
         """/api/auth/me 无 Token 返回 401"""
         from fastapi.testclient import TestClient
+
         from web.app import app
 
         client = TestClient(app)
@@ -186,6 +217,7 @@ class TestAuthSecurity:
     def test_protected_endpoint_empty_token(self):
         """空 Token 返回 401"""
         from fastapi.testclient import TestClient
+
         from web.app import app
 
         client = TestClient(app)

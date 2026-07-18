@@ -13,9 +13,10 @@
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"></noscript>
     <link rel="stylesheet" href="{{ "custom.css" | static_v }}" media="print" onload="this.media='all'">
     <noscript><link rel="stylesheet" href="{{ "custom.css" | static_v }}"></noscript>
-    <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGxKv0Uq6YIA0XqKfM9GpgK9Gk2GztGqG+L9qYq8PkOGJ9G7E9HzLM5LZqG1y" crossorigin="anonymous"></script>
+    <script src="{{ "js/htmx.min.js" | static_v }}"></script>
+    <script src="{{ "app.js" | static_v }}" defer></script>
 </head>
-<body>
+<body hx-boost="true">
     <a href="#main-content" class="sr-only" style="position:absolute;top:0;left:0;z-index:9999;padding:8px 16px;background:var(--primary);color:var(--text-inverse);border-radius:0 0 var(--radius-sm) 0;">
         跳转到主内容
     </a>
@@ -71,7 +72,7 @@
 
     <div class="toast-container" id="toast-container" aria-live="polite" aria-relevant="additions"></div>
 
-    <main class="app-main" role="main" id="main-content" tabindex="-1">
+    <main class="app-main" role="main" id="main-content" tabindex="-1" hx-target="this" hx-swap="innerHTML transition:true">
         {% block content %}{% endblock %}
     </main>
 
@@ -83,8 +84,13 @@
         <a href="/health">健康检查</a>
     </footer>
 
-    <script src="{{ "app.js" | static_v }}"></script>
     <script>
+    // ═══ 初始化守卫（防止 hx-boost 重复执行 body 脚本）═══
+    if (window.__baseScriptRan) {
+        // hx-boost 导航重新执行了 body 脚本 — 跳过
+    } else {
+        window.__baseScriptRan = true;
+
     // Nav scroll shadow effect
     (function() {
         var nav = document.querySelector('.app-nav');
@@ -109,11 +115,9 @@
         })
         .then(function(r) {
             if (r.status === 401) {
-                // Token 过期 — 清除并跳转登录页
                 localStorage.removeItem('access_token');
                 localStorage.removeItem('username');
                 localStorage.removeItem('role');
-                // 静默跳转，不打断当前操作
                 if (window.location.pathname !== '/login') {
                     window.location.href = '/login?reason=expired';
                 }
@@ -132,7 +136,6 @@
             }
         })
         .catch(function() {
-            // 网络错误 — 静默处理
             console.warn('网络连接异常，认证状态检查失败');
         });
     })();
@@ -151,7 +154,6 @@
             });
     }
 
-    // 操作确认弹窗工具函数
     function confirmAction(message, callback) {
         if (window.confirm(message)) {
             callback();
@@ -188,40 +190,44 @@
         });
     });
 
-    // ─── U-02: 页面切换进度条 + 全局加载遮罩 ───
+    // ─── U-02: 平滑页面切换进度条 ───
     (function() {
-        // 创建进度条元素
         var progressBar = document.createElement('div');
         progressBar.className = 'page-progress-bar';
         progressBar.id = 'page-progress';
         document.body.appendChild(progressBar);
 
-        // 创建全局加载遮罩
-        var overlay = document.createElement('div');
-        overlay.className = 'global-loading-overlay';
-        overlay.id = 'global-loading';
-        overlay.innerHTML = '<div class="spinner"></div>';
-        document.body.appendChild(overlay);
+        var _progressTimer = null;
 
-        // HTMX 请求开始时显示进度条
-        document.body.addEventListener('htmx:beforeRequest', function() {
+        document.body.addEventListener('htmx:beforeRequest', function(evt) {
+            var target = evt.detail.target;
+            if (target && target.hasAttribute('hx-trigger')) {
+                var trigger = target.getAttribute('hx-trigger');
+                if (trigger && trigger.indexOf('every') !== -1) return;
+            }
+            if (_progressTimer) clearTimeout(_progressTimer);
             progressBar.style.width = '0%';
             progressBar.style.opacity = '1';
             progressBar.classList.remove('complete');
             requestAnimationFrame(function() {
-                progressBar.style.width = '70%';
+                progressBar.style.width = '60%';
             });
         });
 
-        // HTMX 请求完成时隐藏进度条
-        document.body.addEventListener('htmx:afterRequest', function() {
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            var target = evt.detail.target;
+            if (target && target.hasAttribute('hx-trigger')) {
+                var trigger = target.getAttribute('hx-trigger');
+                if (trigger && trigger.indexOf('every') !== -1) return;
+            }
             progressBar.style.width = '100%';
-            setTimeout(function() {
+            if (_progressTimer) clearTimeout(_progressTimer);
+            _progressTimer = setTimeout(function() {
                 progressBar.classList.add('complete');
-            }, 100);
+                _progressTimer = null;
+            }, 200);
         });
 
-        // 文件上传进度
         document.body.addEventListener('htmx:xhr:progress', function(evt) {
             if (evt.detail.lengthComputable) {
                 var pct = (evt.detail.loaded / evt.detail.total) * 100;
@@ -230,6 +236,8 @@
             }
         });
     })();
+
+    }
     </script>
 </body>
 </html>

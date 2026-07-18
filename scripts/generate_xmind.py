@@ -31,7 +31,11 @@ class XMindGenerator:
     """使用 xmind 库生成标准格式的 .xmind 文件"""
 
     def generate(self, test_points: list, output_path: str, project_name: str = ""):
-        """生成 XMind 脑图文件"""
+        """生成 XMind 脑图文件
+
+        Returns:
+            dict: 统计信息（total, p0, p1, p2, modules），供调用方复用
+        """
         workbook = xmind.load(output_path)
 
         sheet = workbook.getPrimarySheet()
@@ -40,6 +44,16 @@ class XMindGenerator:
         title = f"{project_name} 测试用例" if project_name else "测试用例"
         sheet.setTitle(title)
         root.setTitle(title)
+
+        # 预计算优先级（只算一次，传递给 _add_stats 复用）
+        priority_map = {id(tp): (tp.get("_priority") or assign_priority(tp))
+                        for tp in test_points}
+        stats = {
+            "total": len(test_points),
+            "p0": sum(1 for p in priority_map.values() if p == "P0"),
+            "p1": sum(1 for p in priority_map.values() if p == "P1"),
+            "p2": sum(1 for p in priority_map.values() if p == "P2"),
+        }
 
         # 按 模块→功能点→测试维度 构建树
         tree = {}
@@ -65,8 +79,8 @@ class XMindGenerator:
                     dim_topic.setTitle(f"[{dim_name}] ({len(tps)} 条)")
 
                     for tp in tps:
-                        priority = tp.get("_priority") or assign_priority(tp)
-                        tc_title = f"[{priority}] {tp['title']}"
+                        pri = priority_map[id(tp)]
+                        tc_title = f"[{pri}] {tp['title']}"
 
                         tc_topic = dim_topic.addSubTopic()
                         tc_topic.setTitle(tc_title)
@@ -82,18 +96,27 @@ class XMindGenerator:
                             et.setTitle(f"预期: {tp['expected'][:60]}")
 
         # 统计节点
-        self._add_stats(root, test_points)
+        self._add_stats(root, test_points, stats)
 
         xmind.save(workbook, output_path)
+        return stats
 
-    def _add_stats(self, root, test_points: list):
-        """添加统计信息节点"""
-        total = len(test_points)
-        # 预计算优先级（避免重复调用 assign_priority）
-        priorities = [tp.get("_priority") or assign_priority(tp) for tp in test_points]
-        p0 = sum(1 for p in priorities if p == "P0")
-        p1 = sum(1 for p in priorities if p == "P1")
-        p2 = sum(1 for p in priorities if p == "P2")
+    def _add_stats(self, root, test_points: list, stats: dict | None = None):
+        """添加统计信息节点
+
+        Args:
+            stats: 预计算的统计信息（含 total/p0/p1/p2），避免重复计算 assign_priority。
+                   为 None 时内部计算（向后兼容）。
+        """
+        if stats is None:
+            total = len(test_points)
+            priorities = [tp.get("_priority") or assign_priority(tp) for tp in test_points]
+            p0 = sum(1 for p in priorities if p == "P0")
+            p1 = sum(1 for p in priorities if p == "P1")
+            p2 = sum(1 for p in priorities if p == "P2")
+        else:
+            total = stats["total"]
+            p0, p1, p2 = stats["p0"], stats["p1"], stats["p2"]
 
         dims = {}
         mods = set()
@@ -101,19 +124,19 @@ class XMindGenerator:
             dims[tp["dimension"]] = dims.get(tp["dimension"], 0) + 1
             mods.add(tp["module"])
 
-        stats = root.addSubTopic()
-        stats.setTitle("📊 统计")
+        stats_node = root.addSubTopic()
+        stats_node.setTitle("📊 统计")
 
-        stats.addSubTopic().setTitle(f"总用例: {total} 个")
-        stats.addSubTopic().setTitle(f"模块: {len(mods)} 个")
+        stats_node.addSubTopic().setTitle(f"总用例: {total} 个")
+        stats_node.addSubTopic().setTitle(f"模块: {len(mods)} 个")
 
-        pri = stats.addSubTopic()
+        pri = stats_node.addSubTopic()
         pri.setTitle("优先级分布")
         pri.addSubTopic().setTitle(f"P0: {p0} 个")
         pri.addSubTopic().setTitle(f"P1: {p1} 个")
         pri.addSubTopic().setTitle(f"P2: {p2} 个")
 
-        dim = stats.addSubTopic()
+        dim = stats_node.addSubTopic()
         dim.setTitle("维度分布")
         for d, c in sorted(dims.items()):
             dim.addSubTopic().setTitle(f"{d}: {c} 个")
@@ -140,8 +163,8 @@ def main():
         return 1
 
     print(f"📖 读取测试点文件: {args.input}")
-    parser = TestPointParser()
-    test_points = parser.parse_file(args.input)
+    test_point_parser = TestPointParser()
+    test_points = test_point_parser.parse_file(args.input)
 
     if not test_points:
         print("⚠️  未解析到任何测试点", file=sys.stderr)
@@ -160,21 +183,15 @@ def main():
 
     print("🔨 生成 XMind 脑图文件...")
     generator = XMindGenerator()
-    generator.generate(test_points, args.output, args.project)
-
-    # 预计算优先级（复用缓存，避免重复遍历）
-    priorities = [tp.get("_priority") or assign_priority(tp) for tp in test_points]
-    p0 = sum(1 for p in priorities if p == "P0")
-    p1 = sum(1 for p in priorities if p == "P1")
-    p2 = sum(1 for p in priorities if p == "P2")
+    stats = generator.generate(test_points, args.output, args.project)
 
     print("\n✅ 测试用例生成完成！")
     print("📊 统计信息：")
     print(f"  - 测试模块：{len(set(tp['module'] for tp in test_points))} 个")
-    print(f"  - 用例总数：{len(test_points)} 个")
-    print(f"  - P0（高）: {p0} 个")
-    print(f"  - P1（中）: {p1} 个")
-    print(f"  - P2（低）: {p2} 个")
+    print(f"  - 用例总数：{stats['total']} 个")
+    print(f"  - P0（高）: {stats['p0']} 个")
+    print(f"  - P1（中）: {stats['p1']} 个")
+    print(f"  - P2（低）: {stats['p2']} 个")
 
     size = Path(args.output).stat().st_size
     print(f"\n📁 输出文件: {args.output} ({size / 1024:.1f} KB)")

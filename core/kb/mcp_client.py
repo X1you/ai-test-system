@@ -10,6 +10,7 @@ import json
 import os
 import re
 import ssl
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -78,7 +79,8 @@ class ObsidianAPIClient:
             self._ssl_context.check_hostname = False
             self._ssl_context.verify_mode = ssl.CERT_NONE
 
-    def _request(self, method: str, path: str, data: dict | None = None) -> Any:
+    def _request(self, method: str, path: str, data: dict | None = None,
+                 timeout: float = 10.0) -> Any:
         """发送 HTTP 请求到 Obsidian API"""
         import urllib.error
         import urllib.parse
@@ -96,7 +98,7 @@ class ObsidianAPIClient:
             kwargs = {}
             if self._ssl_context:
                 kwargs['context'] = self._ssl_context
-            with urllib.request.urlopen(req, timeout=10, **kwargs) as response:
+            with urllib.request.urlopen(req, timeout=timeout, **kwargs) as response:
                 return json.loads(response.read().decode('utf-8'))
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -127,13 +129,17 @@ class ObsidianAPIClient:
         return []
 
     def is_available(self) -> bool:
-        """检查 Obsidian API 是否可用（尝试所有配置的端口）"""
+        """检查 Obsidian API 是否可用（尝试所有配置的端口）
+
+        用短 timeout（0.5s）做探测——API 没开时端口拒绝/超时应快速失败，
+        避免每个 status() 请求阻塞数秒。正常请求仍用 10s timeout。
+        """
         bases_to_try = [self.base_url] if self.base_url else OBSIDIAN_API_PORTS
         for base in bases_to_try:
             try:
                 self.base_url = base.rstrip("/")
-                # 尝试无 key 请求（部分配置不需要 key）
-                self._request("GET", "/")
+                # 探测用短 timeout；无 key 请求（部分配置不需要 key）
+                self._request("GET", "/", timeout=0.5)
                 return True
             except Exception:
                 continue
@@ -227,6 +233,13 @@ def extract_keywords(title: str, content: str = "", module: str = "",
 
 class MCPClient:
     """MCP 协议客户端 - 直接访问 Obsidian Vault 文件系统，支持三层搜索"""
+
+    # 进程级缓存：Obsidian API 可用性探测结果。
+    # API 没开时端口拒绝/超时累积约 1s（2 端口 × 0.5s timeout），
+    # 每个 MCPClient 实例重复探测会导致 status() 每次慢 1s。
+    # 探测结果在同一进程内复用，TTL 300s 后允许重试（用户可能中途开启 API 插件）。
+    _api_probe_cache: dict[str, tuple[float, bool]] = {}
+    _API_PROBE_TTL = 300.0
 
     def __init__(self, vault_path: str = str(OBSIDIAN_VAULT),
                  use_obsidian_api: bool = True,
@@ -346,11 +359,33 @@ class MCPClient:
         }
 
     def _check_obsidian_api(self) -> bool:
-        """延迟检查 Obsidian API 可用性（首次 search 时检查，结果缓存）"""
-        if not self._obsidian_api_checked:
-            self._obsidian_api_available = self._obsidian_api.is_available() if self._obsidian_api else False
+        """延迟检查 Obsidian API 可用性（首次 search 时检查，结果缓存）
+
+        探测结果跨实例复用（进程级缓存 + TTL），避免每次 status() 都重新
+        探测端口（API 没开时每次阻塞约 1s）。
+        """
+        if not self._obsidian_api:
+            return False
+
+        if self._obsidian_api_checked:
+            # 实例级缓存：本实例已探测过，直接返回结果
+            return self._obsidian_api_available
+
+        # 进程级缓存：基于探测目标的 base_url 做键
+        probe_key = self._obsidian_api.base_url or "default"
+        cached = MCPClient._api_probe_cache.get(probe_key)
+        now = time.time()
+        if cached and (now - cached[0]) < MCPClient._API_PROBE_TTL:
+            self._obsidian_api_available = cached[1]
             self._obsidian_api_checked = True
-        return self._obsidian_api_available
+            return self._obsidian_api_available
+
+        # 实际探测
+        available = self._obsidian_api.is_available()
+        self._obsidian_api_available = available
+        self._obsidian_api_checked = True
+        MCPClient._api_probe_cache[probe_key] = (now, available)
+        return available
 
     def search(self, query: str, category: str = None, limit: int = 20) -> list[dict]:
         """

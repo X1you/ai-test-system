@@ -734,7 +734,7 @@ class Pipeline:
         print()
         print(f"⏸️  {step_name} 完成 — 半自动模式暂停")
         print(f"    可查看产物: {self.output_dir}")
-        print(f"    输入 [回车]继续，[s]停止，[r]查看报告")
+        print("    输入 [回车]继续，[s]停止，[r]查看报告")
 
         try:
             while True:
@@ -747,7 +747,7 @@ class Pipeline:
                 if choice in ("r", "report", "报告"):
                     self._show_step_summary()
                     continue
-                print(f"    无效输入。[回车]继续 / [s]停止 / [r]查看报告")
+                print("    无效输入。[回车]继续 / [s]停止 / [r]查看报告")
         except (EOFError, KeyboardInterrupt):
             # 非交互环境（如管道/CI）或 Ctrl+C → 默认继续
             print()
@@ -817,5 +817,5 @@ class Pipeline:
         report = self.output_dir / "test_report.md"
         if report.exists():
             print(f"     📖 查看测试报告: {report}")
-        print(f"     📋 回顾分析结果: see requirements_analysis.md, testpoints.md")
-        print(f"     ▶️  重新开始: python cli.py run <新需求文档.md> -o <输出目录>")
+        print("     📋 回顾分析结果: see requirements_analysis.md, testpoints.md")
+        print("     ▶️  重新开始: python cli.py run <新需求文档.md> -o <输出目录>")

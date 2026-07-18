@@ -6,16 +6,18 @@ AdapterRegistry — 插件注册表
 """
 
 import importlib
+import logging
 import pkgutil
-from typing import Dict, Type
 
-from integrations.base import BaseAdapter, AdapterConfig
+from integrations.base import AdapterConfig, BaseAdapter
+
+logger = logging.getLogger("ai-test-system.integrations")
 
 
 class AdapterRegistry:
-    """适配器注册表"""
+    """适配器注册表 — 装饰器注册 + 目录自动发现"""
 
-    _adapters: Dict[str, Type[BaseAdapter]] = {}
+    _adapters: dict[str, type[BaseAdapter]] = {}
 
     @classmethod
     def register(cls, platform: str):
@@ -26,7 +28,7 @@ class AdapterRegistry:
             class TestRailAdapter(BaseAdapter):
                 ...
         """
-        def decorator(adapter_cls: Type[BaseAdapter]):
+        def decorator(adapter_cls: type[BaseAdapter]):
             cls._adapters[platform] = adapter_cls
             return adapter_cls
         return decorator
@@ -44,16 +46,20 @@ class AdapterRegistry:
         return adapter_cls(config)
 
     @classmethod
-    def list_platforms(cls) -> list:
+    def list_platforms(cls) -> list[str]:
         """列出已注册的平台"""
         return list(cls._adapters.keys())
 
     @classmethod
-    def auto_discover(cls, package: str = "integrations.adapters"):
+    def auto_discover(cls, package: str = "integrations.adapters") -> None:
         """自动发现并加载 adapters/ 目录下的所有适配器
 
-        在应用启动时调用:
+        在应用启动时调用::
+
             AdapterRegistry.auto_discover()
+
+        遍历指定 package 下所有子模块并 import，触发 ``@register`` 装饰器。
+        单个适配器加载失败不会中断其他适配器的发现。
         """
         try:
             pkg = importlib.import_module(package)
@@ -65,5 +71,4 @@ class AdapterRegistry:
             try:
                 importlib.import_module(full_name)
             except Exception as e:
-                import logging
-                logging.warning(f"加载适配器 {full_name} 失败: {e}")
+                logger.warning(f"加载适配器 {full_name} 失败: {e}")

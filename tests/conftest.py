@@ -55,8 +55,9 @@ def pytest_collection_modifyitems(config, items):
 @pytest.fixture(scope="function")
 def client():
     """创建已自动登录（JWT）的测试客户端"""
-    from web.app import app
     from fastapi.testclient import TestClient
+
+    from web.app import app
     from web.services.user_service import create_admin_if_not_exists
 
     try:

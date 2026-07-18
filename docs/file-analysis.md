@@ -1,6 +1,6 @@
 # AI 测试用例生成系统 — 文件功能分析文档
 
-> 版本：v2.0.0 | 生成日期：2026-07-16 | 更新日期：2026-07-16
+> **版本**: v2.0.0 | **最后更新**: 2026-07-17 | **文档状态**: 正式版
 
 本文档对项目中所有文件的功能、关键实现逻辑、依赖关系和架构角色进行结构化分析，便于项目维护人员和新成员快速理解项目结构。
 
@@ -716,16 +716,20 @@
   - `auto_discover(package)`：自动发现 `integrations/adapters/` 下的所有适配器模块
 - **架构角色**：适配器插件管理
 
-### 9.4 integrations/auth.py
-- **路径**：`/integrations/auth.py`
-- **功能**：认证策略链（API Key / Basic Auth / OAuth2）
+### 9.4 integrations/service.py — 认证管理（AuthManager）
+
+- **路径**：`/integrations/service.py`（`AuthManager` 类，第 41-145 行）
+- **功能**：认证管理器，集成在服务层中，支持多种认证方式
 - **关键逻辑**：
-  - `AuthStrategy` 抽象基类
-  - `APIKeyAuth`：API Key 认证（TestRail、Zephyr）
-  - `BasicAuth`：Basic Auth（TestLink XML-RPC）
-  - `OAuth2Auth`：OAuth2 Bearer Token（JIRA/Xray），支持 Token 刷新
-  - `create_auth()`：工厂方法
-- **架构角色**：外部平台认证策略
+  - `AuthManager` 类：OAuth2 Token 存储/刷新、API-Key 管理、Basic Auth 凭证管理
+  - `store_oauth_token()`：存储 OAuth2 令牌（线程安全）
+  - `get_oauth_token()`：获取有效令牌，自动刷新过期令牌
+  - `validate_api_key()`：验证 API Key 有效性
+  - `store_basic_auth()`：存储 Basic Auth 凭证
+  - `get_basic_auth()`：获取 Basic Auth 凭证
+  - 线程安全设计（`threading.RLock` 保护）
+- **依赖关系**：内置于 `integrations/service.py`，被集成路由依赖
+- **架构角色**：外部平台认证凭证管理
 
 ### 9.5 integrations/field_mapper.py
 - **路径**：`/integrations/field_mapper.py`
@@ -749,11 +753,12 @@
     - `testcases_to_excel(cases, output_path)`：反向：Canonical → Excel
 - **架构角色**：Core Engine 产出与集成层之间的数据转换
 
-### 9.7 integrations/sync_engine.py
-- **路径**：`/integrations/sync_engine.py`
-- **功能**：同步引擎，支持增量/全量推送、拉取、双向同步
+### 9.7 integrations/service.py — 同步引擎（SyncEngine）
+
+- **路径**：`/integrations/service.py`（`SyncEngine` 类，第 147-280 行）
+- **功能**：同步引擎，内置于集成服务中，支持增量/全量推送、拉取、双向同步
 - **关键逻辑**：
-  - `SyncEngine` 类：
+  - `SyncEngine` 类（内置于 `integrations/service.py`）：
     - `sync_push()`：增量推送（基于 `updated_at` 时间戳）
     - `sync_pull()`：全量拉取
     - `sync_bidirectional()`：双向同步 + 冲突检测与解决
@@ -794,7 +799,7 @@
 ### 10.1 tests/
 - **路径**：`/tests/`
 - **功能**：单元测试和集成测试
-- **包含文件**（共 22 个测试文件）：
+- **包含文件**（共 35+ 个测试文件，含 `tests/unit/`、`tests/integration/`、`tests/ai_agent_suite/`、`tests/autonomous/` 子目录）：
   - `test_common.py`：TestPointParser、assign_priority、filter_by_dimensions 的单元测试
   - `test_excel_reader.py`：Excel 读取器测试
   - `test_file_lock.py`：文件锁测试
@@ -892,4 +897,4 @@ db/
 
 ---
 
-*文档由 AI 自动生成并校对，基于项目 v2.0.0 源码分析。*
+*文档由 AI 自动生成并校对，基于项目 v2.0.0-alpha 源码分析。*

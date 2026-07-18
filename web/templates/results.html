@@ -26,12 +26,12 @@
 
 <hr style="border:none; border-top:1px solid var(--border-subtle); margin:28px 0;">
 
-<!-- 产物列表 -->
-<div class="form-group">
+<!-- 产物列表 — 由 status 区成功后触发加载，避免 pipeline 不存在时重复 404 -->
+<div class="form-group" id="artifacts-section" style="display:none;">
     <label class="form-label">产物文件</label>
     <div id="artifacts-area"
          hx-get="/api/pipeline/{{ pipeline_id }}/artifacts"
-         hx-trigger="load"
+         hx-trigger="none"
          hx-target="this"
          hx-swap="innerHTML">
         <div class="flex gap-md" style="flex-wrap:wrap;">
@@ -129,14 +129,22 @@ function renderArtifacts(data) {
     document.getElementById('artifacts-area').innerHTML = html;
 }
 
-// 文件预览
+// 文件预览（带平滑过渡）
 function previewFile(pipelineId, fileName, cardEl) {
     // 高亮选中卡片
     document.querySelectorAll('.artifact-card').forEach(function(c) { c.classList.remove('active'); });
     if (cardEl) cardEl.classList.add('active');
 
     var area = document.getElementById('preview-area');
+    if (!area) return;
+
+    // 先淡出旧内容
+    area.classList.remove('content-enter');
+    area.style.opacity = '0';
+
+    // 显示加载状态
     area.innerHTML = '<div class="text-center" style="padding:40px;"><div class="spinner spinner-lg"></div><p class="text-muted mt-md">加载预览...</p></div>';
+    area.style.opacity = '1';
 
     fetch('/api/pipeline/' + pipelineId + '/preview/' + fileName)
         .then(function(r) {
@@ -165,10 +173,17 @@ function previewFile(pipelineId, fileName, cardEl) {
             } else {
                 area.innerHTML = '<div class="card"><p class="text-muted">不支持预览此格式</p></div>';
             }
+            // 新内容淡入
+            requestAnimationFrame(function() {
+                area.classList.add('content-enter');
+            });
         })
         .catch(function(err) {
             area.innerHTML = '<div class="card" style="background:var(--danger-light); border-color:var(--danger);">' +
                            '<strong>❌ 预览失败</strong><p class="text-sm text-muted mt-sm">' + escapeHtml(err.message) + '</p></div>';
+            requestAnimationFrame(function() {
+                area.classList.add('content-enter');
+            });
         });
 }
 
@@ -193,9 +208,23 @@ document.addEventListener('htmx:afterSwap', function(evt) {
             var rawText = evt.detail.xhr.responseText;
             var data = JSON.parse(rawText);
             renderStepSummary(data);
+            // ★ status 成功加载，显示并触发 artifacts 加载
+            var artifactsSection = document.getElementById('artifacts-section');
+            var artifactsArea = document.getElementById('artifacts-area');
+            if (artifactsSection && artifactsArea) {
+                artifactsSection.style.display = '';
+                artifactsArea.setAttribute('hx-trigger', 'load');
+                if (typeof htmx !== 'undefined') {
+                    htmx.process(artifactsArea);
+                    htmx.trigger(artifactsArea, 'load');
+                }
+            }
         } catch(e) {}
     }
 });
+
+// ★ 结果页 404 处理：status 区 404 时，artifacts 不会加载（hx-trigger="none"，
+//   只有 status 成功后才触发），所以不会出现重复错误面板。
 </script>
 
 {% endblock %}

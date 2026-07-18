@@ -235,3 +235,25 @@ class TestAuthAPI:
         resp = client.get("/login")
         assert resp.status_code == 200
         assert "登录" in resp.text or "login" in resp.text.lower()
+
+
+class TestAlgorithmSafetyGuard:
+    """JWT 算法白名单安全护栏测试
+
+    ecdsa 传递依赖存在 Minerva 时序攻击漏洞 (CVE-2024-23342 / PYSEC-2026-1325)，
+    上游 won't fix。本项目仅使用 HS256 (HMAC，不受该漏洞影响)。
+    validate_secret_on_startup() 内置断言确保不会误引入 ECDSA 算法。
+    """
+
+    def test_startup_guard_accepts_hs256(self):
+        """默认 HS256 配置通过启动校验"""
+        from web.middleware import auth
+        # 不应抛异常（模块默认 ALGORITHM == "HS256"）
+        auth.validate_secret_on_startup()
+
+    def test_startup_guard_rejects_non_hs256(self, monkeypatch):
+        """误改为非 HS256 算法时启动校验应立即失败"""
+        from web.middleware import auth
+        monkeypatch.setattr(auth, "ALGORITHM", "ES256")
+        with pytest.raises(AssertionError, match="安全策略违规"):
+            auth.validate_secret_on_startup()

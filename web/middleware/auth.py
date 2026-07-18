@@ -47,8 +47,16 @@ def _validate_secret():
 
 
 def validate_secret_on_startup():
-    """应用启动时显式调用，校验 JWT_SECRET 配置"""
+    """应用启动时显式调用，校验 JWT_SECRET 配置 + 算法白名单"""
     _validate_secret()
+    # 安全护栏：本项目仅使用 HS256（HMAC），严禁引入 ECDSA/RSA 等非对称算法。
+    # python-jose 的 ecdsa 传递依赖存在 Minerva 时序攻击漏洞
+    # (CVE-2024-23342 / PYSEC-2026-1325)，上游 won't fix。
+    # 此断言确保未来若误改 ALGORITHM 引入 ECDSA 会被立即拦截。
+    assert ALGORITHM == "HS256", (
+        f"安全策略违规：本项目仅允许 HS256 算法，当前 ALGORITHM={ALGORITHM!r}。"
+        "引入 ECDSA 会触发 ecdsa 库的 Minerva 时序攻击漏洞 (CVE-2024-23342)。"
+    )
 
 
 # ─── 核心函数 ───

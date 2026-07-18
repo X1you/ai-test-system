@@ -124,6 +124,11 @@ async def start_pipeline(
     # 保存上传文件（安全文件名：仅保留 \w \- _ . 和空格）
     upload_id = uuid.uuid4().hex[:8]
     safe_name = re.sub(r"[^\w\-_. ]", "_", file.filename or "upload.md")
+    # 截断超长文件名（防止文件系统目录项溢出 / 磁盘填充攻击）
+    # 保留扩展名 + 限制 basename ≤ 100 字符
+    name_stem = Path(safe_name).stem[:90]
+    name_suffix = Path(safe_name).suffix.lower()
+    safe_name = f"{name_stem}{name_suffix}" if name_suffix else name_stem
     upload_path = UPLOAD_DIR / f"{upload_id}_{safe_name}"
     upload_path.write_bytes(content)
 

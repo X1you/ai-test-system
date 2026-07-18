@@ -83,7 +83,7 @@
 - 用例编号自动连续（TC-001 ~ TC-NNN）
 - 优先级自动分配（P0/P1/P2），核心功能 P0 覆盖率 ≥ 30%
 - 按测试维度过滤（`-d` 参数）
-- 步骤模板按模块类型自动匹配（内置 16 种动作关键词模板）
+- 步骤模板按模块类型自动匹配（内置 15 种动作关键词模板）
 
 ### 用例评审
 
@@ -433,32 +433,41 @@ ai-test-system/
 │   ├── generate_xmind.py              # XMind 生成
 │   └── generate_report.py             # 报告生成
 │
-├── tests/                             # 单元测试（21 个测试文件）
+├── tests/                             # 单元测试（24 个测试文件）
+│   ├── test_api_endpoints.py
+│   ├── test_auth.py
+│   ├── test_boundary.py
+│   ├── test_bugfix_regression.py
 │   ├── test_cli.py
 │   ├── test_common.py
 │   ├── test_config_loader.py
+│   ├── test_db_persistence.py
 │   ├── test_excel_reader.py
 │   ├── test_file_lock.py
-│   ├── test_xmind.py
-│   ├── test_boundary.py
-│   ├── test_performance.py
-│   ├── test_security.py
-│   ├── test_perf_security_supplement.py
+│   ├── test_integration_bridge.py
+│   ├── test_integration_runtime.py
+│   ├── test_integrations_service.py
 │   ├── test_llm_gateway.py
+│   ├── test_perf_security_supplement.py
+│   ├── test_performance.py
 │   ├── test_phase3_async.py
+│   ├── test_pipeline_api.py
 │   ├── test_pipeline_progress_e2e.py
 │   ├── test_pipeline_progress_template.py
-│   ├── test_pipeline_api.py
-│   ├── test_api_endpoints.py
-│   ├── test_auth.py
-│   ├── test_db_persistence.py
-│   ├── test_integration_bridge.py
+│   ├── test_security.py
 │   ├── test_task_manager.py
+│   ├── test_xmind.py
 │   └── mock_testrail.py
 │
 ├── docs/                              # 项目文档
 │   ├── requirements.md                # 需求规格说明书
-│   └── file-analysis.md               # 文件功能分析
+│   ├── file-analysis.md               # 文件功能分析
+│   ├── integration-extension-guide.md # 集成扩展指南
+│   ├── phase2-completion-report.md    # Phase 2 完成报告
+│   ├── qa-coverage-assessment-r2.md   # QA 覆盖率评估
+│   ├── qa-test-report.md              # QA 测试报告
+│   ├── optimization-backlog.md        # 优化积压列表
+│   └── PIPELINE_LAYOUT_V3.md          # Pipeline 布局设计
 │
 ├── examples/                          # 示例需求文档
 │   ├── demo_requirements.md           # 用户管理系统
@@ -611,6 +620,10 @@ pytest tests/ --cov=. --cov-report=term-missing
 |------|------|------|
 | 需求规格说明书 | [docs/requirements.md](docs/requirements.md) | 完整功能需求、非功能需求、验收标准 |
 | 文件功能分析 | [docs/file-analysis.md](docs/file-analysis.md) | 全部文件的功能和依赖关系分析 |
+| 集成扩展指南 | [docs/integration-extension-guide.md](docs/integration-extension-guide.md) | 外部平台适配器开发指南 |
+| QA 覆盖率评估 | [docs/qa-coverage-assessment-r2.md](docs/qa-coverage-assessment-r2.md) | 测试覆盖率评估报告 |
+| QA 测试报告 | [docs/qa-test-report.md](docs/qa-test-report.md) | 质量保证测试报告 |
+| 优化积压列表 | [docs/optimization-backlog.md](docs/optimization-backlog.md) | 技术优化和债务清理计划 |
 | 快速开始指南 | [QUICKSTART.md](QUICKSTART.md) | 5 步快速上手指南 |
 | 变更日志 | [CHANGELOG.md](CHANGELOG.md) | 版本变更历史 |
 
@@ -621,7 +634,7 @@ pytest tests/ --cov=. --cov-report=term-missing
 ## 联系方式
 
 - **问题反馈：** [GitHub Issues](https://github.com/your-org/ai-test-system/issues)
-- **项目文档：** [docs/](docs/) 目录下包含需求规格说明书和文件功能分析
+- **项目文档：** [docs/](docs/) 目录下包含需求规格说明书、集成扩展指南、QA 报告等文档
 
 ---
 

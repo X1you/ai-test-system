@@ -133,14 +133,26 @@ class Step5Review(BaseStep):
 
     @staticmethod
     def _extract_score(report_md: str) -> int:
-        """从评审报告中提取总分"""
+        """从评审报告中提取总分
+
+        支持多种格式：
+          - 表格行：| **总计** | **100** | **85** |  → 取总计行最后一个数字
+          - 冒号格式：评分: XX / 综合评分：XX
+        无匹配返回 0。
+        """
         import re
 
-        # 匹配 | **总计** | **100** | **XX** | 或 总计 ... XX
-        match = re.search(r"总计.*?(\d+)\s*\|?\s*$", report_md, re.MULTILINE)
-        if match:
-            return int(match.group(1))
-        # 匹配评分: XX
+        # 策略 1：找到含"总计"的行，取该行最后一个数字。
+        # 适用于 LLM 常见的 markdown 表格输出
+        # (如 "| **总计** | **100** | **85** |")，
+        # 满分在前、得分在末尾，取最后一个即得分。
+        for line in report_md.splitlines():
+            if "总计" in line:
+                nums = re.findall(r"\d+", line)
+                if nums:
+                    return int(nums[-1])
+
+        # 策略 2：匹配 评分: XX / 综合评分：XX
         match = re.search(r"评分[:：]\s*(\d+)", report_md)
         if match:
             return int(match.group(1))
