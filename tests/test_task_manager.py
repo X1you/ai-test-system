@@ -160,6 +160,48 @@ class TestTaskManagerBasic:
 
         assert TaskManager.MAX_WORKERS == 2
 
+    def test_shutdown_releases_executor(self):
+        """shutdown() 释放线程池，幂等可重复调用"""
+        from web.services.task_manager import TaskManager
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tm = TaskManager(output_base=tmpdir)
+            assert tm._shutdown is False
+
+            tm.shutdown()
+            assert tm._shutdown is True
+
+            # 幂等：二次调用不抛异常
+            tm.shutdown()
+            assert tm._shutdown is True
+
+    def test_shutdown_idempotent(self):
+        """多次 shutdown 安全"""
+        from web.services.task_manager import TaskManager
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tm = TaskManager(output_base=tmpdir)
+            for _ in range(3):
+                tm.shutdown()
+
+    def test_create_task_without_is_full_check_first(self):
+        """create_task 内部实时计算并发数，不依赖先调 is_full()
+
+        回归测试：原先 create_task 依赖 _active_count 字段，
+        该字段只在 is_full() 时更新。现在 create_task 自己实时算。
+        """
+        from web.services.task_manager import TaskManager
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tm = TaskManager(output_base=tmpdir)
+            # 不先调 is_full()，直接 create_task（不应误判为已满）
+            task = tm.create_task(
+                config={"llm": {"provider": "test", "api_key": "sk-test", "model": "m"}},
+                requirements_path="/tmp/test.md",
+            )
+            assert task is not None
+            assert tm.get_running_count() == 1
+
 
 class TestPipelineTask:
     """PipelineTask 状态追踪"""

@@ -23,7 +23,24 @@ class TaskManager:
         self.output_base.mkdir(parents=True, exist_ok=True)
         self._executor = ThreadPoolExecutor(max_workers=self.MAX_WORKERS)
         self._tasks: dict[str, PipelineTask] = {}
-        self._active_count = 0
+        self._shutdown = False
+
+    def shutdown(self):
+        """优雅关闭：释放线程池资源。
+
+        应用退出时应调用，避免线程池资源泄漏。
+        幂等：多次调用安全。
+        """
+        if self._shutdown:
+            return
+        self._shutdown = True
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+    def _running_count(self) -> int:
+        """实时计算运行中任务数"""
+        return sum(
+            1 for t in self._tasks.values() if t.status in ("running", "pending")
+        )
 
     def create_task(
         self,
@@ -34,7 +51,8 @@ class TaskManager:
         formats: str = "excel",
     ) -> PipelineTask:
         """创建并启动 Pipeline 任务"""
-        if self._active_count >= self.MAX_WORKERS:
+        running = self._running_count()
+        if running >= self.MAX_WORKERS:
             raise RuntimeError(
                 f"并发任务已达上限 ({self.MAX_WORKERS})，请等待现有任务完成"
             )
@@ -53,7 +71,6 @@ class TaskManager:
         )
 
         self._tasks[pipeline_id] = task
-        self._active_count += 1
         task.start_background()
 
         return task
@@ -108,13 +125,11 @@ class TaskManager:
 
     def is_full(self) -> bool:
         """是否已达并发上限"""
-        running = sum(1 for t in self._tasks.values() if t.status in ("running", "pending"))
-        self._active_count = running
-        return running >= self.MAX_WORKERS
+        return self._running_count() >= self.MAX_WORKERS
 
     def get_running_count(self) -> int:
         """获取运行中任务数"""
-        return sum(1 for t in self._tasks.values() if t.status in ("running", "pending"))
+        return self._running_count()
 
 
 # 全局单例

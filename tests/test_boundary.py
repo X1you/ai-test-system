@@ -170,13 +170,17 @@ class TestTaskManagerBoundary:
         from web.services.task_manager import TaskManager
 
         tm = TaskManager(output_base=str(tmp_path))
-        # 手动设置活跃计数为最大值
-        tm._active_count = TaskManager.MAX_WORKERS
+        # 创建任务直到达到并发上限（MAX_WORKERS=2）
+        for i in range(TaskManager.MAX_WORKERS):
+            tm.create_task(
+                config={"llm": {"provider": "test", "api_key": "sk-test", "model": "m"}},
+                requirements_path=f"/tmp/req{i}.md",
+            )
 
         with pytest.raises(RuntimeError, match="达到最大并发数|并发任务已达上限"):
             tm.create_task(
                 config={"llm": {"provider": "test", "api_key": "sk-test", "model": "m"}},
-                requirements_path="/tmp/req2.md",
+                requirements_path="/tmp/req_full.md",
             )
 
     def test_max_workers_boundary_values(self, tmp_path):

@@ -190,6 +190,15 @@ try:
 except Exception:
     pass
 
+
+# ─── 应用关闭时清理 TaskManager 线程池（防止资源泄漏）───
+@app.on_event("shutdown")
+async def _shutdown_task_manager():
+    try:
+        get_task_manager().shutdown()
+    except Exception:
+        pass
+
 # ─── 全局异常处理（Phase 6）───
 
 
