@@ -18,12 +18,13 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from core.config_loader import load_config
 from core.utils import safe_join_path
+from web.middleware.auth import require_user
 from web.services.task_manager import get_task_manager
 
 # ─── 常量 ───
@@ -98,6 +99,7 @@ def _detect_file_type(name: str) -> str:
 
 @router.post("/start")
 async def start_pipeline(
+    user: dict = Depends(require_user),
     file: UploadFile = File(...),
     mode: str = Form("semi"),
     dimensions: str = Form("basic"),
@@ -146,7 +148,11 @@ async def start_pipeline(
 
 
 @router.get("/{pipeline_id}/progress")
-async def get_progress(pipeline_id: str, request: Request):
+async def get_progress(
+    pipeline_id: str,
+    request: Request,
+    user: dict = Depends(require_user),
+):
     """获取进度。
 
     如果请求头 HX-Request: true（HTMX 请求），返回 HTML 片段；
@@ -175,7 +181,10 @@ async def get_progress(pipeline_id: str, request: Request):
 
 
 @router.get("/{pipeline_id}/status")
-async def get_status(pipeline_id: str):
+async def get_status(
+    pipeline_id: str,
+    user: dict = Depends(require_user),
+):
     """详细状态。"""
     task = _require_task(pipeline_id)
     return task.get_progress()
@@ -183,6 +192,7 @@ async def get_status(pipeline_id: str):
 
 @router.get("/list")
 async def list_pipelines(
+    user: dict = Depends(require_user),
     page: int = 1,
     page_size: int = 20,
     keyword: str = "",
@@ -249,7 +259,10 @@ async def list_pipelines(
 
 
 @router.post("/{pipeline_id}/cancel")
-async def cancel_pipeline(pipeline_id: str):
+async def cancel_pipeline(
+    pipeline_id: str,
+    user: dict = Depends(require_user),
+):
     """取消 Pipeline。"""
     task = _require_task(pipeline_id)
 
@@ -261,7 +274,11 @@ async def cancel_pipeline(pipeline_id: str):
 
 
 @router.post("/{pipeline_id}/resume")
-async def resume_pipeline(pipeline_id: str, file: UploadFile = None):
+async def resume_pipeline(
+    pipeline_id: str,
+    user: dict = Depends(require_user),
+    file: UploadFile = None,
+):
     """断点继续（可上传已执行结果的 Excel 覆盖 output 目录中的 testcases.xlsx）。"""
     task = _require_task(pipeline_id)
 
@@ -288,7 +305,10 @@ async def resume_pipeline(pipeline_id: str, file: UploadFile = None):
 
 
 @router.get("/{pipeline_id}/artifacts")
-async def list_artifacts(pipeline_id: str):
+async def list_artifacts(
+    pipeline_id: str,
+    user: dict = Depends(require_user),
+):
     """产物列表。"""
     task = _require_task(pipeline_id)
     output_dir = Path(task.output_dir)
@@ -310,7 +330,11 @@ async def list_artifacts(pipeline_id: str):
 
 
 @router.get("/{pipeline_id}/artifacts/{name}")
-async def download_artifact(pipeline_id: str, name: str):
+async def download_artifact(
+    pipeline_id: str,
+    name: str,
+    user: dict = Depends(require_user),
+):
     """下载产物。"""
     task = _require_task(pipeline_id)
 
@@ -331,7 +355,11 @@ async def download_artifact(pipeline_id: str, name: str):
 
 
 @router.get("/{pipeline_id}/preview/{name}")
-async def preview_artifact(pipeline_id: str, name: str):
+async def preview_artifact(
+    pipeline_id: str,
+    name: str,
+    user: dict = Depends(require_user),
+):
     """预览产物（Markdown 渲染 / Excel 表格）。"""
     task = _require_task(pipeline_id)
 

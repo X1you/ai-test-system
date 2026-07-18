@@ -14,9 +14,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from core.config_loader import load_config
+from web.middleware.auth import require_user
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge"])
 
@@ -24,7 +25,7 @@ KB_SCRIPT = Path(__file__).resolve().parents[2] / "core" / "kb" / "kb_manager_mc
 
 
 @router.get("/status")
-async def kb_status():
+async def kb_status(user: dict = Depends(require_user)):
     """知识库统计（带 60s 缓存，单例复用避免每次 fork 子进程）。"""
     config = load_config()
     kb_config = config.get("knowledge_base", {})
@@ -38,7 +39,7 @@ async def kb_status():
 
 
 @router.get("/search")
-async def kb_search(q: str = Query(..., description="搜索关键词")):
+async def kb_search(q: str = Query(..., description="搜索关键词"), user: dict = Depends(require_user)):
     """搜索知识库（按 query 缓存 30s）。"""
     config = load_config()
     kb_config = config.get("knowledge_base", {})
@@ -64,7 +65,7 @@ async def kb_search(q: str = Query(..., description="搜索关键词")):
 
 
 @router.post("/import")
-async def kb_import(file: UploadFile = File(...)):
+async def kb_import(file: UploadFile = File(...), user: dict = Depends(require_user)):
     """导入 Excel 用例回灌知识库"""
     # 校验文件类型
     if not file.filename or not file.filename.endswith(('.xlsx', '.xls')):
@@ -127,6 +128,7 @@ async def kb_add(
     module: str = Form(""),
     tags: str = Form(""),
     severity: str = Form(""),
+    user: dict = Depends(require_user),
 ):
     """添加单条知识条目"""
     config = load_config()

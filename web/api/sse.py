@@ -14,9 +14,10 @@ SSE 端点 — Server-Sent Events 实时推送
 import asyncio
 import json
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
+from web.middleware.auth import require_user
 from web.services.event_bus import get_event_bus
 
 router = APIRouter(prefix="/api/pipeline", tags=["sse"])
@@ -29,7 +30,9 @@ TERMINAL_EVENTS = ("done", "error", "cancelled")
 
 
 @router.get("/{pipeline_id}/stream")
-async def stream_progress(pipeline_id: str, request: Request):
+async def stream_progress(
+    pipeline_id: str, request: Request, user: dict = Depends(require_user)
+):
     """SSE 实时推送 Pipeline 进度事件
 
     客户端使用 EventSource 连接此端点即可接收实时事件。
