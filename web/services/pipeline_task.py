@@ -159,6 +159,7 @@ class PipelineTask:
             pipeline = Pipeline(self.config, self.output_dir)
             pipeline.on_log = self._on_log
             pipeline.on_step_done = self._on_step_done
+            pipeline.interactive = False  # WebUI 非交互式，暂停由状态机管理
 
             state = pipeline.run(
                 requirements_file=self.requirements_path,

@@ -84,6 +84,9 @@ class Pipeline:
         self.on_log: Callable | None = None         # fn(level, msg)
         self.on_step_done: Callable | None = None   # fn(step_id, result_dict)
 
+        # 交互模式标志：CLI=True（_pause 走 input 交互），WebUI=False（状态机管暂停）
+        self.interactive: bool = True
+
     # ─── 日志 / LLM 初始化 ───
 
     def _notify_log(self, level: str, msg: str):
@@ -699,13 +702,58 @@ class Pipeline:
             return path.read_text(encoding="utf-8")
         return ""
 
-    @staticmethod
-    def _pause(step_name: str) -> bool:
-        """semi/step 模式暂停确认（CLI 模式下自动跳过）。
+    def _pause(self, step_name: str) -> bool:
+        """semi/step 模式暂停确认。
 
-        WebUI 会通过 monkey-patch 覆盖此方法实现真正的交互式暂停。
+        CLI 模式：真正交互式 input() 等待用户确认，展示当前步骤产物路径。
+        WebUI 模式：通过 self.interactive=False 标志跳过（WebUI 用状态机管暂停）。
+
+        Returns:
+            True 继续执行，False 终止流程。
         """
-        return True  # CLI 直接继续
+        # WebUI 调用（非交互式）直接跳过，暂停由 PipelineTask 状态机管理
+        if not getattr(self, "interactive", True):
+            return True
+
+        # CLI 交互式暂停
+        print()
+        print(f"⏸️  {step_name} 完成 — 半自动模式暂停")
+        print(f"    可查看产物: {self.output_dir}")
+        print(f"    输入 [回车]继续，[s]停止，[r]查看报告")
+
+        try:
+            while True:
+                choice = input("> ").strip().lower()
+                if choice in ("", "c", "continue", "继续"):
+                    return True
+                if choice in ("s", "stop", "停止"):
+                    print(f"⛔ 用户中止 Pipeline（已完成 {step_name}）")
+                    return False
+                if choice in ("r", "report", "报告"):
+                    self._show_step_summary()
+                    continue
+                print(f"    无效输入。[回车]继续 / [s]停止 / [r]查看报告")
+        except (EOFError, KeyboardInterrupt):
+            # 非交互环境（如管道/CI）或 Ctrl+C → 默认继续
+            print()
+            return True
+
+    def _show_step_summary(self):
+        """CLI 暂停时展示当前各步骤产物状态（辅助用户决策）。"""
+        state = self.load_state()
+        print()
+        print("  📁 当前产物状态:")
+        for meta in STEP_REGISTRY:
+            path = self.output_dir / meta.output_file
+            done = meta.id in state.get("completed_steps", [])
+            if path.exists():
+                size = path.stat().st_size
+                size_str = f"{size/1024:.1f}K" if size > 1024 else f"{size}B"
+                icon = "✅" if done else "📁"
+                print(f"    {icon} Step {meta.id}. {meta.name}: {meta.output_file} ({size_str})")
+            else:
+                print(f"    ⬜ Step {meta.id}. {meta.name}: (未生成)")
+        print()
 
     def _print_banner(self, mode: str, requirements_file: str):
         """打印启动横幅。"""
