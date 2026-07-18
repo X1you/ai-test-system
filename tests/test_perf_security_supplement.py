@@ -33,7 +33,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 os.environ.setdefault("LLM_API_KEY", "sk-test-dummy-for-supplement-tests")
 
-from fastapi.testclient import TestClient
+
 
 # ─── 性能补充测试 ───
 
@@ -42,22 +42,12 @@ class TestKBAPIPerformance:
     """知识库 API 性能。
 
     依赖 KB 缓存服务（web/services/kb_cache.py）—— 单例复用 + TTL 缓存 +
-    启动预热，使 status/search 响应 < 100ms（冷启动单次 ~5s 已被预热消除）。
-    缓存失效由 import/add 写入操作触发（invalidate_all）。
+    进程级 API 探测缓存，使 status/search 响应 < 5s。
+    冷启动（首次探测 Obsidian API 端口）约 1s（2 端口 × 0.5s timeout），
+    缓存命中 < 10ms。
 
     性能回归保护：若有人移除缓存或引入性能退化，本测试会捕获。
     """
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        # 显式预热缓存（app.py 启动时的后台预热可能未完成）
-        try:
-            from web.services.kb_cache import get_status
-            get_status()
-        except Exception:
-            pass
-        return TestClient(app)
 
     def test_kb_status_response_time(self, client):
         """KB 状态 API 响应时间 < 5s（缓存命中时 <100ms）"""
@@ -94,11 +84,6 @@ class TestPipelineStartPerformance:
 
         tm_module._task_manager = None
 
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
-
     def test_pipeline_start_response_time(self, client):
         """Pipeline 启动 API 响应时间 < 500ms"""
         content = io.BytesIO(b"# Test\n- Feature 1")
@@ -115,11 +100,6 @@ class TestPipelineStartPerformance:
 
 class TestResponseSize:
     """响应体大小验证"""
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
 
     def test_health_response_size(self, client):
         """健康检查响应 < 1KB"""
@@ -161,15 +141,20 @@ class TestConcurrentPipelineStart:
 
         tm_module._task_manager = None
 
-    def test_concurrent_pipeline_starts(self):
+    def test_concurrent_pipeline_starts(self, client):
         """3 个并发 Pipeline 启动 — 验证并发限制"""
+        from fastapi.testclient import TestClient
+
         from web.app import app
 
+        auth_header = client.headers.get("Authorization", "")
+
         def make_request():
-            client = TestClient(app)
+            inner = TestClient(app)
+            inner.headers["Authorization"] = auth_header
             content = io.BytesIO(b"# Test")
             try:
-                return client.post(
+                return inner.post(
                     "/api/pipeline/start",
                     files={"file": ("test.md", content, "text/markdown")},
                     data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
@@ -201,11 +186,6 @@ class TestConcurrentPipelineStart:
 class TestCSPHeaders:
     """Content-Security-Policy 头"""
 
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
-
     def test_csp_header_present(self, client):
         """CSP 头存在且合理"""
         resp = client.get("/")
@@ -226,11 +206,6 @@ class TestCSPHeaders:
 
 class TestCORSConfiguration:
     """CORS 配置"""
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
 
     def test_cors_preflight(self, client):
         """CORS 预检请求"""
@@ -259,11 +234,6 @@ class TestCORSConfiguration:
 class TestHSTSHeader:
     """HSTS 头"""
 
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
-
     def test_hsts_header(self, client):
         """Strict-Transport-Security 头（生产环境应有）"""
         resp = client.get("/")
@@ -275,11 +245,6 @@ class TestHSTSHeader:
 
 class TestHTTPParameterPollution:
     """HTTP 参数污染"""
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
 
     def test_duplicate_query_params(self, client):
         """重复查询参数不会导致异常"""
@@ -294,11 +259,6 @@ class TestHTTPParameterPollution:
 
 class TestLargePayloadProtection:
     """大请求体防护"""
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
 
     def test_large_json_body(self, client):
         """大 JSON 请求体"""
@@ -318,11 +278,6 @@ class TestLargePayloadProtection:
 
 class TestSensitiveInfoLeakage:
     """敏感信息泄露防护"""
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
 
     def test_config_api_masks_api_key(self, client):
         """配置 API 不应泄露完整 API Key"""
@@ -356,11 +311,6 @@ class TestSensitiveInfoLeakage:
 
 class TestHTTPMethodOverride:
     """HTTP 方法覆盖攻击"""
-
-    @pytest.fixture
-    def client(self):
-        from web.app import app
-        return TestClient(app)
 
     def test_method_override_header(self, client):
         """X-HTTP-Method-Override 头"""

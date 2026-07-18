@@ -50,3 +50,26 @@ def pytest_collection_modifyitems(config, items):
             if f"/{slow_dir}/" in fspath:
                 item.add_marker(pytest.mark.slow)
                 break
+
+
+@pytest.fixture(scope="function")
+def client():
+    """创建已自动登录（JWT）的测试客户端"""
+    from web.app import app
+    from fastapi.testclient import TestClient
+    from web.services.user_service import create_admin_if_not_exists
+
+    try:
+        create_admin_if_not_exists("testuser", "TestPass123!")
+    except Exception:
+        pass
+
+    client = TestClient(app)
+    resp = client.post(
+        "/api/auth/login",
+        json={"username": "testuser", "password": "TestPass123!"},
+    )
+    if resp.status_code == 200:
+        token = resp.json().get("access_token", "")
+        client.headers["Authorization"] = f"Bearer {token}"
+    return client

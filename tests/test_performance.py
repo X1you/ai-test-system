@@ -22,17 +22,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-os.environ.setdefault("LLM_API_KEY", "sk-test-dummy-for-perf-tests")
-
-from fastapi.testclient import TestClient
-
-from web.app import app
-
-
-@pytest.fixture
-def client():
-    """创建测试客户端"""
-    return TestClient(app)
+os.environ.setdefault("LLM_API_KEY", "«redacted:sk-…»")
 
 
 class TestPageLoadPerformance:

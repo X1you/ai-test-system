@@ -23,17 +23,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-os.environ.setdefault("LLM_API_KEY", "sk-test-dummy-for-security-tests")
-
-from fastapi.testclient import TestClient
-
-from web.app import app
-
-
-@pytest.fixture
-def client():
-    """创建测试客户端"""
-    return TestClient(app)
+os.environ.setdefault("LLM_API_KEY", "«redacted:sk-…»")
 
 
 class TestSecurityHeaders:
@@ -177,8 +167,12 @@ class TestFileUploadSecurity:
 class TestAuthSecurity:
     """认证安全"""
 
-    def test_protected_endpoint_without_token(self, client):
+    def test_protected_endpoint_without_token(self):
         """/api/auth/me 无 Token 返回 401"""
+        from fastapi.testclient import TestClient
+        from web.app import app
+
+        client = TestClient(app)
         resp = client.get("/api/auth/me")
         assert resp.status_code == 401
 
@@ -189,8 +183,12 @@ class TestAuthSecurity:
         })
         assert resp.status_code == 401
 
-    def test_protected_endpoint_empty_token(self, client):
+    def test_protected_endpoint_empty_token(self):
         """空 Token 返回 401"""
+        from fastapi.testclient import TestClient
+        from web.app import app
+
+        client = TestClient(app)
         resp = client.get("/api/auth/me", headers={
             "Authorization": "Bearer "
         })

@@ -232,11 +232,6 @@ class TestKnowledgeBaseBoundary:
 
     def test_kb_search_special_characters(self, client):
         """特殊字符查询"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         resp = client.get("/api/kb/search", params={"q": "SELECT * FROM users; --"})
         assert resp.status_code in (200, 500, 503)
         data = resp.json()
@@ -244,32 +239,17 @@ class TestKnowledgeBaseBoundary:
 
     def test_kb_search_very_long_query(self, client):
         """超长查询字符串"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         long_query = "测试" * 1000  # 2000 chars
         resp = client.get("/api/kb/search", params={"q": long_query})
         assert resp.status_code in (200, 500, 503)
 
     def test_kb_search_unicode_query(self, client):
         """Unicode 特殊字符查询"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         resp = client.get("/api/kb/search", params={"q": "🎉✅❌🚀测试"})
         assert resp.status_code in (200, 500, 503)
 
     def test_kb_status_response_structure(self, client):
         """KB 状态响应结构"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         resp = client.get("/api/kb/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -283,51 +263,51 @@ class TestKnowledgeBaseBoundary:
 class TestAuthTokenBoundary:
     """认证 Token 边界条件"""
 
-    def test_malformed_jwt_token(self, client):
+    def test_malformed_jwt_token(self):
         """畸形 JWT Token"""
         from fastapi.testclient import TestClient
 
         from web.app import app
-        client = TestClient(app)
+        bare = TestClient(app)
 
-        resp = client.get(
+        resp = bare.get(
             "/api/auth/me",
             headers={"Authorization": "Bearer not.a.valid.jwt.token!!!"},
         )
         assert resp.status_code in (401, 403, 422)
 
-    def test_empty_authorization_header(self, client):
+    def test_empty_authorization_header(self):
         """空 Authorization 头"""
         from fastapi.testclient import TestClient
 
         from web.app import app
-        client = TestClient(app)
+        bare = TestClient(app)
 
-        resp = client.get("/api/auth/me", headers={"Authorization": ""})
+        resp = bare.get("/api/auth/me", headers={"Authorization": ""})
         assert resp.status_code in (401, 403, 422)
 
-    def test_no_bearer_prefix(self, client):
+    def test_no_bearer_prefix(self):
         """无 Bearer 前缀的 Token"""
         from fastapi.testclient import TestClient
 
         from web.app import app
-        client = TestClient(app)
+        bare = TestClient(app)
 
-        resp = client.get(
+        resp = bare.get(
             "/api/auth/me",
             headers={"Authorization": "some-random-token-value"},
         )
         assert resp.status_code in (401, 403, 422)
 
-    def test_extremely_long_token(self, client):
+    def test_extremely_long_token(self):
         """超长 Token"""
         from fastapi.testclient import TestClient
 
         from web.app import app
-        client = TestClient(app)
+        bare = TestClient(app)
 
         long_token = "x" * 10000
-        resp = client.get(
+        resp = bare.get(
             "/api/auth/me",
             headers={"Authorization": f"Bearer {long_token}"},
         )
@@ -452,11 +432,7 @@ class TestFileUploadBoundary:
     """文件上传边界条件"""
 
     def test_upload_without_file(self, client):
-        """无文件上传"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
+        """无文件"""
 
         resp = client.post(
             "/api/pipeline/start",
@@ -466,11 +442,6 @@ class TestFileUploadBoundary:
 
     def test_upload_without_mode(self, client):
         """无 mode 参数"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         content = io.BytesIO(b"test content")
         resp = client.post(
             "/api/pipeline/start",
@@ -482,11 +453,6 @@ class TestFileUploadBoundary:
 
     def test_upload_file_with_unicode_name(self, client):
         """Unicode 文件名"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         content = io.BytesIO("中文需求文档".encode())
         resp = client.post(
             "/api/pipeline/start",
@@ -497,11 +463,6 @@ class TestFileUploadBoundary:
 
     def test_upload_file_with_spaces_in_name(self, client):
         """文件名含空格"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         content = io.BytesIO(b"test content")
         resp = client.post(
             "/api/pipeline/start",
@@ -519,21 +480,11 @@ class TestGeneralExceptionHandling:
 
     def test_404_on_nonexistent_api_path(self, client):
         """不存在的 API 路径返回 404"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         resp = client.get("/api/nonexistent/endpoint")
         assert resp.status_code == 404
 
     def test_method_not_allowed(self, client):
         """错误 HTTP 方法"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-        client = TestClient(app)
-
         # DELETE on health endpoint
         resp = client.delete("/health")
         assert resp.status_code == 405
@@ -581,15 +532,6 @@ def _mock_pipeline_start():
                 yield
 
     tm_module._task_manager = None
-
-
-@pytest.fixture
-def client():
-    """创建测试客户端"""
-    from fastapi.testclient import TestClient
-
-    from web.app import app
-    return TestClient(app)
 
 
 if __name__ == "__main__":

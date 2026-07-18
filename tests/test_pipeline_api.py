@@ -27,11 +27,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 设置虚拟 API Key 以便应用启动
 os.environ.setdefault("LLM_API_KEY", "sk-test-dummy-for-api-tests")
 
-from fastapi.testclient import TestClient
-
-from web.app import app
-
-
 @pytest.fixture(autouse=True)
 def _mock_pipeline_start():
     """Mock PipelineTask.start_background 避免实际执行 Pipeline，并重置 TaskManager"""
@@ -47,12 +42,6 @@ def _mock_pipeline_start():
 
     # 清理
     tm_module._task_manager = None
-
-
-@pytest.fixture
-def client():
-    """创建测试客户端"""
-    return TestClient(app)
 
 
 @pytest.fixture

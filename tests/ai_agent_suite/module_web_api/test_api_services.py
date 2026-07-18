@@ -53,8 +53,23 @@ def _reset_task_manager():
 
 @pytest.fixture
 def client():
-    """创建测试客户端"""
-    return TestClient(app)
+    """创建已登录的测试客户端（自动获取 JWT Token）。"""
+    from web.services.user_service import create_admin_if_not_exists
+
+    try:
+        create_admin_if_not_exists("testuser", "TestPass123!")
+    except Exception:
+        pass
+
+    client = TestClient(app)
+    resp = client.post("/api/auth/login", json={
+        "username": "testuser",
+        "password": "TestPass123!",
+    })
+    if resp.status_code == 200:
+        token = resp.json().get("access_token", "")
+        client.headers["Authorization"] = f"Bearer {token}"
+    return client
 
 
 @pytest.fixture
@@ -298,7 +313,11 @@ class TestAuthAPI:
 
     def test_protected_endpoint_no_token(self, client):
         """无 Token 访问受保护端点"""
+        # client fixture 自带 Auth header，测试无 token 场景时临时清除
+        original_header = client.headers.get("Authorization", "")
+        client.headers["Authorization"] = ""
         resp = client.get("/api/auth/me")
+        client.headers["Authorization"] = original_header  # 恢复
         assert resp.status_code in (401, 403)
 
     def test_protected_endpoint_with_token(self, client, auth_token):
