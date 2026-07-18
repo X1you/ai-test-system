@@ -638,16 +638,57 @@ class ReportGenerator:
 
         lines.append("### 后续行动项\n")
         action_items = []
-        if stats["fail"] > 0:
-            action_items.append(f"- [ ] 修复 {stats['fail']} 个失败用例对应的缺陷")
-        if stats["block"] > 0:
-            action_items.append(f"- [ ] 排查 {stats['block']} 个阻塞用例的阻塞原因")
+
+        # P0 失败用例具体列出（最高优先级，必须修）
+        p0_failed = [c for c in stats.get("failed_cases", [])
+                     if c.get("priority") == "P0"]
+        if p0_failed:
+            action_items.append(f"#### 🔴 必须修复（{len(p0_failed)} 个 P0 失败用例）")
+            for c in p0_failed[:8]:  # 最多列8个，避免过长
+                tc_id = c.get("id", "")
+                title = c.get("title", "")[:40]
+                action_items.append(f"- [ ] **{tc_id}**: {title}")
+            if len(p0_failed) > 8:
+                action_items.append(f"- ... 及其他 {len(p0_failed)-8} 个（详见上方失败用例分析）")
+            action_items.append("")
+
+        # P0 阻塞用例
+        p0_blocked = [c for c in stats.get("blocked_cases", [])
+                      if c.get("priority") == "P0"]
+        if p0_blocked:
+            action_items.append(f"#### 🟠 排查阻塞（{len(p0_blocked)} 个 P0 阻塞用例）")
+            for c in p0_blocked[:5]:
+                tc_id = c.get("id", "")
+                title = c.get("title", "")[:40]
+                action_items.append(f"- [ ] **{tc_id}**: {title}")
+            action_items.append("")
+
+        # 其他失败/阻塞的统计性建议
+        other_fail = stats["fail"] - len(p0_failed)
+        other_block = stats["block"] - len(p0_blocked)
+        if other_fail > 0:
+            action_items.append(f"- [ ] 修复剩余 {other_fail} 个非 P0 失败用例")
+        if other_block > 0:
+            action_items.append(f"- [ ] 排查剩余 {other_block} 个非 P0 阻塞用例")
         if stats["not_run"] > 0:
             action_items.append(f"- [ ] 补充执行 {stats['not_run']} 个未执行用例")
+
         # 模块通过率低的建议
+        weak_modules = []
         for module, data, rate in module_rates:
             if rate < 0.70:
-                action_items.append(f"- [ ] 重点关注模块「{module}」（通过率 {rate:.0%}）")
+                weak_modules.append(f"「{module}」({rate:.0%})")
+        if weak_modules:
+            action_items.append(f"- [ ] 重点关注低通过率模块: {', '.join(weak_modules)}")
+
+        # 修复后如何重新验证的指引
+        if stats["fail"] > 0 or stats["block"] > 0:
+            action_items.append("")
+            action_items.append("#### 🔄 修复后如何重新验证")
+            action_items.append("1. 在 testcases.xlsx 修改失败用例的「执行结果」为新的测试结果")
+            action_items.append("2. 在「备注」列记录修复内容和回归结果")
+            action_items.append("3. 重新运行: `python cli.py resume -o <输出目录>` 生成更新后的报告")
+
         if not action_items:
             action_items.append("- [x] 所有测试通过，无需额外行动 🎉")
 
