@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
-Pipeline 任务包装器 — 对 core/pipeline.py 的包装，增加实时状态追踪
+Pipeline 任务包装器 — 对 core/pipeline.py 的包装，增加实时状态追踪。
 
 WebUI 通过此包装器追踪 Pipeline 执行进度。
 状态变更时同步写入 DB（Phase 2 持久化层），重启后不丢失。
+
+架构说明：
+  - PipelineTask 是 dataclass，持有运行时状态（status/logs/steps），
+    并通过 on_log / on_step_done 回调与 core.Pipeline 双向通信。
+  - 执行在后台 daemon 线程中完成；cancel() 设置协作式取消标志，
+    步骤间隙检查并抛出 _PipelineCancelled。
+  - 所有状态变更经 _persist_pipeline() 写入 DB，经 _publish_event()
+    推送到 EventBus 供 SSE 订阅。
 """
 
+import json
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from core.pipeline import Pipeline
+from core.pipeline import STEP_REGISTRY, TOTAL_STEPS, Pipeline
 
 # DB 持久化（Phase 2）
 from db.repository import get_repository
@@ -19,16 +29,24 @@ from db.session import init_db
 # EventBus（Phase 3）— 事件实时推送
 from web.services.event_bus import get_event_bus
 
+# 步骤 id → 中文名映射，复用 STEP_REGISTRY（单一数据源，不再多处硬编码）
+STEP_NAMES: dict[int, str] = {meta.id: meta.name for meta in STEP_REGISTRY}
+
+# 日志缓冲上限 — 超出后保留最新窗口，避免无界增长占用内存
+MAX_LOGS = 200
+# 进度查询时返回给前端的最近日志条数
+LOG_RETURN_WINDOW = 20
+
 # 首次调用时确保 DB 已初始化
 _db_initialized = False
 
 
 class _PipelineCancelled(Exception):
-    """Pipeline 执行被取消（内部信号异常）"""
+    """Pipeline 执行被取消（内部信号异常）。"""
 
 
 def _ensure_db():
-    """延迟初始化 DB 表（首次创建任务时）"""
+    """延迟初始化 DB 表（首次创建任务时）。"""
     global _db_initialized
     if not _db_initialized:
         init_db()
@@ -37,7 +55,13 @@ def _ensure_db():
 
 @dataclass
 class PipelineTask:
-    """Pipeline 任务 — 状态追踪包装器"""
+    """Pipeline 任务 — 状态追踪包装器。
+
+    字段分组：
+      - 静态配置：pipeline_id / output_dir / config / requirements_path / mode / ...
+      - 运行时状态：status / completed_steps / step_details / logs / llm_stats / error
+      - 内部控制：_thread / _cancel_flag
+    """
 
     pipeline_id: str
     output_dir: str
@@ -58,27 +82,34 @@ class PipelineTask:
     _thread: threading.Thread | None = None
     _cancel_flag: bool = False
 
+    # ─── 生命周期入口 ───
+
     def start_background(self):
-        """在后台线程执行"""
-        _ensure_db()
-        self.status = "running"
-        self.started_at = datetime.now().isoformat()
-        self._persist_pipeline("running")
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+        """在后台线程执行（首次运行）。"""
+        self._launch(self._run, "Pipeline 启动 — 模式: " + self.mode)
 
     def resume_background(self):
-        """从断点继续（后台线程）"""
+        """从断点继续（后台线程）。"""
+        self._launch(self._run_resume, "Pipeline 继续执行")
+
+    def _launch(self, target: Callable[[], None], startup_log: str):
+        """统一的线程启动逻辑 — 设置状态、持久化、记录日志、启动线程。
+
+        Args:
+            target: 线程入口函数（_run / _run_resume）
+            startup_log: 启动时输出的日志消息
+        """
         _ensure_db()
         self.status = "running"
         self._cancel_flag = False
         self.started_at = datetime.now().isoformat()
         self._persist_pipeline("running")
-        self._thread = threading.Thread(target=self._run_resume, daemon=True)
+        self._on_log("STEP", startup_log)
+        self._thread = threading.Thread(target=target, daemon=True)
         self._thread.start()
 
     def cancel(self):
-        """取消 Pipeline"""
+        """取消 Pipeline（协作式 — 在下一个步骤间隙生效）。"""
         self._cancel_flag = True
         self.status = "cancelled"
         self._persist_pipeline("cancelled")
@@ -86,19 +117,24 @@ class PipelineTask:
         self._publish_event("cancelled", {"pipeline_id": self.pipeline_id})
 
     def is_cancelled(self) -> bool:
-        """检查是否已被取消（供步骤内部轮询）"""
+        """检查是否已被取消（供步骤内部轮询）。"""
         return self._cancel_flag
 
     def _check_cancelled(self):
-        """检查取消标志 — 被取消时抛出 _PipelineCancelled
+        """检查取消标志 — 被取消时抛出 _PipelineCancelled。
 
         在步骤间隙调用此方法实现协作式取消。
         """
         if self._cancel_flag:
             raise _PipelineCancelled()
 
+    # ─── 事件 / 持久化 ───
+
     def _publish_event(self, event_type: str, data: dict):
-        """发布事件到 EventBus（供 SSE 推送）"""
+        """发布事件到 EventBus（供 SSE 推送）。
+
+        发布失败静默忽略 — EventBus 故障不应阻塞 Pipeline 主流程。
+        """
         try:
             bus = get_event_bus()
             bus.publish_sync(self.pipeline_id, {"type": event_type, "data": data})
@@ -106,17 +142,27 @@ class PipelineTask:
             pass
 
     def _run(self):
-        """实际执行 — 首次运行"""
+        """实际执行 — 首次运行。"""
+        self._execute(self.mode)
+
+    def _run_resume(self):
+        """实际执行 — 从断点继续（强制 auto 模式，跳过人工检查点）。"""
+        self._execute("auto")
+
+    def _execute(self, run_mode: str):
+        """统一的执行主逻辑 — 合并原 _run / _run_resume 的重复代码。
+
+        Args:
+            run_mode: 传入 Pipeline.run() 的 mode 参数
+        """
         try:
             pipeline = Pipeline(self.config, self.output_dir)
             pipeline.on_log = self._on_log
             pipeline.on_step_done = self._on_step_done
 
-            self._on_log("STEP", f"Pipeline 启动 — 模式: {self.mode}")
-
             state = pipeline.run(
                 requirements_file=self.requirements_path,
-                mode=self.mode,
+                mode=run_mode,
                 dimensions=self.dimensions,
                 formats=self.formats,
             )
@@ -131,42 +177,19 @@ class PipelineTask:
             self.status = "error"
             self.error = str(e)
             self._on_log("ERR", f"Pipeline 执行失败: {e}")
-            self._publish_event("error", {"pipeline_id": self.pipeline_id, "error": str(e)})
-    def _run_resume(self):
-        """实际执行 — 从断点继续"""
-        try:
-            pipeline = Pipeline(self.config, self.output_dir)
-            pipeline.on_log = self._on_log
-            pipeline.on_step_done = self._on_step_done
-
-            self._on_log("STEP", "Pipeline 继续执行")
-
-            state = pipeline.run(
-                requirements_file=self.requirements_path,
-                mode="auto",
-                dimensions=self.dimensions,
-                formats=self.formats,
+            self._persist_pipeline("error")
+            self._publish_event(
+                "error", {"pipeline_id": self.pipeline_id, "error": str(e)}
             )
 
-            self._finalize(state, pipeline)
-        except _PipelineCancelled:
-            self.status = "cancelled"
-            self._on_log("WARN", "Pipeline 已取消（中断执行）")
-            self._persist_pipeline("cancelled")
-            self._publish_event("cancelled", {"pipeline_id": self.pipeline_id})
-        except Exception as e:
-            self.status = "error"
-            self.error = str(e)
-            self._on_log("ERR", f"Pipeline 恢复失败: {e}")
-            self._publish_event("error", {"pipeline_id": self.pipeline_id, "error": str(e)})
-
     def _finalize(self, state: dict, pipeline: Pipeline | None = None):
-        """根据最终状态设置任务状态"""
+        """根据最终状态设置任务状态、持久化、发布终态事件。"""
         done = state.get("completed_steps", [])
-        if 7 in done:
+        if TOTAL_STEPS in done:
             self.status = "done"
             self._on_log("OK", "全流程执行完成 ✅")
-        elif 6 not in done:
+        elif len(done) < 6:
+            # 未到 Step 6 → 暂停等待人工
             self.status = "paused"
             self._on_log("HUMAN", "Pipeline 暂停 — 等待人工执行测试")
         else:
@@ -179,15 +202,17 @@ class PipelineTask:
         self._persist_pipeline(self.status)
 
         # 发布最终事件到 EventBus（供 SSE 终止流）
-        event_data = {"pipeline_id": self.pipeline_id, "status": self.status}
-        self._publish_event(self.status, event_data)
+        self._publish_event(
+            self.status, {"pipeline_id": self.pipeline_id, "status": self.status}
+        )
 
     # ─── DB 持久化方法（Phase 2）───
 
     def _persist_pipeline(self, status: str):
-        """将 Pipeline 状态写入 DB
+        """将 Pipeline 状态写入 DB。
 
         如果 Pipeline 记录不存在则创建，存在则更新状态。
+        DB 写入失败不阻塞 Pipeline 执行（仅记录警告日志）。
         """
         try:
             repo = get_repository()
@@ -201,51 +226,43 @@ class PipelineTask:
                     formats=self.formats,
                     output_dir=self.output_dir,
                 )
-                repo.update_pipeline_status(self.pipeline_id, status)
-            else:
-                repo.update_pipeline_status(self.pipeline_id, status)
+            repo.update_pipeline_status(self.pipeline_id, status)
         except Exception:
             # DB 写入失败不应阻塞 Pipeline 执行
             self._on_log("WARN", "DB 持久化失败（不影响执行）")
 
     def _persist_step(self, step_id: int, result: dict):
-        """将步骤完成状态写入 DB"""
+        """将步骤完成状态写入 DB。"""
         try:
             repo = get_repository()
-            step_names = {
-                1: "需求分析",
-                2: "知识库检索",
-                3: "测试点梳理",
-                4: "生成用例",
-                5: "用例评审",
-                6: "执行测试",
-                7: "生成报告",
-            }
             status = "completed" if result.get("ok") else "failed"
-            import json
-
-            detail = json.dumps(result.get("data", {}), ensure_ascii=False)[
-                :500
-            ]
+            detail = json.dumps(result.get("data", {}), ensure_ascii=False)[:500]
             repo.record_step(
                 pipeline_id=self.pipeline_id,
                 step_id=step_id,
-                name=step_names.get(step_id, f"Step {step_id}"),
+                name=STEP_NAMES.get(step_id, f"Step {step_id}"),
                 status=status,
                 detail=detail,
             )
         except Exception:
+            # 步骤持久化失败不影响主流程
             pass
 
+    # ─── 回调（由 core.Pipeline 触发）───
+
     def _on_log(self, level: str, msg: str):
-        """日志回调 — Pipeline 每输出一条日志时触发"""
+        """日志回调 — Pipeline 每输出一条日志时触发。
+
+        保留最近 MAX_LOGS 条，超出窗口自动裁剪。
+        """
         ts = datetime.now().strftime("%H:%M:%S")
         self.logs.append({"ts": ts, "level": level, "msg": msg})
-        if len(self.logs) > 200:
-            self.logs = self.logs[-200:]
+        if len(self.logs) > MAX_LOGS:
+            # 切片保留尾部，O(1) 分配新列表
+            self.logs = self.logs[-MAX_LOGS:]
 
     def _on_step_done(self, step_id: int, result: dict):
-        """步骤完成回调"""
+        """步骤完成回调 — 更新内存状态、持久化 DB、发布事件。"""
         if step_id not in self.completed_steps:
             self.completed_steps.append(step_id)
         self.step_details[step_id] = result
@@ -257,57 +274,70 @@ class PipelineTask:
             {"pipeline_id": self.pipeline_id, "step_id": step_id, "result": result},
         )
 
+    # ─── 进度视图（供 API / SSE 返回）───
+
     def get_progress(self) -> dict:
-        """获取进度数据"""
+        """获取进度数据（供前端轮询或 SSE 推送）。"""
         current_step = max(self.completed_steps, default=0) + 1
-        if self.status == "done" and 7 in self.completed_steps:
-            current_step = 7
+        if self.status == "done" and TOTAL_STEPS in self.completed_steps:
+            current_step = TOTAL_STEPS
         return {
             "pipeline_id": self.pipeline_id,
-            "percent": round(len(self.completed_steps) / 7 * 100),
+            "percent": round(len(self.completed_steps) / TOTAL_STEPS * 100),
             "status": self.status,
             "mode": self.mode,
             "completed_steps": list(self.completed_steps),
             "current_step": current_step,
             "steps": self._build_steps_view(),
-            "logs": self.logs[-20:],
+            "logs": self.logs[-LOG_RETURN_WINDOW:],
             "llm_stats": self.llm_stats,
             "error": self.error,
             "started_at": self.started_at,
         }
 
     def _build_steps_view(self) -> list:
-        """构建步骤状态视图"""
-        step_names = {
-            1: "需求分析",
-            2: "知识库检索",
-            3: "测试点梳理",
-            4: "生成用例",
-            5: "用例评审",
-            6: "执行测试",
-            7: "生成报告",
-        }
-        view = []
-        for sid in range(1, 8):
-            done = sid in self.completed_steps
-            detail = self.step_details.get(sid, {}).get("data", {})
-            detail_str = ""
-            if done and detail:
-                if "modules" in detail:
-                    detail_str = f"{detail['modules']} 模块 {detail.get('features', 0)} 功能点"
-                elif "hits" in detail:
-                    detail_str = f"命中 {detail['hits']} 条" if detail.get("hits") else "未命中"
-                elif "count" in detail:
-                    detail_str = f"{detail['count']} 个测试点"
-                elif "case_count" in detail:
-                    detail_str = f"{detail['case_count']} 条用例"
-                elif "score" in detail:
-                    detail_str = f"评分 {detail['score']}/100"
+        """构建步骤状态视图 — 每步的 id/名称/状态/明细摘要。
 
-            view.append({
-                "id": sid,
-                "name": step_names[sid],
-                "status": "done" if done else ("running" if self.status == "running" and sid == max(self.completed_steps, default=0) + 1 else "pending"),
-                "detail": detail_str,
-            })
+        状态判定：
+          done    — 已在 completed_steps 中
+          running — 任务运行中且是当前待执行步骤
+          pending — 其余
+        """
+        running_step = max(self.completed_steps, default=0) + 1
+        is_running = self.status == "running"
+        view = []
+        for meta in STEP_REGISTRY:
+            done = meta.id in self.completed_steps
+            if done:
+                step_status = "done"
+            elif is_running and meta.id == running_step:
+                step_status = "running"
+            else:
+                step_status = "pending"
+            view.append(
+                {
+                    "id": meta.id,
+                    "name": meta.name,
+                    "status": step_status,
+                    "detail": self._step_detail_str(meta.id, done),
+                }
+            )
         return view
+
+    def _step_detail_str(self, step_id: int, done: bool) -> str:
+        """根据步骤详情 dict 生成人类可读的摘要字符串。"""
+        if not done:
+            return ""
+        detail = self.step_details.get(step_id, {}).get("data", {})
+        # 各步骤的产出摘要格式
+        if "modules" in detail:
+            return f"{detail['modules']} 模块 {detail.get('features', 0)} 功能点"
+        if "hits" in detail:
+            return f"命中 {detail['hits']} 条" if detail.get("hits") else "未命中"
+        if "count" in detail:
+            return f"{detail['count']} 个测试点"
+        if "case_count" in detail:
+            return f"{detail['case_count']} 条用例"
+        if "score" in detail:
+            return f"评分 {detail['score']}/100"
+        return ""

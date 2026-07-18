@@ -187,11 +187,11 @@ class TestOrchestrator:
         except Exception as e:
             checks.append(("数据库", f"连接失败: {e}", False))
 
-        # 检查 psutil（资源监控）
-        try:
-            import psutil
+        # 检查 psutil（资源监控）—— 用 find_spec 避免 import 副作用 + F401
+        import importlib.util
+        if importlib.util.find_spec("psutil") is not None:
             checks.append(("psutil (资源监控)", "已安装", True))
-        except ImportError:
+        else:
             checks.append(("psutil (资源监控)", "未安装 (监控功能不可用)", False))
 
         # 打印检查结果

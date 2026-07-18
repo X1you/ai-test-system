@@ -19,7 +19,6 @@ kb_manager_mcp.py，Python 冷启动 + Vault 全量遍历 = 6-7 秒。
 
 import threading
 import time
-from functools import lru_cache
 
 from core.config_loader import load_config
 
