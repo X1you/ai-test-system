@@ -203,7 +203,9 @@ class Pipeline:
                 # ⚠️ 特殊豁免：Step4 和 Step6 共用 testcases.xlsx，
                 # 用户填入执行结果后 hash 自然改变，不视为篡改。
                 # 检测到 Excel 已有执行结果 → 跳过警告和强制重跑。
-                if step_id == 4 and output_file == "testcases.xlsx":
+                # 豁免覆盖所有以 testcases.xlsx 为产物的步骤（防御性：
+                # 即便步骤路由改变也能正确豁免，避免丢失用户填写的执行结果）。
+                if output_file == "testcases.xlsx":
                     if self._has_results(path):
                         return True
 

@@ -105,6 +105,77 @@ class TestProductHashCheck:
         state = {"completed_steps": [], "output_hashes": {}}
         assert pipe._check_skip(state, 1, "requirements_analysis.md") is False
 
+    def test_xlsx_with_results_not_treated_as_tampered(self, pipeline_factory):
+        """场景F：testcases.xlsx 被填了执行结果（hash 变化）不视为篡改。
+
+        Step4/Step6 共用 testcases.xlsx，用户填写执行结果后 hash 自然改变。
+        只要检测到「执行结果」列有值，就应豁免篡改检测，避免丢失用户数据。
+        豁免覆盖任意以 testcases.xlsx 为产物的步骤（防御性编程）。
+        """
+        from openpyxl import Workbook
+
+        pipe = pipeline_factory()
+        xlsx = pipe.output_dir / "testcases.xlsx"
+
+        # 构造"原始"Excel（Step4 生成，无执行结果）
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+        ws.append(["用例编号", "标题", "执行结果"])
+        ws.append(["TC-1", "登录", ""])  # 空执行结果
+        wb.save(str(xlsx))
+        wb.close()
+
+        original_hash = hashlib.sha256(xlsx.read_bytes()).hexdigest()
+        state = {"completed_steps": [4], "output_hashes": {"4": original_hash}}
+
+        # 用户填写执行结果（Excel hash 变化）
+        wb2 = Workbook()
+        ws2 = wb2.active
+        assert ws2 is not None
+        ws2.append(["用例编号", "标题", "执行结果"])
+        ws2.append(["TC-1", "登录", "通过"])  # 填了执行结果
+        wb2.save(str(xlsx))
+        wb2.close()
+
+        # hash 已变化，但因有执行结果 → 豁免篡改检测，返回 True（跳过）
+        result = pipe._check_skip(state, 4, "testcases.xlsx")
+        assert result is True, "填了执行结果的 testcases.xlsx 不应被视为篡改"
+
+    def test_xlsx_without_results_treated_as_tampered(self, pipeline_factory):
+        """场景G：testcases.xlsx hash 变化但无执行结果 → 视为篡改。
+
+        对照测试：如果 Excel 被修改但没有执行结果，仍应触发篡改检测。
+        """
+        from openpyxl import Workbook
+
+        pipe = pipeline_factory()
+        xlsx = pipe.output_dir / "testcases.xlsx"
+
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+        ws.append(["用例编号", "标题", "执行结果"])
+        ws.append(["TC-1", "登录", ""])
+        wb.save(str(xlsx))
+        wb.close()
+
+        original_hash = hashlib.sha256(xlsx.read_bytes()).hexdigest()
+        state = {"completed_steps": [4], "output_hashes": {"4": original_hash}}
+        pipe.save_state(state)
+
+        # 篡改但保持无执行结果
+        wb2 = Workbook()
+        ws2 = wb2.active
+        assert ws2 is not None
+        ws2.append(["用例编号", "标题", "执行结果"])
+        ws2.append(["TC-1", "被篡改的标题", ""])  # 改了内容，仍无执行结果
+        wb2.save(str(xlsx))
+        wb2.close()
+
+        result = pipe._check_skip(state, 4, "testcases.xlsx")
+        assert result is False, "无执行结果的 hash 变化应视为篡改"
+
 
 class TestMarkDoneRecordsHash:
     """测试 mark_done 自动记录 output_hashes。"""
