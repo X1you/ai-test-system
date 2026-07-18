@@ -16,6 +16,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# 先加载 .env，确保后续模块导入时 os.environ 已有 API_KEY / JWT_SECRET 等配置。
+# 必须在 web.api.auth / web.middleware.auth 等模块导入之前执行，
+# 否则模块级 os.environ.get() 会读到空值（时序 bug）。
+from core.config_loader import _load_dotenv
+
+_load_dotenv(PROJECT_ROOT / ".env")
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -164,6 +171,23 @@ try:
 
     validate_secret_on_startup()
 except ImportError:
+    pass
+
+# ─── KB 缓存预热（后台异步，不阻塞启动）───
+# 首次 status/search 请求要构建单例 + 全量遍历 Vault（~5s），
+# 启动时后台预热，用户访问时永远是缓存命中（<1ms）。
+try:
+    import threading
+
+    def _warmup_kb_cache():
+        try:
+            from web.services.kb_cache import get_status
+            get_status()  # 触发单例构建 + status 缓存填充
+        except Exception:
+            pass  # 预热失败不影响启动，首次请求时会重试
+
+    threading.Thread(target=_warmup_kb_cache, daemon=True, name="kb-cache-warmup").start()
+except Exception:
     pass
 
 # ─── 全局异常处理（Phase 6）───

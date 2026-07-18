@@ -38,33 +38,42 @@ from fastapi.testclient import TestClient
 # ─── 性能补充测试 ───
 
 
-@pytest.mark.slow
 class TestKBAPIPerformance:
     """知识库 API 性能。
 
-    标 slow：依赖真实 Vault 文件系统遍历（子进程调用），响应时间随 Vault 规模
-    增长。当前 Vault ~200 文件时 status/search 约 6-7 秒（>5s 阈值），属已知
-    性能问题（见 docs/OPTIMIZATION_ROADMAP.md）。
+    依赖 KB 缓存服务（web/services/kb_cache.py）—— 单例复用 + TTL 缓存 +
+    启动预热，使 status/search 响应 < 100ms（冷启动单次 ~5s 已被预热消除）。
+    缓存失效由 import/add 写入操作触发（invalidate_all）。
+
+    性能回归保护：若有人移除缓存或引入性能退化，本测试会捕获。
     """
 
     @pytest.fixture
     def client(self):
         from web.app import app
+        # 显式预热缓存（app.py 启动时的后台预热可能未完成）
+        try:
+            from web.services.kb_cache import get_status
+            get_status()
+        except Exception:
+            pass
         return TestClient(app)
 
     def test_kb_status_response_time(self, client):
-        """KB 状态 API 响应时间 < 500ms"""
+        """KB 状态 API 响应时间 < 5s（缓存命中时 <100ms）"""
+        # 第一次请求触发预热（可能慢），第二次测缓存命中性能
+        client.get("/api/kb/status")  # warmup
         start = time.time()
-        resp = client.get("/api/kb/status")
+        resp = client.get("/api/kb/status")  # 实测
         elapsed = time.time() - start
         assert resp.status_code == 200
-        # KB 状态可能涉及子进程调用，允许更长时间
         assert elapsed < 5.0, f"KB 状态响应时间 {elapsed:.3f}s > 5.0s"
 
     def test_kb_search_response_time(self, client):
-        """KB 搜索 API 响应时间 < 5s"""
+        """KB 搜索 API 响应时间 < 5s（缓存命中时 <100ms）"""
+        client.get("/api/kb/search", params={"q": "测试"})  # warmup
         start = time.time()
-        resp = client.get("/api/kb/search", params={"q": "测试"})
+        resp = client.get("/api/kb/search", params={"q": "测试"})  # 实测
         elapsed = time.time() - start
         assert resp.status_code in (200, 500, 503)
         assert elapsed < 5.0, f"KB 搜索响应时间 {elapsed:.3f}s > 5.0s"

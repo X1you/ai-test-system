@@ -25,65 +25,42 @@ KB_SCRIPT = Path(__file__).resolve().parents[2] / "core" / "kb" / "kb_manager_mc
 
 @router.get("/status")
 async def kb_status():
-    """知识库统计"""
+    """知识库统计（带 60s 缓存，单例复用避免每次 fork 子进程）。"""
     config = load_config()
     kb_config = config.get("knowledge_base", {})
 
     if not kb_config.get("enabled", False):
         return {"enabled": False, "total": 0, "categories": {}}
 
-    if not KB_SCRIPT.exists():
-        return {"enabled": True, "error": "知识库脚本不存在", "total": 0}
-
-    try:
-        result = subprocess.run(
-            [sys.executable, str(KB_SCRIPT), "status"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-        return {"enabled": True, "error": result.stderr[:200]}
-    except Exception as e:
-        return {"enabled": True, "error": str(e)}
+    # 走缓存服务（单例 + TTL 缓存，单例不可用时内部回退 subprocess）
+    from web.services.kb_cache import get_status
+    return get_status()
 
 
 @router.get("/search")
 async def kb_search(q: str = Query(..., description="搜索关键词")):
-    """搜索知识库"""
+    """搜索知识库（按 query 缓存 30s）。"""
     config = load_config()
     kb_config = config.get("knowledge_base", {})
 
     if not kb_config.get("enabled", False):
         return {"query": q, "total": 0, "results": [], "error": "知识库未启用"}
 
-    if not KB_SCRIPT.exists():
-        return {"query": q, "total": 0, "results": [], "error": "知识库脚本不存在"}
+    # 走缓存服务
+    from web.services.kb_cache import search as kb_search_cached
+    data = kb_search_cached(q, limit=20)
 
-    try:
-        result = subprocess.run(
-            [sys.executable, str(KB_SCRIPT), "search", q],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            # 简化输出
-            results = []
-            for item in data[:20]:
-                results.append({
-                    "title": item.get("title", ""),
-                    "category": item.get("category", ""),
-                    "module": item.get("module", ""),
-                    "preview": item.get("content", "")[:200],
-                    "filepath": item.get("filepath", ""),
-                })
-            return {"query": q, "total": len(results), "results": results}
-        return {"query": q, "total": 0, "results": [], "error": result.stderr[:200]}
-    except Exception as e:
-        return {"query": q, "total": 0, "results": [], "error": str(e)}
+    # 简化输出（与原逻辑一致）
+    results = []
+    for item in data[:20]:
+        results.append({
+            "title": item.get("title", ""),
+            "category": item.get("category", ""),
+            "module": item.get("module", ""),
+            "preview": item.get("content", "")[:200],
+            "filepath": item.get("filepath", ""),
+        })
+    return {"query": q, "total": len(results), "results": results}
 
 
 @router.post("/import")
@@ -117,6 +94,9 @@ async def kb_import(file: UploadFile = File(...)):
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
+            # 写入成功 → 失效缓存，让下次 status/search 看到新数据
+            from web.services.kb_cache import invalidate_all
+            invalidate_all()
             return {
                 "ok": True,
                 "imported": data.get("imported", 0),
@@ -181,6 +161,9 @@ async def kb_add(
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
+            # 写入成功 → 失效缓存
+            from web.services.kb_cache import invalidate_all
+            invalidate_all()
             return {"ok": True, "message": "添加成功"}
         return {"ok": False, "message": result.stderr[:500] or "添加失败"}
     except Exception as e:
