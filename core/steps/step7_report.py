@@ -3,6 +3,11 @@
 Step 7: 生成测试报告（脚本步骤）
 
 读取已执行的 testcases.xlsx → 调用 generate_report.py → 输出 test_report.md
+
+ROI 看板（v2 新增）：
+  从 Pipeline 全局上下文接收 gap_count / case_count，透传给报告生成器，
+  在 test_report.md 末尾追加「工程 ROI 看板」章节。
+  公式：研发节省时间 = gap_count * 4 + case_count * 0.1（小时）
 """
 
 import re
@@ -22,6 +27,12 @@ class Step7Report(BaseStep):
     output_file = "test_report.md"
 
     def run(self, **kwargs) -> StepResult:  # type: ignore[override]
+        """
+        kwargs:
+            gap_count: int — Step0 识别的需求数量（ROI 计算，默认 0）
+            case_count: int — Step4 生成的用例数（ROI 计算，默认 0）
+            total_duration: int — v3.0 用例预估总时长（分钟，ROI 精准计算）
+        """
         self.log(f"Step {self.step_id}/7: {self.step_name}", "STEP")
 
         xlsx_path = self._out("testcases.xlsx")
@@ -35,9 +46,21 @@ class Step7Report(BaseStep):
             self.log(f"脚本不存在: {SCRIPT_GEN_REPORT}", "ERR")
             return StepResult(ok=False, error="generate_report.py 不存在")
 
+        # 组装命令：透传 ROI 参数给报告生成器
+        gap_count = int(kwargs.get("gap_count", 0) or 0)
+        case_count = int(kwargs.get("case_count", 0) or 0)
+        total_duration = int(kwargs.get("total_duration", 0) or 0)
+
+        cmd = [
+            sys.executable, str(SCRIPT_GEN_REPORT),
+            str(xlsx_path), "-o", str(report_path),
+            "--gap-count", str(gap_count),
+            "--case-count", str(case_count),
+            "--total-duration", str(total_duration),
+        ]
+
         result = subprocess.run(
-            [sys.executable, str(SCRIPT_GEN_REPORT),
-             str(xlsx_path), "-o", str(report_path)],
+            cmd,
             capture_output=True, text=True, timeout=60,
         )
 
@@ -52,4 +75,7 @@ class Step7Report(BaseStep):
         else:
             self.log("测试报告生成完成", "OK")
 
-        return StepResult(ok=True)
+        return StepResult(
+            ok=True,
+            data={"gap_count": gap_count, "case_count": case_count},
+        )

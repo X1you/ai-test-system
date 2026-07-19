@@ -78,18 +78,47 @@ class Step2KBSearch(BaseStep):
             self.log(f"知识库检索出错: {result.stderr[:100]}", "WARN")
             return StepResult(ok=True, data={"skipped": True, "hits": 0})
 
-        # 统计命中数
+        # 统计命中数 + 区分空库/无匹配/异常三态（修复 TC-005）
         hits = 0
         if context_path.exists():
             content = context_path.read_text(encoding="utf-8")
             hits = content.count("### ")
 
+        # ★ 三态区分（v4.0 架构审计修复 TC-005）
+        # 原实现只记 "未命中相关知识"，无法区分配置问题 vs 正常无匹配
+        vault = Path(kb_config.get("vault_path", "")).expanduser()
+        total_files = 0
+        if vault.exists():
+            total_files = sum(1 for _ in vault.rglob("*.md"))
         if hits > 0:
             self.log(f"知识库命中 {hits} 条相关知识", "KB")
         else:
-            self.log("知识库未命中相关知识", "KB")
+            # 区分三种空命中场景
+            if total_files == 0:
+                # 场景1：知识库启用但空
+                self.log(
+                    "⚠️ 知识库已启用但 Vault 为空（0 个 .md 文件）。"
+                    "建议先通过 Pipeline 回灌或手动添加业务规则/历史用例。"
+                    "本次生成将不携带 RAG 增强（用例质量可能下降）",
+                    "WARN",
+                )
+            elif total_files < 3:
+                # 场景2：知识库文件极少（冷启动）
+                self.log(
+                    f"⚠️ 知识库仅有 {total_files} 个文件（冷启动阶段），"
+                    "RAG 增强效果有限。随着使用积累会逐步提升",
+                    "WARN",
+                )
+            else:
+                # 场景3：知识库非空但本次无匹配（正常）
+                self.log(
+                    f"知识库未命中相关知识（Vault 共 {total_files} 文件，"
+                    f"关键词: {keywords[:40]}）。本次不携带 RAG 增强",
+                    "KB",
+                )
 
-        return StepResult(ok=True, data={"hits": hits, "skipped": False})
+        return StepResult(ok=True, data={"hits": hits, "skipped": False,
+                                          "vault_total_files": total_files if vault.exists() else 0})
 
     @staticmethod
     def _extract_keywords(analysis_md: str) -> str:

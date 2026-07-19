@@ -1,0 +1,23 @@
+# 临时配置：GLM 真实模型（dogfooding 审计用）
+llm:
+  provider: glm
+  api_key: ${GLM_API_KEY}
+  base_url: https://open.bigmodel.cn/api/paas/v4
+  model: glm-4-flash
+  temperature: 0.3
+  max_tokens: 8192
+  timeout: 120
+  retry: 2
+
+knowledge_base:
+  enabled: false
+
+pipeline:
+  default_mode: semi
+  default_dimensions: basic
+  default_formats: excel
+  self_check: true
+  max_concurrent: 1
+
+output:
+  dir: ./output

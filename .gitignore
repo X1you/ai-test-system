@@ -40,3 +40,13 @@ web/uploads/*
 
 # Environment files (contain API keys)
 .env
+
+# 业务文档暂存（防止误提交真实业务资产）
+# 忽略所有 .docx / .xlsx，但保留 demo_ 前缀的示例文件
+*.docx
+*.xlsx
+!demo_*.docx
+!demo_*.xlsx
+# 保留 examples/ 和特定示例目录下的文件
+!examples/**
+!**/demo_*

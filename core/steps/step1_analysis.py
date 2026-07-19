@@ -39,7 +39,11 @@ class Step1Analysis(BaseStep):
             if not path.exists():
                 self.log(f"需求文档不存在: {requirements_path}", "ERR")
                 return StepResult(ok=False, error="需求文档不存在")
-            content = path.read_text(encoding="utf-8")
+            # ★ 修复 TC-015：多编码兜底，避免二进制/GBK 文件触发 UnicodeDecodeError
+            content = self._safe_read_requirement(path)
+            if content is None:
+                self.log(f"需求文档无法解码（非 UTF-8/GBK 文本）: {requirements_path}", "ERR")
+                return StepResult(ok=False, error="需求文档编码无法识别，请转为 UTF-8 或 GBK 文本")
         else:
             return StepResult(ok=False, error="未提供需求文档")
 
@@ -127,6 +131,33 @@ class Step1Analysis(BaseStep):
                 "check_score": score,
             },
         )
+
+    @staticmethod
+    def _safe_read_requirement(path: Path) -> str | None:
+        """安全读取需求文档，多编码兜底。
+
+        修复 TC-015：原 read_text(encoding='utf-8') 对二进制/GBK 文件崩。
+        策略：UTF-8 → GBK → errors='replace' 三级降级。
+        纯二进制（替换字符占比 >30%）返回 None。
+        """
+        raw = path.read_bytes()
+        if not raw:
+            return ""
+        for enc in ("utf-8-sig", "utf-8", "gbk", "gb18030"):
+            try:
+                return raw.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        # 终极兜底：强制 UTF-8 替换非法字节
+        try:
+            text = raw.decode("utf-8", errors="replace")
+            # ★ 二进制内容检测：替换字符占比过高说明是二进制非文本
+            replace_chars = text.count("\ufffd")
+            if len(text) > 0 and replace_chars / len(text) > 0.30:
+                return None
+            return text
+        except Exception:
+            return None
 
     @staticmethod
     def _split_response(response: str) -> tuple:

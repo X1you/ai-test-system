@@ -1777,6 +1777,72 @@ img, svg {
   background: var(--border-default);
 }
 
+/* ── 价值证明条（ROI 量化对比，首会话信任建立）── */
+.value-proof-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, rgba(var(--rgb-primary, 79, 70, 229), 0.06), rgba(var(--rgb-primary, 79, 70, 229), 0.02));
+  border: 1px solid rgba(var(--rgb-primary, 79, 70, 229), 0.15);
+  border-radius: var(--radius-lg, 12px);
+}
+
+.value-proof-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.value-proof-number {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.value-proof-label {
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.value-proof-manual .value-proof-number {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+  text-decoration-color: var(--text-quaternary, rgba(0, 0, 0, 0.2));
+  text-decoration-thickness: 2px;
+}
+
+.value-proof-manual .value-proof-label {
+  opacity: 0.7;
+}
+
+.value-proof-vs {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  padding: 4px 10px;
+  background: var(--bg-elevated, var(--bg-surface));
+  border-radius: 999px;
+}
+
+.value-proof-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  background: var(--success);
+  color: white;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 8px rgba(var(--rgb-success, 16, 185, 129), 0.3);
+}
+
 .hero-running-badge {
   display: inline-flex;
   align-items: center;

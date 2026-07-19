@@ -60,7 +60,7 @@ class PipelineTask:
     字段分组：
       - 静态配置：pipeline_id / output_dir / config / requirements_path / mode / ...
       - 运行时状态：status / completed_steps / step_details / logs / llm_stats / error
-      - 内部控制：_thread / _cancel_flag
+      - 内部控制：_thread / _cancel_flag / _logs_lock（修复 TC-002 线程安全）
     """
 
     pipeline_id: str
@@ -81,6 +81,8 @@ class PipelineTask:
     started_at: str = ""
     _thread: threading.Thread | None = None
     _cancel_flag: bool = False
+    # ★ 修复 TC-002：logs 读写锁，保护 append+切片复合操作的原子性
+    _logs_lock: threading.Lock = field(default_factory=threading.Lock)
 
     # ─── 生命周期入口 ───
 
@@ -255,12 +257,16 @@ class PipelineTask:
         """日志回调 — Pipeline 每输出一条日志时触发。
 
         保留最近 MAX_LOGS 条，超出窗口自动裁剪。
+        ★ 修复 TC-002：用 _logs_lock 保护 append+切片复合操作的原子性。
+        原实现 self.logs.append + self.logs = self.logs[-MAX_LOGS:] 非原子，
+        多线程并发时（Pipeline 后台线程写 + API 线程读）可能丢日志。
         """
         ts = datetime.now().strftime("%H:%M:%S")
-        self.logs.append({"ts": ts, "level": level, "msg": msg})
-        if len(self.logs) > MAX_LOGS:
-            # 切片保留尾部，O(1) 分配新列表
-            self.logs = self.logs[-MAX_LOGS:]
+        with self._logs_lock:
+            self.logs.append({"ts": ts, "level": level, "msg": msg})
+            if len(self.logs) > MAX_LOGS:
+                # 切片保留尾部，O(1) 分配新列表
+                self.logs = self.logs[-MAX_LOGS:]
 
     def _on_step_done(self, step_id: int, result: dict):
         """步骤完成回调 — 更新内存状态、持久化 DB、发布事件。"""
@@ -278,10 +284,16 @@ class PipelineTask:
     # ─── 进度视图（供 API / SSE 返回）───
 
     def get_progress(self) -> dict:
-        """获取进度数据（供前端轮询或 SSE 推送）。"""
+        """获取进度数据（供前端轮询或 SSE 推送）。
+
+        ★ 修复 TC-002：读取 logs 时加锁，避免与后台线程的 append 并发竞争。
+        """
         current_step = max(self.completed_steps, default=0) + 1
         if self.status == "done" and TOTAL_STEPS in self.completed_steps:
             current_step = TOTAL_STEPS
+        # 加锁拷贝 logs 快照（避免迭代时被后台线程修改）
+        with self._logs_lock:
+            logs_snapshot = list(self.logs[-LOG_RETURN_WINDOW:])
         return {
             "pipeline_id": self.pipeline_id,
             "percent": round(len(self.completed_steps) / TOTAL_STEPS * 100),
@@ -290,7 +302,7 @@ class PipelineTask:
             "completed_steps": list(self.completed_steps),
             "current_step": current_step,
             "steps": self._build_steps_view(),
-            "logs": self.logs[-LOG_RETURN_WINDOW:],
+            "logs": logs_snapshot,
             "llm_stats": self.llm_stats,
             "error": self.error,
             "started_at": self.started_at,

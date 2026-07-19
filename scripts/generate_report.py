@@ -480,8 +480,15 @@ class ReportGenerator:
             return "🔴"
 
     def generate(self, test_cases: list, file_path: str, source_file: str = "",
-                 requirements_path: str = "") -> tuple:
+                 requirements_path: str = "", gap_count: int = 0,
+                 case_count: int = 0, total_duration: int = 0) -> tuple:
         """生成完整 Markdown 报告
+
+        Args:
+            gap_count: Step0 识别的需求漏洞数（ROI 看板用，默认 0）
+            case_count: Step4 生成的用例数（ROI 看板用，默认 0；为 0 时从 test_cases 推断）
+            total_duration: v3.0 用例预估执行总时长（分钟），来自 LLM 生成的 estimated_duration 累加。
+                            >0 时 ROI 用精准值；=0 时回退到 case_count×0.1 公式。
 
         Returns:
             (content, stats, risks): 报告文本、统计数据、风险信息
@@ -491,6 +498,11 @@ class ReportGenerator:
         risks = self.analyzer.assess_risk(stats)
         release = self.analyzer.get_release_recommendation(stats, risks)
 
+        # ROI 看板用例数兜底：未显式传入时用 stats["total"]
+        roi_case_count = case_count if case_count > 0 else stats["total"]
+
+        # v3.0 ROI 精准计算：优先用 LLM 预估总时长，回退原公式
+        # total_duration（分钟）→ 小时；case_type 加权（Security/Performance 含金量高）
         now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         lines = []
@@ -696,9 +708,87 @@ class ReportGenerator:
             lines.append(item)
         lines.append("")
 
+        # ─── 9. 工程 ROI 看板（v3.0 精准累加 + case_type 加权）───
+        # 公式演进：
+        #   v2.0: 研发节省 = gap_count × 4 + case_count × 0.1（小时，一刀切）
+        #   v3.0: 研发节省 = gap_count × 4 + case_saving_hours（精准）
+        #     其中 case_saving_hours 优先用 LLM 预估总时长/60；
+        #     无预估时回退 case_count × 0.1
+        #   case_type 加权：Security/Performance 用例技术含金量高，额外加成
+        if total_duration > 0:
+            # v3.0 精准路径：用 LLM 预估的总执行时长
+            case_saving_hours = total_duration / 60.0
+            roi_mode = "精准预估（基于 estimated_duration 累加）"
+            # case_type 加权：Security ×1.5, Performance ×1.3, API ×1.2
+            type_weights = {"Security": 1.5, "Performance": 1.3, "API": 1.2}
+            # 从 test_cases 统计各类型数量（若可用）
+            type_bonus = 0.0
+            if test_cases:
+                type_counts = {}
+                for tc in test_cases:
+                    ct = tc.get("dimension", "") or tc.get("case_type", "Functional")
+                    # 兼容：dimension 字段含中文，映射到 case_type
+                    if "安全" in ct or "Security" in ct:
+                        ct = "Security"
+                    elif "性能" in ct or "Performance" in ct:
+                        ct = "Performance"
+                    elif "API" in ct or "接口" in ct:
+                        ct = "API"
+                    else:
+                        ct = "Functional"
+                    type_counts[ct] = type_counts.get(ct, 0) + 1
+                # 加权bonus = Σ(类型数量 × (权重-1) × 单条平均时长)
+                avg_duration = total_duration / max(len(test_cases), 1) / 60.0
+                for ct, cnt in type_counts.items():
+                    w = type_weights.get(ct, 1.0)
+                    if w > 1.0:
+                        type_bonus += cnt * (w - 1.0) * avg_duration
+            case_saving_hours += type_bonus
+        else:
+            # v2.0 回退路径：一刀切公式
+            case_saving_hours = roi_case_count * 0.1
+            roi_mode = "经验估算（case_count × 0.1，无预估时长时回退）"
+
+        gap_saving_hours = gap_count * 4.0
+        roi_hours = gap_saving_hours + case_saving_hours
+
+        lines.append("## 💰 工程 ROI 看板\n")
+        lines.append(f"> 量化本次测试资产对研发效能的贡献（{roi_mode}）。\n")
+        lines.append("| 资产项 | 数量 | 单位价值（小时） | 小计（小时） | 说明 |")
+        lines.append("|--------|------|------------------|--------------|------|")
+        lines.append(
+            f"| 🔍 需求漏洞（左移拦截） | {gap_count} 项 | 4.0 | {gap_saving_hours:.1f} | "
+            "每个漏洞若漏到线上，平均返工成本约 4 小时 |"
+        )
+        if total_duration > 0:
+            lines.append(
+                f"| 📋 测试用例（精准预估） | {roi_case_count} 条 | {case_saving_hours/max(roi_case_count,1):.2f}（均值） | {case_saving_hours:.1f} | "
+                f"基于 LLM 预估总时长 {total_duration} 分钟"
+                + (f" + 类型加权" if type_bonus > 0 else "")
+                + " |"
+            )
+        else:
+            lines.append(
+                f"| 📋 测试用例（经验估算） | {roi_case_count} 条 | 0.1 | {case_saving_hours:.1f} | "
+                "人工编写每条约 6 分钟（无预估时长，回退公式） |"
+            )
+        lines.append(f"| **合计研发节省** | — | — | **{roi_hours:.1f} 小时** | — |")
+        lines.append("")
+        if total_duration > 0:
+            lines.append("**计算公式（v3.0 精准模式）**：`研发节省 = gap_count × 4 + Σ(estimated_duration)/60 + case_type加权`（小时）\n")
+        else:
+            lines.append("**计算公式（v2.0 回退模式）**：`研发节省 = gap_count × 4 + case_count × 0.1`（小时）\n")
+        lines.append(
+            f"- 本次共拦截 **{gap_count}** 项需求漏洞 + 生成 **{roi_case_count}** 条用例\n"
+            f"- 估算为研发团队节省约 **{roi_hours:.1f} 小时** 重复劳动\n"
+        )
+        lines.append(
+            "> ⚠️ 以上为经验估算，实际节省因团队成熟度、业务复杂度而异。公式可配置，见 `generate_report.py`。\n"
+        )
+
         # ─── 页脚 ───
         lines.append("---")
-        lines.append(f"\n*报告由 generate-report Skill v1.0.0 自动生成 | {now}*\n")
+        lines.append(f"\n*报告由 generate-report Skill v2.0.0 自动生成 | {now}*\n")
 
         content = "\n".join(lines)
 
@@ -723,6 +813,12 @@ def main():
                         help="输出报告路径 (默认: test_report.md)")
     parser.add_argument("-r", "--requirements", default="",
                         help="需求分析文件路径 (可选，用于需求覆盖率)")
+    parser.add_argument("--gap-count", type=int, default=0,
+                        help="Step0 识别的需求漏洞数 (ROI 看板用，默认 0)")
+    parser.add_argument("--case-count", type=int, default=0,
+                        help="Step4 生成的用例数 (ROI 看板用，默认 0 时从 Excel 推断)")
+    parser.add_argument("--total-duration", type=int, default=0,
+                        help="v3.0 用例预估执行总时长(分钟)，来自 LLM estimated_duration 累加。>0 时 ROI 用精准值")
     args = parser.parse_args()
 
     # 检查输入文件
@@ -760,7 +856,10 @@ def main():
     content, stats, risks = generator.generate(
         test_cases, args.output,
         source_file=args.input,
-        requirements_path=args.requirements
+        requirements_path=args.requirements,
+        gap_count=args.gap_count,
+        case_count=args.case_count,
+        total_duration=args.total_duration,
     )
     grade, _ = generator.analyzer.get_quality_grade(stats["pass_rate"])
 

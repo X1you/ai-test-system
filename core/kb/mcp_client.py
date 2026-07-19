@@ -334,16 +334,33 @@ class MCPClient:
 
         return files
 
+    # 文件读取大小上限（修复 TC-006：防止大文件 OOM）
+    # 单文件 >2MB 时拒绝全量读入，search 跳过该文件
+    MAX_READ_FILE_SIZE = 2 * 1024 * 1024  # 2MB
+
     def read_file(self, filepath: str) -> dict | None:
         """
         MCP: read_file
         读取文件内容
+
+        ★ 修复 TC-006：大文件防护。
+        单文件超过 MAX_READ_FILE_SIZE（2MB）时返回 None 并记日志，
+        避免 search 遍历时一次性持有大量大文件内容导致 OOM。
         """
         try:
             full_path = self._safe_path(filepath)
         except ValueError:
             return None
         if not full_path.exists():
+            return None
+
+        # ★ 大文件预检查（修复 TC-006）
+        try:
+            file_size = full_path.stat().st_size
+            if file_size > self.MAX_READ_FILE_SIZE:
+                # 大文件跳过，避免 OOM（search 层会静默跳过）
+                return None
+        except OSError:
             return None
 
         try:

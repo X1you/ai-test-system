@@ -32,6 +32,7 @@ from pathlib import Path
 
 from core.llm_client import LLMClient, LLMError
 from core.steps.base import StepResult
+from core.steps.step0_gap_analysis import Step0GapAnalysis
 from core.steps.step1_analysis import Step1Analysis
 from core.steps.step2_kb_search import Step2KBSearch
 from core.steps.step3_testpoints import Step3Testpoints
@@ -56,9 +57,14 @@ class StepMeta:
     needs_pause: bool = False  # semi/step 模式下完成后是否暂停确认
 
 
-# 集中维护 7 步元数据 — status()、_print_summary()、run() 全部复用，
+# 集中维护步骤元数据 — status()、_print_summary()、run() 全部复用，
 # 新增/调整步骤只改这一处。
+#
+# Step 0 是需求漏洞扫描（PRD Gap Analysis），独立于核心生成链，
+# 其产物 requirement_gap_analysis.md 和 gap_count 注入全局上下文。
+# Step 0 容灾降级：失败/超时一律 gap_count=0，不阻断后续 Step 1+。
 STEP_REGISTRY: list[StepMeta] = [
+    StepMeta(0, "需求漏洞扫描", "requirement_gap_analysis.md", needs_pause=False),
     StepMeta(1, "需求分析", "requirements_analysis.md", needs_pause=True),
     StepMeta(2, "知识库检索", "knowledge-context.md"),
     StepMeta(3, "测试点梳理", "testpoints.md", needs_pause=True),
@@ -79,6 +85,11 @@ class Pipeline:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.llm: LLMClient | None = None
+
+        # ★ 全局上下文（贯穿各步骤，供 Step7 报告读取 ROI 数据）
+        # 关键字段：gap_count（Step0 注入）、case_count（Step4 注入）、
+        #           total_duration（Step4 注入，v3.0 ROI 精准计算）
+        self.context: dict = {"gap_count": 0, "case_count": 0, "total_duration": 0}
 
         # WebUI 回调钩子（CLI 模式为 None，不影响行为）
         self.on_log: Callable | None = None         # fn(level, msg)
@@ -233,6 +244,135 @@ class Pipeline:
 
         return excel_has_results(xlsx_path)
 
+    # ─── Step0/Step4 上下文恢复 & Step6 引导（数据流闭环辅助） ───
+
+    def _read_output(self, filename: str) -> str:
+        """读取输出目录下的产物文件内容（不存在返回空串）。"""
+        path = self.output_dir / filename
+        if path.exists():
+            try:
+                return path.read_text(encoding="utf-8")
+            except Exception:
+                return ""
+        return ""
+
+    def _read_prd_content(self, requirements_file: str) -> str:
+        """读取原始 PRD 需求文档内容（v3.0 四变量之一）。
+
+        使用 Step0 的 _safe_read_text 做编码兜底。
+        """
+        from core.steps.step0_gap_analysis import Step0GapAnalysis
+        path = Path(requirements_file)
+        if not path.exists():
+            return ""
+        content = Step0GapAnalysis._safe_read_text(path)
+        return content or ""
+
+    def _recover_total_duration(self) -> int:
+        """从 testcases.json 恢复总预估时长（v3.0 ROI 精准计算）。
+
+        断点续跑场景：从 Step4 落盘的 JSON 读取 estimated_duration 累加。
+        """
+        import json
+        json_path = self.output_dir / "testcases.json"
+        if not json_path.exists():
+            return 0
+        try:
+            cases = json.loads(json_path.read_text(encoding="utf-8"))
+            if isinstance(cases, list):
+                return sum(int(c.get("estimated_duration", 0) or 0) for c in cases if isinstance(c, dict))
+        except Exception:
+            return 0
+        return 0
+
+    def _recover_gap_count_from_file(self) -> int:
+        """从 Step0 产物 requirement_gap_analysis.md 恢复 gap_count。
+
+        断点续跑场景：Step0 已完成时，从落盘报告重新解析 GAP_COUNT。
+        解析失败返回 0（与降级语义一致）。
+
+        ★ 修复 TC-012：原实现解析失败时静默返回 0，context.gap_count 被覆盖，
+        Step7 ROI 看板会显示「0 小时」而不报错——数据静默丢失。
+        新增：解析失败时记 WARN 日志，避免静默数据丢失。
+        """
+        from core.steps.step0_gap_analysis import Step0GapAnalysis
+
+        report_path = self.output_dir / "requirement_gap_analysis.md"
+        if not report_path.exists():
+            self._notify_log("WARN", "Step0 报告不存在，gap_count 无法恢复，置 0")
+            return 0
+        try:
+            content = report_path.read_text(encoding="utf-8")
+            gap = Step0GapAnalysis._extract_gap_count(content)
+            if gap == 0:
+                # 区分两种情况：报告明确是 0 个漏洞 vs 报告被篡改导致解析失败
+                has_gap_marker = "GAP_COUNT" in content or "gap_count" in content.lower()
+                if not has_gap_marker:
+                    self._notify_log(
+                        "WARN",
+                        f"⚠️ Step0 报告 {report_path.name} 缺少 GAP_COUNT 标记，"
+                        "可能被篡改，gap_count 置 0（ROI 看板将显示保守值）",
+                    )
+            return gap
+        except Exception as e:
+            self._notify_log("WARN", f"恢复 gap_count 失败: {e}，置 0")
+            return 0
+
+    def _count_cases_from_excel(self) -> int:
+        """统计 testcases.xlsx 中的用例条数（数据行）。
+
+        失败返回 0，不抛异常（ROI 看板对缺失数据要稳健）。
+        """
+        xlsx_path = self.output_dir / "testcases.xlsx"
+        if not xlsx_path.exists():
+            return 0
+        try:
+            from openpyxl import load_workbook
+
+            wb = load_workbook(str(xlsx_path), data_only=True, read_only=True)
+            ws = wb.active
+            # 数据行数 = max_row - 1（表头）；空表返回 0
+            max_row = ws.max_row if ws is not None else 0
+            count = max(0, (max_row or 1) - 1)
+            wb.close()
+            return count
+        except Exception:
+            return 0
+
+    def _print_step6_guide(self, xlsx_path: Path, case_count: int):
+        """Step 6 暂停时的主动引导：3 种执行方式任选其一。
+
+        把原来的"消极等待"重构为"赋能引导 + 万能导出插头"：
+          方式 1：手动标记 Excel（最简单）
+          方式 2：一键导出/推送到 TestRail 等外部系统（资产管道核心）
+          方式 3：跳过执行，直接出报告（快速过流程）
+        """
+        estimated_hours = max(1, round(case_count * 0.05, 1))  # 粗略估算
+
+        print()
+        print("═" * 60)
+        print("  🎯 Step 6 — 测试执行阶段（3 种方式任选其一）")
+        print("═" * 60)
+        print()
+        print(f"  📁 已生成 {case_count} 条用例：{xlsx_path}")
+        print(f"  ⏱️  人工执行预估：~{estimated_hours} 小时（每条约 3 分钟）")
+        print()
+        print("  ─────────────────────────────────────────")
+        print("  1️⃣  手动标记 Excel")
+        print("     在「执行结果」列填 通过/失败/阻塞/跳过")
+        print()
+        print("  2️⃣  一键导出 / 推送到外部测试管理系统")
+        print("     支持平台：TestRail（已内置）、TestLink、可自定义适配器")
+        print("     API: POST /api/v1/integrations/test-cases/push")
+        print("     CLI : python cli.py ingest <file> --category historical-cases")
+        print()
+        print("  3️⃣  跳过执行，直接出报告")
+        print("     不填执行结果，直接 resume → 报告标记全部「未执行」")
+        print("  ─────────────────────────────────────────")
+        print()
+        print(f"  ▶️  完成后继续：python cli.py resume -o {self.output_dir}")
+        print("═" * 60)
+
     # ─── 执行 ───
 
     def run(
@@ -263,6 +403,29 @@ class Pipeline:
 
         out = str(self.output_dir)
         config = self.config
+
+        # ─── Step 0: 需求漏洞扫描（PRD Gap Analysis）───
+        # ★ 容灾步骤：失败/超时一律 gap_count=0，不阻断后续 Step 1+。
+        # ★ 数据流闭环：把 gap_count 注入 self.context，Step7 报告读取做 ROI 计算。
+        # 即使 self_check 关闭，Step0 仍执行（它不依赖 self_check 开关）。
+        if self._check_skip(state, 0, "requirement_gap_analysis.md"):
+            print("✅ Step 0 已完成，跳过\n")
+            # 跳过时仍从产物恢复 gap_count（断点续跑场景）
+            self.context["gap_count"] = self._recover_gap_count_from_file()
+        else:
+            self._init_llm()
+            r0 = Step0GapAnalysis(out, config, self.llm).run(
+                requirements_path=requirements_file
+            )
+            gap = int(r0.data.get("gap_count", 0)) if r0.data else 0
+            self.context["gap_count"] = gap
+            self.mark_done(state, 0, r0)
+            degraded = bool(r0.data.get("degraded")) if r0.data else False
+            if degraded:
+                print(f"⏭️  Step 0 已降级跳过（gap_count=0），继续 Step 1\n")
+            else:
+                print(f"🔍 Step 0 识别 {gap} 项待澄清问题（详见 requirement_gap_analysis.md）\n")
+            # Step 0 不设检查点（needs_pause=False），无论 semi/step 都直接推进
 
         # ─── Step 1: 需求分析 ───
         if self._check_skip(state, 1, "requirements_analysis.md"):
@@ -325,12 +488,35 @@ class Pipeline:
         # ─── Step 4: 生成测试用例 ───
         if self._check_skip(state, 4, "testcases.xlsx"):
             print("✅ Step 4 已完成，跳过\n")
+            # 断点续跑时从 Excel 恢复 case_count
+            self.context["case_count"] = self._count_cases_from_excel()
+            # 尝试从 testcases.json 恢复 total_duration（v3.0 ROI 精准计算）
+            self.context["total_duration"] = self._recover_total_duration()
         else:
-            r = Step4Generate(out, config).run(
-                dimensions=dimensions, formats=formats
+            self._init_llm()
+            # ★ v3.0 四变量拼装：PRD + Step0漏洞 + RAG知识 + 测试点
+            prd_content = self._read_prd_content(requirements_file)
+            step0_vuln = self._read_output("requirement_gap_analysis.md") or ""
+            rag_chunks = self._read_kb_context()
+            test_points_text = (self.output_dir / "testpoints.md").read_text(encoding="utf-8") if (self.output_dir / "testpoints.md").exists() else ""
+
+            r = Step4Generate(out, config, self.llm).run(
+                dimensions=dimensions,
+                formats=formats,
+                prd_content=prd_content,
+                step0_vulnerabilities=step0_vuln,
+                rag_knowledge_chunks=rag_chunks,
+                test_points=test_points_text,
             )
             if r.ok:
                 self.mark_done(state, 4, r)
+                # ★ 数据流闭环：把用例数和总预估时长注入全局上下文，供 Step7 ROI 计算
+                self.context["case_count"] = r.data.get("case_count", 0)
+                self.context["total_duration"] = r.data.get("total_duration", 0)
+                methodology = r.data.get("methodology", "unknown")
+                neg_ratio = r.data.get("negative_ratio", 0)
+                print(f"  → 用例数 {self.context['case_count']}，预估总时长 {self.context['total_duration']} 分钟，"
+                      f"负向占比 {neg_ratio:.0%}（{methodology}）")
                 print()
             else:
                 print("❌ Step 4 失败，终止")
@@ -379,16 +565,21 @@ class Pipeline:
                 self.mark_done(state, 6, r)
                 print()
             else:
-                print("⏸️  Pipeline 暂停 — 等待人工执行测试")
-                print(f"    文件: {xlsx_path}")
-                print(f"    填写完成后重新运行: python cli.py resume -o {self.output_dir}")
+                # ★ Step 6 主动引导：3 种执行方式任选其一（含万能导出插头）
+                case_count = self._count_cases_from_excel()
+                self._print_step6_guide(xlsx_path, case_count)
                 return state
 
         # ─── Step 7: 生成报告 ───
         if self._check_skip(state, 7, "test_report.md"):
             print("✅ Step 7 已完成，跳过\n")
         else:
-            r = Step7Report(out, config).run()
+            # ★ 把全局上下文的 gap_count/case_count/total_duration 透传给报告生成器（ROI 看板）
+            r = Step7Report(out, config).run(
+                gap_count=self.context.get("gap_count", 0),
+                case_count=self.context.get("case_count", 0),
+                total_duration=self.context.get("total_duration", 0),
+            )
             if r.ok:
                 self.mark_done(state, 7, r)
                 print()
