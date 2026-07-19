@@ -10,7 +10,7 @@ from fastapi import APIRouter
 
 from core.config_loader import load_config, validate_config
 
-router = APIRouter(prefix="/api/config", tags=["config"])
+router = APIRouter(tags=["config"])
 
 
 @router.get("")

@@ -57,7 +57,7 @@ class TestFileUploadValidation:
     def test_upload_md_file(self, client, sample_md_file):
         """上传 .md 文件成功"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -70,7 +70,7 @@ class TestFileUploadValidation:
         """上传 .txt 文件成功"""
         content = io.BytesIO(b"Simple text requirements")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("req.txt", content, "text/plain")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -80,7 +80,7 @@ class TestFileUploadValidation:
         """不支持的文件后缀返回 400"""
         content = io.BytesIO(b"Binary content")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test.pdf", content, "application/pdf")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -90,7 +90,7 @@ class TestFileUploadValidation:
         """上传 .exe 文件被拒绝"""
         content = io.BytesIO(b"fake exe content")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("malware.exe", content, "application/octet-stream")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -100,7 +100,7 @@ class TestFileUploadValidation:
         """无后缀文件名被拒绝"""
         content = io.BytesIO(b"no extension")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("noext", content, "text/plain")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -111,7 +111,7 @@ class TestFileUploadValidation:
         # 11MB 文件
         large_content = io.BytesIO(b"x" * (11 * 1024 * 1024))
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("large.md", large_content, "text/markdown")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -121,7 +121,7 @@ class TestFileUploadValidation:
         """空文件可以上传"""
         content = io.BytesIO(b"")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("empty.md", content, "text/markdown")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -133,41 +133,41 @@ class TestProgressEndpoint:
 
     def test_progress_nonexistent_pipeline(self, client):
         """不存在的 Pipeline 返回 404"""
-        resp = client.get("/api/pipeline/nonexistent-id-12345/progress")
+        resp = client.get("/api/v1/pipeline/nonexistent-id-12345/progress")
         assert resp.status_code == 404
 
     def test_status_nonexistent_pipeline(self, client):
         """不存在的 Pipeline 状态返回 404"""
-        resp = client.get("/api/pipeline/nonexistent-id-12345/status")
+        resp = client.get("/api/v1/pipeline/nonexistent-id-12345/status")
         assert resp.status_code == 404
 
     def test_progress_with_htmx_header(self, client, sample_md_file):
-        """HTMX 请求返回 HTML 片段"""
+        """HTMX 请求也返回 JSON（Sprint 6.1: HTML 分支已移除）"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        # HTMX 请求
+        # HTMX 请求 → 统一 JSON
         resp = client.get(
-            f"/api/pipeline/{pid}/progress",
+            f"/api/v1/pipeline/{pid}/progress",
             headers={"HX-Request": "true"},
         )
         assert resp.status_code == 200
-        assert "text/html" in resp.headers.get("content-type", "")
+        assert "application/json" in resp.headers.get("content-type", "")
 
     def test_progress_json_format(self, client, sample_md_file):
         """普通请求返回 JSON"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.get(f"/api/pipeline/{pid}/progress")
+        resp = client.get(f"/api/v1/pipeline/{pid}/progress")
         assert resp.status_code == 200
         data = resp.json()
         assert "pipeline_id" in data
@@ -181,22 +181,22 @@ class TestCancelEndpoint:
 
     def test_cancel_nonexistent(self, client):
         """取消不存在的 Pipeline 返回 404"""
-        resp = client.post("/api/pipeline/fake-id-99999/cancel")
+        resp = client.post("/api/v1/pipeline/fake-id-99999/cancel")
         assert resp.status_code == 404
 
     def test_cancel_not_running(self, client, sample_md_file):
         """取消已完成/取消的 Pipeline 返回 400"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
         # 先取消一次
-        client.post(f"/api/pipeline/{pid}/cancel")
+        client.post(f"/api/v1/pipeline/{pid}/cancel")
         # 再取消一次应该返回 400
-        resp2 = client.post(f"/api/pipeline/{pid}/cancel")
+        resp2 = client.post(f"/api/v1/pipeline/{pid}/cancel")
         assert resp2.status_code == 400
 
 
@@ -205,19 +205,19 @@ class TestResumeEndpoint:
 
     def test_resume_nonexistent(self, client):
         """恢复不存在的 Pipeline 返回 404"""
-        resp = client.post("/api/pipeline/fake-id-99999/resume")
+        resp = client.post("/api/v1/pipeline/fake-id-99999/resume")
         assert resp.status_code == 404
 
     def test_resume_not_paused(self, client, sample_md_file):
         """恢复非 paused 状态返回 400"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
         # 当前状态是 running，不是 paused
-        resp2 = client.post(f"/api/pipeline/{pid}/resume")
+        resp2 = client.post(f"/api/v1/pipeline/{pid}/resume")
         assert resp2.status_code == 400
 
 
@@ -226,48 +226,48 @@ class TestArtifactsEndpoint:
 
     def test_artifacts_nonexistent_pipeline(self, client):
         """不存在的 Pipeline 产物返回 404"""
-        resp = client.get("/api/pipeline/fake-id/artifacts")
+        resp = client.get("/api/v1/pipeline/fake-id/artifacts")
         assert resp.status_code == 404
 
     def test_download_nonexistent_file(self, client, sample_md_file):
         """下载不存在的文件返回 404"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
-        resp = client.get(f"/api/pipeline/{pid}/artifacts/nonexistent.md")
+        resp = client.get(f"/api/v1/pipeline/{pid}/artifacts/nonexistent.md")
         assert resp.status_code == 404
 
     def test_download_path_traversal(self, client, sample_md_file):
         """路径穿越攻击被阻止"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
         # 尝试路径穿越
-        resp = client.get(f"/api/pipeline/{pid}/artifacts/../../../etc/passwd")
+        resp = client.get(f"/api/v1/pipeline/{pid}/artifacts/../../../etc/passwd")
         assert resp.status_code in (400, 404)
 
     def test_preview_path_traversal(self, client, sample_md_file):
         """预览路径穿越攻击被阻止"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.get(f"/api/pipeline/{pid}/preview/../../../etc/passwd")
+        resp = client.get(f"/api/v1/pipeline/{pid}/preview/../../../etc/passwd")
         assert resp.status_code in (400, 404)
 
     def test_list_pipelines(self, client):
         """Pipeline 列表端点可访问"""
-        resp = client.get("/api/pipeline/list")
+        resp = client.get("/api/v1/pipeline/list")
         assert resp.status_code == 200
         data = resp.json()
         assert "pipelines" in data
@@ -279,7 +279,7 @@ class TestPipelineStartValidation:
     def test_invalid_mode(self, client, sample_md_file):
         """无效的模式参数 — 不拒绝但接受"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "invalid_mode", "dimensions": "basic", "formats": "excel"},
         )
@@ -289,7 +289,7 @@ class TestPipelineStartValidation:
         """SQL 注入在文件名中 — 文件名被安全处理"""
         content = io.BytesIO(b"test")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test_sqli.md", content, "text/markdown")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -299,7 +299,7 @@ class TestPipelineStartValidation:
         """XSS 在文件名中 — 文件名被安全处理"""
         content = io.BytesIO(b"test")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test_xss.md", content, "text/markdown")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )

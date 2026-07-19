@@ -52,13 +52,13 @@ class TestSecurityHeaders:
 
     def test_security_headers_on_api(self, client):
         """API 路由也包含安全头"""
-        resp = client.get("/api/pipeline/list")
+        resp = client.get("/api/v1/pipeline/list")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
         assert resp.headers.get("X-Frame-Options") == "DENY"
 
     def test_security_headers_on_error(self, client):
         """错误响应也包含安全头"""
-        resp = client.get("/api/pipeline/nonexistent-id/progress")
+        resp = client.get("/api/v1/pipeline/nonexistent-id/progress")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
 
 
@@ -67,24 +67,24 @@ class TestPathTraversal:
 
     def test_download_path_traversal_double_dot(self, client):
         """双点号路径穿越被阻止 — FastAPI 可能先规范化路径，返回 404"""
-        resp = client.get("/api/pipeline/test-id/artifacts/../../../etc/passwd")
+        resp = client.get("/api/v1/pipeline/test-id/artifacts/../../../etc/passwd")
         # 路径被规范化后可能返回 404（pipeline 不存在）或 400（非法文件名）
         assert resp.status_code in (400, 404)
 
     def test_download_path_traversal_encoded(self, client):
         """URL 编码的路径穿越被阻止"""
-        resp = client.get("/api/pipeline/test-id/artifacts/%2e%2e%2f%2e%2e%2fetc/passwd")
+        resp = client.get("/api/v1/pipeline/test-id/artifacts/%2e%2e%2f%2e%2e%2fetc/passwd")
         # 应该返回 404（pipeline 不存在）或 400（非法文件名）
         assert resp.status_code in (400, 404)
 
     def test_preview_path_traversal(self, client):
         """预览端点路径穿越被阻止"""
-        resp = client.get("/api/pipeline/test-id/preview/../../../etc/passwd")
+        resp = client.get("/api/v1/pipeline/test-id/preview/../../../etc/passwd")
         assert resp.status_code in (400, 404)
 
     def test_download_absolute_path(self, client):
         """绝对路径被阻止"""
-        resp = client.get("/api/pipeline/test-id/artifacts//etc/passwd")
+        resp = client.get("/api/v1/pipeline/test-id/artifacts//etc/passwd")
         assert resp.status_code in (400, 404)
 
 
@@ -93,18 +93,18 @@ class TestSQLInjection:
 
     def test_pipeline_id_sql_injection(self, client):
         """Pipeline ID 中的 SQL 注入被参数化查询防护"""
-        resp = client.get("/api/pipeline/' OR '1'='1/progress")
+        resp = client.get("/api/v1/pipeline/' OR '1'='1/progress")
         # 应该返回 404（不是 500 错误）
         assert resp.status_code == 404
 
     def test_pipeline_id_drop_table(self, client):
         """DROP TABLE 注入被防护"""
-        resp = client.get("/api/pipeline/test'; DROP TABLE pipelines;--/progress")
+        resp = client.get("/api/v1/pipeline/test'; DROP TABLE pipelines;--/progress")
         assert resp.status_code == 404
 
     def test_pipeline_id_union_select(self, client):
         """UNION SELECT 注入被防护"""
-        resp = client.get("/api/pipeline/test' UNION SELECT * FROM users--/progress")
+        resp = client.get("/api/v1/pipeline/test' UNION SELECT * FROM users--/progress")
         assert resp.status_code == 404
 
 
@@ -112,20 +112,20 @@ class TestXSSProtection:
     """XSS 防护"""
 
     def test_xss_in_page_content(self, client):
-        """页面内容不被 XSS 注入"""
+        """页面内容不被 XSS 注入（Sprint 6.1: 返回 JSON）"""
         resp = client.get("/")
-        # 确认页面是 HTML
-        assert "text/html" in resp.headers.get("content-type", "")
-        # 确认没有未转义的脚本标签来自用户输入
+        # Sprint 6.1: 页面返回 JSON
+        assert "application/json" in resp.headers.get("content-type", "")
+        # JSON 响应中不应包含未转义的脚本标签
         text = resp.text
         assert "<script>alert" not in text.lower()
 
     def test_xss_in_api_response(self, client):
         """API 响应中的用户输入不应导致 XSS"""
-        resp = client.get("/api/pipeline/<script>alert(1)</script>/progress")
+        resp = client.get("/api/v1/pipeline/<script>alert(1)</script>/progress")
         data = resp.json()
-        # 404 响应中不应包含原始脚本标签
-        assert "detail" in data
+        # 404 响应中不应包含原始脚本标签（Sprint 6.1: SPA fallback 返回 error 字段）
+        assert "error" in data or "detail" in data
 
 
 class TestFileUploadSecurity:
@@ -135,7 +135,7 @@ class TestFileUploadSecurity:
         """可执行文件被拒绝"""
         content = io.BytesIO(b"\x7fELF binary content")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("malware.sh", content, "application/x-sh")},
             data={"mode": "semi"},
         )
@@ -145,7 +145,7 @@ class TestFileUploadSecurity:
         """双后缀文件检查 — .md 后缀允许"""
         content = io.BytesIO(b"test")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test.pdf.md", content, "text/markdown")},
             data={"mode": "semi"},
         )
@@ -156,7 +156,7 @@ class TestFileUploadSecurity:
         """文件名中的路径穿越 — Path().name 取文件名部分"""
         content = io.BytesIO(b"test")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("malicious.md", content, "text/markdown")},
             data={"mode": "semi"},
         )
@@ -174,7 +174,7 @@ class TestFileUploadSecurity:
         overlong = "a" * 296 + ".md"
         content = io.BytesIO(b"# test\n")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": (overlong, content, "text/markdown")},
             data={"mode": "semi"},
         )
@@ -195,55 +195,23 @@ class TestFileUploadSecurity:
 
 
 class TestAuthSecurity:
-    """认证安全"""
+    """认证安全（Sprint 6.0: Auth 已切除，全部跳过）"""
 
     def test_protected_endpoint_without_token(self):
-        """/api/auth/me 无 Token 返回 401"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-
-        client = TestClient(app)
-        resp = client.get("/api/auth/me")
-        assert resp.status_code == 401
+        pytest.skip("Auth module removed in Sprint 6.0")
 
     def test_protected_endpoint_invalid_token(self, client):
-        """无效 Token 返回 401"""
-        resp = client.get("/api/auth/me", headers={
-            "Authorization": "Bearer invalid.token.here"
-        })
-        assert resp.status_code == 401
+        pytest.skip("Auth module removed in Sprint 6.0")
 
     def test_protected_endpoint_empty_token(self):
-        """空 Token 返回 401"""
-        from fastapi.testclient import TestClient
-
-        from web.app import app
-
-        client = TestClient(app)
-        resp = client.get("/api/auth/me", headers={
-            "Authorization": "Bearer "
-        })
-        assert resp.status_code == 401
+        pytest.skip("Auth module removed in Sprint 6.0")
 
     def test_protected_endpoint_wrong_scheme(self, client):
-        """错误的认证方案返回 401"""
-        resp = client.get("/api/auth/me", headers={
-            "Authorization": "Basic dGVzdDp0ZXN0"
-        })
-        assert resp.status_code == 401
+        pytest.skip("Auth module removed in Sprint 6.0")
 
     def test_jwt_token_not_reusable_across_roles(self, monkeypatch, tmp_path):
-        """JWT Token 中包含正确的角色信息"""
-        from jose import jwt
-
-        from web.middleware.auth import ALGORITHM, SECRET_KEY, create_token
-
-        token = create_token(1, "user1", "user")
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        assert payload["role"] == "user"
-        assert payload["sub"] == "1"
-        assert payload["username"] == "user1"
+        """Sprint 6.0: Auth 已切除，此测试跳过"""
+        pytest.skip("Auth module removed in Sprint 6.0")
 
 
 class TestRateLimiting:
@@ -265,16 +233,16 @@ class TestGlobalExceptionHandler:
     def test_500_error_returns_json(self, client):
         """500 错误返回 JSON 格式"""
         # 触发一个预期的 404（验证错误格式）
-        resp = client.get("/api/pipeline/nonexistent-id/progress")
+        resp = client.get("/api/v1/pipeline/nonexistent-id/progress")
         assert resp.status_code == 404
         data = resp.json()
         assert "detail" in data
 
     def test_404_returns_json(self, client):
-        """404 返回 JSON 格式"""
+        """404 返回 JSON 格式（Sprint 6.1: SPA fallback 返回 error 字段）"""
         resp = client.get("/api/nonexistent-route-xyz")
         data = resp.json()
-        assert "detail" in data
+        assert "error" in data or "detail" in data
 
 
 class TestStaticCacheHeaders:

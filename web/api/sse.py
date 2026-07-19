@@ -19,7 +19,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from web.services.event_bus import get_event_bus
 
-router = APIRouter(prefix="/api/pipeline", tags=["sse"])
+router = APIRouter(tags=["sse"])
 
 # 心跳间隔（秒）
 HEARTBEAT_INTERVAL = 15.0

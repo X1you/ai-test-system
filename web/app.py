@@ -24,16 +24,15 @@ from core.config_loader import _load_dotenv
 _load_dotenv(PROJECT_ROOT / ".env")
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from core.config_loader import load_config
 from core.errors import AppError, app_error_handler
 from web.api import config as config_api
-from web.api import knowledge, pipeline, views, webhooks
+from web.api import knowledge, pipeline, webhooks
 from web.services.task_manager import get_task_manager
 
 # SSE 路由（Phase 3，可能尚未创建）
@@ -61,36 +60,18 @@ static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# 模板
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
-
-# ─── 静态资源版本指纹（cache busting）───
-# 用文件 mtime 生成版本号，文件一改 URL 自动变，浏览器不会用旧缓存
-def _static_version(path: str) -> str:
-    """Jinja2 过滤器：给静态资源路径追加 ?v=mtime 后缀"""
-    full = static_dir / path
-    try:
-        return f"/static/{path}?v={int(full.stat().st_mtime)}"
-    except OSError:
-        return f"/static/{path}"
-
-
-templates.env.filters["static_v"] = _static_version
-
-# 注册路由
-app.include_router(pipeline.router)
+# 注册路由（Sprint 6.1：统一 /api/v1 前缀，避免重叠）
+app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
+app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
+app.include_router(config_api.router, prefix="/api/v1/config", tags=["config"])
+app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 
 # 注册 AppError 异常处理器
 app.add_exception_handler(AppError, app_error_handler)
-app.include_router(knowledge.router)
-app.include_router(config_api.router)
-app.include_router(webhooks.router)
-app.include_router(views.router)
 if sse_api is not None:
-    app.include_router(sse_api.router)
+    app.include_router(sse_api.router, prefix="/api/v1/pipeline", tags=["sse"])
 if integrations_router is not None:
-    app.include_router(integrations_router)
+    app.include_router(integrations_router)  # integrations 自带 prefix，保留
 
 
 # ─── 安全与性能中间件 ───
@@ -229,46 +210,18 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# ─── 页面路由（服务端渲染）───
+# ─── 页面路由（Sprint 6.1: 全部改为 JSON，SPA 由前端 Vue 接管）───
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
-    """首页 — 上传需求 + 启动 Pipeline"""
+@app.get("/")
+async def index():
+    """根路径 — 返回系统元信息（SPA 由前端工程接管）"""
     tm = get_task_manager()
-    running_count = tm.get_running_count()
-    return templates.TemplateResponse(request, "index.html", {
-        "title": "AI 测试用例生成系统",
-        "running_count": running_count,
-    })
-
-
-@app.get("/pipeline/{pipeline_id}", response_class=HTMLResponse)
-async def pipeline_page(request: Request, pipeline_id: str):
-    """Pipeline 进度页"""
-    return templates.TemplateResponse(request, "pipeline.html", {"pipeline_id": pipeline_id})
-
-
-@app.get("/results/{pipeline_id}", response_class=HTMLResponse)
-async def results_page(request: Request, pipeline_id: str):
-    """结果预览页"""
-    return templates.TemplateResponse(request, "results.html", {"pipeline_id": pipeline_id})
-
-
-@app.get("/knowledge", response_class=HTMLResponse)
-async def knowledge_page(request: Request):
-    """知识库管理页"""
-    return templates.TemplateResponse(request, "knowledge.html", {})
-
-
-@app.get("/pipelines", response_class=HTMLResponse)
-async def pipelines_page(request: Request):
-    """Pipeline 列表页"""
-    tm = get_task_manager()
-    running_count = tm.get_running_count()
-    return templates.TemplateResponse(request, "pipelines.html", {
-        "title": "Pipeline 列表",
-        "running_count": running_count,
-    })
+    return {
+        "name": "AI 测试用例生成系统",
+        "version": "2.0.0",
+        "running_count": tm.get_running_count(),
+        "spa_hint": "前端 Vue 工程见 webui/，启动方式见 README",
+    }
 
 
 @app.get("/health")
@@ -330,6 +283,54 @@ async def health():
             "checks": checks,
         },
     )
+
+
+# ─── SPA Fallback（生产环境：将非 API 请求交给 Vue index.html）───
+# 仅当 web/static/dist/index.html 存在（前端已构建）时启用
+_dist_dir = Path(__file__).parent / "static" / "dist"
+_index_file = _dist_dir / "index.html"
+
+if _index_file.exists():
+    from fastapi.responses import FileResponse
+
+    @app.get("/{catchall:path}")
+    async def serve_spa(catchall: str):
+        """SPA 回退：非 API 请求统一返回 index.html（Vue Router 接管）
+
+        catchall 已存在的精确路由（如 /health、/api/v1/...）会优先匹配，
+        此路由只兜底处理未命中的路径。
+        """
+        # 避免把 API 404 误判为 SPA 路由
+        if catchall.startswith("api/"):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "API Endpoint Not Found", "path": catchall},
+            )
+        # 静态资源直接 404（不该走 SPA）
+        if catchall.startswith("static/"):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Static Resource Not Found", "path": catchall},
+            )
+        return FileResponse(str(_index_file))
+else:
+    # 前端未构建时，根路径之外的未知路径返回 JSON 提示（开发期友好）
+    @app.get("/{catchall:path}")
+    async def spa_not_built(catchall: str):
+        if catchall.startswith("api/") or catchall.startswith("static/"):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Not Found", "path": catchall},
+            )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "Frontend not built yet. Run `npm run build` in webui/.",
+                "path": catchall,
+                "api_docs": "/docs",
+                "health": "/health",
+            },
+        )
 
 
 # ─── 入口 ───

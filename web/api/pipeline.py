@@ -18,18 +18,14 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 
 from core.config_loader import load_config
 from core.utils import safe_join_path
 from web.services.task_manager import get_task_manager
 
 # ─── 常量 ───
-
-# 模板实例化（复用，避免重复创建）
-_templates = Jinja2Templates(directory="web/templates")
 
 # 上传目录（使用绝对路径）
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads"
@@ -46,14 +42,6 @@ EXCEL_PREVIEW_MAX_ROWS = 50
 # Excel 单元格预览最大字符数
 EXCEL_CELL_MAX_CHARS = 100
 
-# 终态 → HTMX 事件名映射（完成后触发前端停止轮询）
-_TERMINAL_EVENTS: dict[str, str] = {
-    "done": "pipeline-complete",
-    "paused": "pipeline-paused",
-    "error": "pipeline-error",
-    "cancelled": "pipeline-cancelled",
-}
-
 # 产物文件 → 友好展示名映射
 _ARTIFACT_NAMES: dict[str, str] = {
     "requirements_analysis.md": "需求分析",
@@ -66,7 +54,7 @@ _ARTIFACT_NAMES: dict[str, str] = {
     "test_report.md": "测试报告",
 }
 
-router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+router = APIRouter(tags=["pipeline"])
 
 
 # ─── 辅助函数 ───
@@ -151,35 +139,10 @@ async def start_pipeline(
 
 
 @router.get("/{pipeline_id}/progress")
-async def get_progress(
-    pipeline_id: str,
-    request: Request,
-):
-    """获取进度。
-
-    如果请求头 HX-Request: true（HTMX 请求），返回 HTML 片段；
-    否则返回 JSON。
-    """
+async def get_progress(pipeline_id: str):
+    """获取进度（Sprint 6.1 起统一返回 JSON，HTMX HTML 分支已移除）。"""
     task = _require_task(pipeline_id)
-    progress = task.get_progress()
-
-    # 检查是否为 HTMX 请求
-    is_htmx = request.headers.get("HX-Request") == "true"
-
-    if is_htmx:
-        # 返回 HTML 片段
-        html = _templates.TemplateResponse(
-            request,
-            "pipeline_progress.html",
-            {"progress": progress},
-        )
-        # 终态时在响应头标记触发事件（前端据此停止轮询）
-        status = progress["status"]
-        event_name = _TERMINAL_EVENTS.get(status, "pipeline-complete")
-        html.headers["HX-Trigger"] = event_name
-        return html
-
-    return progress
+    return task.get_progress()
 
 
 @router.get("/{pipeline_id}/status")

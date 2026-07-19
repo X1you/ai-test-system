@@ -236,7 +236,7 @@ class TestPipelineTask:
 
         progress = task.get_progress()
         assert progress["pipeline_id"] == "test-001"
-        assert progress["percent"] == 43  # 3/7 ≈ 43%
+        assert progress["percent"] == 38  # 3/8 ≈ 38% (Sprint 6.1: 8 steps)
         assert progress["status"] == "running"
         assert len(progress["completed_steps"]) == 3
         assert "steps" in progress
@@ -259,11 +259,11 @@ class TestPipelineTask:
         }
 
         view = task._build_steps_view()
-        assert len(view) == 7
-        assert view[0]["status"] == "done"  # step 1
-        assert view[1]["status"] == "done"  # step 2
-        assert view[0]["detail"] == "3 模块 8 功能点"
-        assert view[1]["detail"] == "命中 5 条"
+        assert len(view) == 8  # Sprint 6.1: 8 steps (was 7)
+        assert view[1]["status"] == "done"  # step 1 (0-indexed)
+        assert view[2]["status"] == "done"  # step 2 (0-indexed)
+        assert view[1]["detail"] == "3 模块 8 功能点"
+        assert view[2]["detail"] == "命中 5 条"
 
     def test_on_log_appends(self, tmp_path):
         """日志追加"""

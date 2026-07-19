@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from integrations.base import AdapterConfig
 from integrations.registry import AdapterRegistry
 
-router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
+router = APIRouter(tags=["webhooks"])
 
 
 @router.post("/{platform}")

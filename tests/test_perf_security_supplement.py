@@ -52,18 +52,18 @@ class TestKBAPIPerformance:
     def test_kb_status_response_time(self, client):
         """KB 状态 API 响应时间 < 5s（缓存命中时 <100ms）"""
         # 第一次请求触发预热（可能慢），第二次测缓存命中性能
-        client.get("/api/kb/status")  # warmup
+        client.get("/api/v1/knowledge/status")  # warmup
         start = time.time()
-        resp = client.get("/api/kb/status")  # 实测
+        resp = client.get("/api/v1/knowledge/status")  # 实测
         elapsed = time.time() - start
         assert resp.status_code == 200
         assert elapsed < 5.0, f"KB 状态响应时间 {elapsed:.3f}s > 5.0s"
 
     def test_kb_search_response_time(self, client):
         """KB 搜索 API 响应时间 < 5s（缓存命中时 <100ms）"""
-        client.get("/api/kb/search", params={"q": "测试"})  # warmup
+        client.get("/api/v1/knowledge/search", params={"q": "测试"})  # warmup
         start = time.time()
-        resp = client.get("/api/kb/search", params={"q": "测试"})  # 实测
+        resp = client.get("/api/v1/knowledge/search", params={"q": "测试"})  # 实测
         elapsed = time.time() - start
         assert resp.status_code in (200, 500, 503)
         assert elapsed < 5.0, f"KB 搜索响应时间 {elapsed:.3f}s > 5.0s"
@@ -89,7 +89,7 @@ class TestPipelineStartPerformance:
         content = io.BytesIO(b"# Test\n- Feature 1")
         start = time.time()
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test.md", content, "text/markdown")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
@@ -109,13 +109,13 @@ class TestResponseSize:
 
     def test_config_api_response_size(self, client):
         """配置 API 响应 < 10KB"""
-        resp = client.get("/api/config")
+        resp = client.get("/api/v1/config")
         assert resp.status_code == 200
         assert len(resp.content) < 10240, f"配置 API 响应 {len(resp.content)}B > 10KB"
 
     def test_pipeline_list_response_size(self, client):
         """Pipeline 列表响应 < 100KB"""
-        resp = client.get("/api/pipeline/list")
+        resp = client.get("/api/v1/pipeline/list")
         assert resp.status_code == 200
         assert len(resp.content) < 102400, f"Pipeline 列表响应 {len(resp.content)}B > 100KB"
 
@@ -155,7 +155,7 @@ class TestConcurrentPipelineStart:
             content = io.BytesIO(b"# Test")
             try:
                 return inner.post(
-                    "/api/pipeline/start",
+                    "/api/v1/pipeline/start",
                     files={"file": ("test.md", content, "text/markdown")},
                     data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
                 )
@@ -198,7 +198,7 @@ class TestCSPHeaders:
 
     def test_csp_on_api_response(self, client):
         """API 响应也应该有 CSP 头"""
-        resp = client.get("/api/config")
+        resp = client.get("/api/v1/config")
         csp = resp.headers.get("Content-Security-Policy", "")
         if csp:
             assert "default-src" in csp or "script-src" in csp
@@ -210,7 +210,7 @@ class TestCORSConfiguration:
     def test_cors_preflight(self, client):
         """CORS 预检请求"""
         resp = client.options(
-            "/api/config",
+            "/api/v1/config",
             headers={
                 "Origin": "https://evil.com",
                 "Access-Control-Request-Method": "GET",
@@ -223,7 +223,7 @@ class TestCORSConfiguration:
 
     def test_cors_origin_header(self, client):
         """跨域请求的 Origin 头处理"""
-        resp = client.get("/api/config", headers={"Origin": "https://example.com"})
+        resp = client.get("/api/v1/config", headers={"Origin": "https://example.com"})
         # 应该有 CORS 头或没有
         acao = resp.headers.get("Access-Control-Allow-Origin")
         # 如果配置了 CORS，应该是 * 或具体域名
@@ -248,32 +248,32 @@ class TestHTTPParameterPollution:
 
     def test_duplicate_query_params(self, client):
         """重复查询参数不会导致异常"""
-        resp = client.get("/api/kb/search?q=test&q=malicious")
+        resp = client.get("/api/v1/knowledge/search?q=test&q=malicious")
         assert resp.status_code in (200, 422, 500, 503)
 
     def test_extra_unexpected_params(self, client):
         """额外参数被忽略"""
-        resp = client.get("/api/config?debug=true&admin=1")
+        resp = client.get("/api/v1/config?debug=true&admin=1")
         assert resp.status_code == 200
 
 
 class TestLargePayloadProtection:
-    """大请求体防护"""
+    """大请求体防护（Sprint 6.0: Auth 已切除，改用 pipeline start 端点）"""
 
     def test_large_json_body(self, client):
         """大 JSON 请求体"""
         large_body = {"data": "x" * 100000}
-        resp = client.post("/api/auth/login", json=large_body)
-        assert resp.status_code in (200, 401, 422)
+        resp = client.post("/api/v1/pipeline/start", json=large_body)
+        assert resp.status_code in (200, 401, 405, 422)
 
     def test_large_form_data(self, client):
         """大表单数据"""
         large_data = "x" * 100000
         resp = client.post(
-            "/api/auth/login",
-            data={"username": large_data, "password": "test"},
+            "/api/v1/pipeline/start",
+            data={"mode": large_data, "dimensions": "basic"},
         )
-        assert resp.status_code in (200, 401, 422)
+        assert resp.status_code in (200, 401, 405, 422)
 
 
 class TestSensitiveInfoLeakage:
@@ -281,7 +281,7 @@ class TestSensitiveInfoLeakage:
 
     def test_config_api_masks_api_key(self, client):
         """配置 API 不应泄露完整 API Key"""
-        resp = client.get("/api/config")
+        resp = client.get("/api/v1/config")
         assert resp.status_code == 200
         data = resp.json()
         llm = data.get("llm", {})
@@ -293,7 +293,7 @@ class TestSensitiveInfoLeakage:
 
     def test_error_response_no_stack_trace(self, client):
         """错误响应不泄露堆栈跟踪"""
-        resp = client.get("/api/pipeline/nonexistent-id/progress")
+        resp = client.get("/api/v1/pipeline/nonexistent-id/progress")
         assert resp.status_code == 404
         data = resp.json()
         # 不应包含 Python 堆栈跟踪
@@ -313,11 +313,11 @@ class TestHTTPMethodOverride:
     """HTTP 方法覆盖攻击"""
 
     def test_method_override_header(self, client):
-        """X-HTTP-Method-Override 头"""
+        """X-HTTP-Method-Override 头（Sprint 6.0: Auth 已切除，改用 pipeline start）"""
         resp = client.post(
-            "/api/auth/login",
+            "/api/v1/pipeline/start",
             headers={"X-HTTP-Method-Override": "DELETE"},
-            json={"username": "test", "password": "test"},
+            json={"mode": "auto", "dimensions": "basic"},
         )
         # POST 端点被覆盖为 DELETE 应返回 405 或正常处理
         assert resp.status_code in (200, 401, 405, 422)
@@ -325,7 +325,7 @@ class TestHTTPMethodOverride:
     def test_method_override_post_to_get(self, client):
         """POST 覆盖为 GET"""
         resp = client.post(
-            "/api/config",
+            "/api/v1/config",
             headers={"X-HTTP-Method-Override": "GET"},
         )
         # POST 到只支持 GET 的端点应返回 405

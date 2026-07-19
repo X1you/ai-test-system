@@ -54,23 +54,9 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="function")
 def client():
-    """创建已自动登录（JWT）的测试客户端"""
+    """创建测试客户端（Sprint 6.0: Auth 已切除，无需登录）"""
     from fastapi.testclient import TestClient
 
     from web.app import app
-    from web.services.user_service import create_admin_if_not_exists
 
-    try:
-        create_admin_if_not_exists("testuser", "TestPass123!")
-    except Exception:
-        pass
-
-    client = TestClient(app)
-    resp = client.post(
-        "/api/auth/login",
-        json={"username": "testuser", "password": "TestPass123!"},
-    )
-    if resp.status_code == 200:
-        token = resp.json().get("access_token", "")
-        client.headers["Authorization"] = f"Bearer {token}"
-    return client
+    return TestClient(app)

@@ -78,7 +78,7 @@ CASES = [
     ), [
         '等待人工执行',
         'id="resume-upload-zone"',
-        'hx-post="/api/pipeline/abc12345/resume"',
+        'hx-post="/api/v1/pipeline/abc12345/resume"',
         "onclick=\"cancelPipeline('abc12345')\"",
         'btn-outline-danger',
         '取消任务',

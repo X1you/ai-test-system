@@ -18,6 +18,10 @@ venv/
 # Local state
 _meta.json
 
+# Node / Vue frontend
+node_modules/
+webui/node_modules/
+
 # Runtime output (do not commit)
 output/
 test-run/

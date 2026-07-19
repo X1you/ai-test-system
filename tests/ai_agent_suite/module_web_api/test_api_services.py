@@ -53,23 +53,8 @@ def _reset_task_manager():
 
 @pytest.fixture
 def client():
-    """创建已登录的测试客户端（自动获取 JWT Token）。"""
-    from web.services.user_service import create_admin_if_not_exists
-
-    try:
-        create_admin_if_not_exists("testuser", "TestPass123!")
-    except Exception:
-        pass
-
-    client = TestClient(app)
-    resp = client.post("/api/auth/login", json={
-        "username": "testuser",
-        "password": "TestPass123!",
-    })
-    if resp.status_code == 200:
-        token = resp.json().get("access_token", "")
-        client.headers["Authorization"] = f"Bearer {token}"
-    return client
+    """创建测试客户端（Sprint 6.0: Auth 已切除，无需登录）"""
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -81,20 +66,7 @@ def sample_md_file():
 
 @pytest.fixture
 def auth_token(client):
-    """获取认证 Token"""
-    from web.services.user_service import create_admin_if_not_exists
-
-    try:
-        create_admin_if_not_exists("testuser", "TestPass123!")
-    except Exception:
-        pass
-
-    resp = client.post("/api/auth/login", json={
-        "username": "testuser",
-        "password": "TestPass123!",
-    })
-    if resp.status_code == 200:
-        return resp.json().get("access_token")
+    """Sprint 6.0: Auth 已切除，返回 None（兼容旧测试签名）"""
     return None
 
 
@@ -107,7 +79,7 @@ class TestPipelineAPI:
     def test_start_pipeline_success(self, client, sample_md_file):
         """启动 Pipeline 成功"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -126,7 +98,7 @@ class TestPipelineAPI:
 
         for params in param_combos:
             resp = client.post(
-                "/api/pipeline/start",
+                "/api/v1/pipeline/start",
                 files={"file": sample_md_file},
                 data=params,
             )
@@ -136,7 +108,7 @@ class TestPipelineAPI:
     def test_start_pipeline_no_file(self, client):
         """无文件上传返回 422"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         assert resp.status_code == 422
@@ -145,7 +117,7 @@ class TestPipelineAPI:
         """无效文件类型"""
         content = io.BytesIO(b"binary data")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test.exe", content, "application/octet-stream")},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -154,13 +126,13 @@ class TestPipelineAPI:
     def test_get_pipeline_progress(self, client, sample_md_file):
         """获取 Pipeline 进度"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.get(f"/api/pipeline/{pid}/progress")
+        resp = client.get(f"/api/v1/pipeline/{pid}/progress")
         assert resp.status_code == 200
         data = resp.json()
         assert "pipeline_id" in data
@@ -171,38 +143,38 @@ class TestPipelineAPI:
     def test_get_pipeline_status(self, client, sample_md_file):
         """获取 Pipeline 详细状态"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.get(f"/api/pipeline/{pid}/status")
+        resp = client.get(f"/api/v1/pipeline/{pid}/status")
         assert resp.status_code == 200
 
     def test_cancel_pipeline(self, client, sample_md_file):
         """取消 Pipeline"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.post(f"/api/pipeline/{pid}/cancel")
+        resp = client.post(f"/api/v1/pipeline/{pid}/cancel")
         assert resp.status_code == 200
 
     def test_cancel_twice_fails(self, client, sample_md_file):
         """重复取消返回 400"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        client.post(f"/api/pipeline/{pid}/cancel")
-        resp2 = client.post(f"/api/pipeline/{pid}/cancel")
+        client.post(f"/api/v1/pipeline/{pid}/cancel")
+        resp2 = client.post(f"/api/v1/pipeline/{pid}/cancel")
         assert resp2.status_code == 400
 
     def test_list_pipelines(self, client, sample_md_file):
@@ -210,12 +182,12 @@ class TestPipelineAPI:
         # 先创建几个 Pipeline
         for _ in range(2):
             client.post(
-                "/api/pipeline/start",
+                "/api/v1/pipeline/start",
                 files={"file": sample_md_file},
                 data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
             )
 
-        resp = client.get("/api/pipeline/list")
+        resp = client.get("/api/v1/pipeline/list")
         assert resp.status_code == 200
         data = resp.json()
         assert "pipelines" in data
@@ -224,22 +196,22 @@ class TestPipelineAPI:
     def test_artifacts_endpoint(self, client, sample_md_file):
         """产物下载端点"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
         # 获取产物列表
-        resp = client.get(f"/api/pipeline/{pid}/artifacts")
+        resp = client.get(f"/api/v1/pipeline/{pid}/artifacts")
         assert resp.status_code == 200
 
     def test_nonexistent_pipeline_404(self, client):
         """不存在的 Pipeline 返回 404"""
         endpoints = [
-            "/api/pipeline/fake-id-12345/progress",
-            "/api/pipeline/fake-id-12345/status",
-            "/api/pipeline/fake-id-12345/artifacts",
+            "/api/v1/pipeline/fake-id-12345/progress",
+            "/api/v1/pipeline/fake-id-12345/status",
+            "/api/v1/pipeline/fake-id-12345/artifacts",
         ]
         for ep in endpoints:
             resp = client.get(ep)
@@ -248,90 +220,22 @@ class TestPipelineAPI:
     def test_htmx_progress_response(self, client, sample_md_file):
         """HTMX 请求返回 HTML 片段"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
         resp = client.get(
-            f"/api/pipeline/{pid}/progress",
+            f"/api/v1/pipeline/{pid}/progress",
             headers={"HX-Request": "true"},
         )
         assert resp.status_code == 200
-        assert "text/html" in resp.headers.get("content-type", "")
+        # Sprint 6.1: HTMX HTML 分支已移除，统一返回 JSON
+        assert "application/json" in resp.headers.get("content-type", "")
 
 
-class TestAuthAPI:
-    """认证 API 测试"""
-
-    def test_login_success(self, client):
-        """登录成功"""
-        from web.services.user_service import create_admin_if_not_exists
-
-        try:
-            create_admin_if_not_exists("logintest", "TestPass123!")
-        except Exception:
-            pass
-
-        resp = client.post("/api/auth/login", json={
-            "username": "logintest",
-            "password": "TestPass123!",
-        })
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "access_token" in data
-        assert data["token_type"] == "bearer"
-
-    def test_login_wrong_password(self, client):
-        """错误密码登录失败"""
-        from web.services.user_service import create_admin_if_not_exists
-
-        try:
-            create_admin_if_not_exists("wrongpw", "CorrectPass1!")
-        except Exception:
-            pass
-
-        resp = client.post("/api/auth/login", json={
-            "username": "wrongpw",
-            "password": "WrongPassword!",
-        })
-        assert resp.status_code == 401
-
-    def test_login_nonexistent_user(self, client):
-        """不存在的用户登录失败"""
-        resp = client.post("/api/auth/login", json={
-            "username": "nonexistent_user_12345",
-            "password": "SomePass1!",
-        })
-        assert resp.status_code == 401
-
-    def test_login_missing_fields(self, client):
-        """缺少必填字段"""
-        resp = client.post("/api/auth/login", json={"username": "test"})
-        assert resp.status_code == 422
-
-    def test_protected_endpoint_no_token(self, client):
-        """无 Token 访问受保护端点"""
-        # client fixture 自带 Auth header，测试无 token 场景时临时清除
-        original_header = client.headers.get("Authorization", "")
-        client.headers["Authorization"] = ""
-        resp = client.get("/api/auth/me")
-        client.headers["Authorization"] = original_header  # 恢复
-        assert resp.status_code in (401, 403)
-
-    def test_protected_endpoint_with_token(self, client, auth_token):
-        """有 Token 访问受保护端点"""
-        if auth_token is None:
-            pytest.skip("无法获取认证 Token")
-
-        resp = client.get(
-            "/api/auth/me",
-            headers={"Authorization": f"Bearer {auth_token}"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "username" in data
+# Sprint 6.0: TestAuthAPI 已删除（Auth 模块彻底切除）
 
 
 class TestConfigAPI:
@@ -339,7 +243,7 @@ class TestConfigAPI:
 
     def test_get_config(self, client):
         """获取配置"""
-        resp = client.get("/api/config")
+        resp = client.get("/api/v1/config")
         assert resp.status_code == 200
         data = resp.json()
         assert "llm" in data
@@ -350,7 +254,7 @@ class TestKnowledgeAPI:
 
     def test_kb_status(self, client):
         """知识库状态端点"""
-        resp = client.get("/api/kb/status")
+        resp = client.get("/api/v1/knowledge/status")
         assert resp.status_code == 200
         data = resp.json()
         # kb_status 返回 source, search_backend, categories, total 等字段
@@ -358,7 +262,7 @@ class TestKnowledgeAPI:
 
     def test_kb_search(self, client):
         """知识库搜索"""
-        resp = client.get("/api/kb/search?q=用户管理")
+        resp = client.get("/api/v1/knowledge/search?q=用户管理")
         # 知识库可能未启用，返回 200 或空结果
         assert resp.status_code in (200, 503)
 
@@ -374,7 +278,7 @@ class TestWebhookAPI:
             "test_case_id": 123,
             "changes": {"title": "Updated Title"},
         }
-        resp = client.post("/api/webhooks/testrail", json=payload)
+        resp = client.post("/api/v1/webhooks/testrail", json=payload)
         # Webhook 端点可能返回不同状态码
         assert resp.status_code in (200, 201, 202, 404, 422, 501)
 
@@ -385,25 +289,25 @@ class TestSecurityEndpoints:
     def test_path_traversal_artifacts(self, client, sample_md_file):
         """路径穿越防护"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.get(f"/api/pipeline/{pid}/artifacts/../../../etc/passwd")
+        resp = client.get(f"/api/v1/pipeline/{pid}/artifacts/../../../etc/passwd")
         assert resp.status_code in (400, 404)
 
     def test_path_traversal_preview(self, client, sample_md_file):
         """预览路径穿越防护"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
         pid = resp.json()["pipeline_id"]
 
-        resp = client.get(f"/api/pipeline/{pid}/preview/../../../etc/passwd")
+        resp = client.get(f"/api/v1/pipeline/{pid}/preview/../../../etc/passwd")
         assert resp.status_code in (400, 404)
 
     def test_sql_injection_pipeline_id(self, client):
@@ -414,14 +318,14 @@ class TestSecurityEndpoints:
             "1' UNION SELECT * FROM users--",
         ]
         for mid in malicious_ids:
-            resp = client.get(f"/api/pipeline/{mid}/progress")
+            resp = client.get(f"/api/v1/pipeline/{mid}/progress")
             assert resp.status_code in (400, 404, 422)
 
     def test_xss_filename(self, client):
         """XSS 文件名防护"""
         content = io.BytesIO(b"test")
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test_xss.md", content, "text/markdown")},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -430,7 +334,7 @@ class TestSecurityEndpoints:
     def test_large_payload(self, client):
         """超大请求体防护"""
         large_data = {"data": "x" * (11 * 1024 * 1024)}  # 11MB
-        resp = client.post("/api/pipeline/start", data=large_data)
+        resp = client.post("/api/v1/pipeline/start", data=large_data)
         assert resp.status_code in (400, 413, 422)
 
 
@@ -440,7 +344,7 @@ class TestSSEAndStreaming:
     def test_sse_stream_endpoint(self, client, sample_md_file):
         """SSE 流端点"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -448,7 +352,7 @@ class TestSSEAndStreaming:
 
         # SSE 端点应该建立连接
         resp = client.get(
-            f"/api/pipeline/{pid}/stream",
+            f"/api/v1/pipeline/{pid}/stream",
             headers={"Accept": "text/event-stream"},
         )
         assert resp.status_code in (200, 404)
@@ -489,7 +393,7 @@ class TestConcurrentRequests:
         def make_request():
             try:
                 resp = client.post(
-                    "/api/pipeline/start",
+                    "/api/v1/pipeline/start",
                     files={"file": sample_md_file},
                     data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
                 )
@@ -510,7 +414,7 @@ class TestConcurrentRequests:
     def test_concurrent_progress_queries(self, client, sample_md_file):
         """并发进度查询"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -520,7 +424,7 @@ class TestConcurrentRequests:
 
         def query_progress():
             try:
-                resp = client.get(f"/api/pipeline/{pid}/progress")
+                resp = client.get(f"/api/v1/pipeline/{pid}/progress")
                 results.append(resp.status_code)
             except Exception:
                 pass
@@ -547,12 +451,12 @@ class TestErrorResponses:
 
     def test_405_response(self, client):
         """405 方法不允许"""
-        resp = client.get("/api/pipeline/start")
+        resp = client.get("/api/v1/pipeline/start")
         assert resp.status_code == 405
 
     def test_422_validation_error(self, client):
-        """422 验证错误"""
-        resp = client.post("/api/auth/login", json={})
+        """422 验证错误（Sprint 6.0: Auth 已切除，改用 pipeline start 缺字段）"""
+        resp = client.post("/api/v1/pipeline/start", data={})
         assert resp.status_code == 422
 
 
@@ -574,7 +478,7 @@ class TestAPIExhaustive:
             for dims in dimensions_list:
                 for fmt in formats_list:
                     resp = client.post(
-                        "/api/pipeline/start",
+                        "/api/v1/pipeline/start",
                         files={"file": sample_md_file},
                         data={"mode": mode, "dimensions": dims, "formats": fmt},
                     )
@@ -583,72 +487,14 @@ class TestAPIExhaustive:
                     time.sleep(0.1)
 
     def test_auth_edge_cases(self, client):
-        """认证边界场景全覆盖"""
-        from web.services.user_service import create_admin_if_not_exists
-
-        try:
-            create_admin_if_not_exists("edgeuser", "EdgePass123!")
-        except Exception:
-            pass
-
-        # 空用户名
-        resp = client.post("/api/auth/login", json={"username": "", "password": "TestPass123!"})
-        assert resp.status_code in (401, 422)
-
-        # 空密码
-        resp = client.post("/api/auth/login", json={"username": "edgeuser", "password": ""})
-        assert resp.status_code in (401, 422)
-
-        # 超长用户名
-        resp = client.post("/api/auth/login", json={
-            "username": "a" * 500,
-            "password": "TestPass123!",
-        })
-        assert resp.status_code in (401, 422)
-
-        # 超长密码
-        resp = client.post("/api/auth/login", json={
-            "username": "edgeuser",
-            "password": "a" * 500,
-        })
-        assert resp.status_code in (401, 422)
-
-        # 特殊字符用户名
-        resp = client.post("/api/auth/login", json={
-            "username": "'; DROP TABLE users;--",
-            "password": "TestPass123!",
-        })
-        assert resp.status_code in (401, 422)
-
-        # Unicode 用户名
-        resp = client.post("/api/auth/login", json={
-            "username": "测试用户🚀",
-            "password": "TestPass123!",
-        })
-        assert resp.status_code in (401, 422)
-
-        # 缺少字段
-        resp = client.post("/api/auth/login", json={"username": "edgeuser"})
-        assert resp.status_code == 422
-
-        resp = client.post("/api/auth/login", json={"password": "TestPass123!"})
-        assert resp.status_code == 422
-
-        # 空白请求体
-        resp = client.post("/api/auth/login", json={})
-        assert resp.status_code == 422
-
-        # None 值
-        resp = client.post("/api/auth/login", json={"username": None, "password": None})
-        assert resp.status_code == 422
-
-        time.sleep(0.3)
+        """Sprint 6.0: Auth 已切除，此测试跳过"""
+        pytest.skip("Auth module removed in Sprint 6.0")
 
     def test_pipeline_lifecycle_sequence(self, client, sample_md_file):
         """Pipeline 完整生命周期序列操作"""
         # 1. 创建
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -658,27 +504,27 @@ class TestAPIExhaustive:
 
         # 2. 多次查询进度
         for _ in range(5):
-            resp = client.get(f"/api/pipeline/{pid}/progress")
+            resp = client.get(f"/api/v1/pipeline/{pid}/progress")
             assert resp.status_code == 200
             time.sleep(0.1)
 
         # 3. 查询状态
-        resp = client.get(f"/api/pipeline/{pid}/status")
+        resp = client.get(f"/api/v1/pipeline/{pid}/status")
         assert resp.status_code == 200
         time.sleep(0.1)
 
         # 4. 查询产物
-        resp = client.get(f"/api/pipeline/{pid}/artifacts")
+        resp = client.get(f"/api/v1/pipeline/{pid}/artifacts")
         assert resp.status_code == 200
         time.sleep(0.1)
 
         # 5. 取消
-        resp = client.post(f"/api/pipeline/{pid}/cancel")
+        resp = client.post(f"/api/v1/pipeline/{pid}/cancel")
         assert resp.status_code == 200
         time.sleep(0.1)
 
         # 6. 取消后再次查询（应返回 400 或正常状态）
-        resp = client.get(f"/api/pipeline/{pid}/progress")
+        resp = client.get(f"/api/v1/pipeline/{pid}/progress")
         assert resp.status_code in (200, 400)
 
     def test_list_pipelines_stress(self, client, sample_md_file):
@@ -687,7 +533,7 @@ class TestAPIExhaustive:
         created = []
         for i in range(8):
             resp = client.post(
-                "/api/pipeline/start",
+                "/api/v1/pipeline/start",
                 files={"file": sample_md_file},
                 data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
             )
@@ -699,7 +545,7 @@ class TestAPIExhaustive:
 
         # 多次查询列表
         for _ in range(5):
-            resp = client.get("/api/pipeline/list")
+            resp = client.get("/api/v1/pipeline/list")
             assert resp.status_code == 200
             data = resp.json()
             assert "pipelines" in data
@@ -718,10 +564,10 @@ class TestAPIExhaustive:
         """不存在的 Pipeline 所有端点全覆盖"""
         fake_id = "nonexistent-pipeline-id-99999"
         endpoints = [
-            (f"/api/pipeline/{fake_id}/progress", "GET"),
-            (f"/api/pipeline/{fake_id}/status", "GET"),
-            (f"/api/pipeline/{fake_id}/artifacts", "GET"),
-            (f"/api/pipeline/{fake_id}/cancel", "POST"),
+            (f"/api/v1/pipeline/{fake_id}/progress", "GET"),
+            (f"/api/v1/pipeline/{fake_id}/status", "GET"),
+            (f"/api/v1/pipeline/{fake_id}/artifacts", "GET"),
+            (f"/api/v1/pipeline/{fake_id}/cancel", "POST"),
         ]
 
         for url, method in endpoints:
@@ -749,7 +595,7 @@ class TestAPIExhaustive:
         ]
 
         for payload in sql_payloads:
-            resp = client.get(f"/api/pipeline/{payload}/progress")
+            resp = client.get(f"/api/v1/pipeline/{payload}/progress")
             assert resp.status_code in (400, 404, 422), \
                 f"SQL injection not blocked: {payload}"
 
@@ -763,7 +609,7 @@ class TestAPIExhaustive:
         ]
 
         for payload in path_traversal_payloads:
-            resp = client.get(f"/api/pipeline/fake-id/artifacts/{payload}")
+            resp = client.get(f"/api/v1/pipeline/fake-id/artifacts/{payload}")
             assert resp.status_code in (400, 404), \
                 f"Path traversal not blocked: {payload}"
 
@@ -779,7 +625,7 @@ class TestAPIExhaustive:
         for payload in xss_payloads:
             content = io.BytesIO(payload.encode())
             resp = client.post(
-                "/api/pipeline/start",
+                "/api/v1/pipeline/start",
                 files={"file": (f"{payload[:20]}.md", content, "text/markdown")},
                 data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
             )
@@ -789,7 +635,7 @@ class TestAPIExhaustive:
     def test_concurrent_cancel_operations(self, client, sample_md_file):
         """并发取消操作"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -799,7 +645,7 @@ class TestAPIExhaustive:
 
         def cancel_op():
             try:
-                resp = client.post(f"/api/pipeline/{pid}/cancel")
+                resp = client.post(f"/api/v1/pipeline/{pid}/cancel")
                 results.append(resp.status_code)
             except Exception as e:
                 results.append(str(e))
@@ -817,7 +663,7 @@ class TestAPIExhaustive:
     def test_kb_api_exhaustive(self, client):
         """知识库 API 全覆盖"""
         # 状态查询
-        resp = client.get("/api/kb/status")
+        resp = client.get("/api/v1/knowledge/status")
         assert resp.status_code == 200
         assert isinstance(resp.json(), dict)
 
@@ -830,14 +676,14 @@ class TestAPIExhaustive:
         ]
 
         for term in search_terms:
-            resp = client.get(f"/api/kb/search?q={term}")
+            resp = client.get(f"/api/v1/knowledge/search?q={term}")
             assert resp.status_code in (200, 422, 503), \
                 f"KB search failed for term '{term[:30]}': {resp.status_code}"
             time.sleep(0.05)
 
     def test_config_api_exhaustive(self, client):
         """配置 API 全覆盖"""
-        resp = client.get("/api/config")
+        resp = client.get("/api/v1/config")
         assert resp.status_code == 200
         data = resp.json()
         assert "llm" in data
@@ -862,25 +708,25 @@ class TestAPIExhaustive:
                 "project_id": 1,
                 "timestamp": "2025-01-01T00:00:00Z",
             }
-            resp = client.post("/api/webhooks/testrail", json=payload)
+            resp = client.post("/api/v1/webhooks/testrail", json=payload)
             assert resp.status_code in (200, 201, 202, 404, 422, 501), \
                 f"Webhook {event} returned unexpected status: {resp.status_code}"
             time.sleep(0.05)
 
         # 空 payload
-        resp = client.post("/api/webhooks/testrail", json={})
+        resp = client.post("/api/v1/webhooks/testrail", json={})
         assert resp.status_code in (200, 201, 202, 404, 422, 501)
 
         # 超大 payload
         large_payload = {"event": "test", "data": "x" * 10000}
-        resp = client.post("/api/webhooks/testrail", json=large_payload)
+        resp = client.post("/api/v1/webhooks/testrail", json=large_payload)
         assert resp.status_code in (200, 201, 202, 404, 413, 422, 501)
 
     def test_mixed_content_types(self, client, sample_md_file):
         """混合 Content-Type 请求"""
         # text/plain 内容
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             content=b"plain text content",
             headers={"Content-Type": "text/plain"},
         )
@@ -888,7 +734,7 @@ class TestAPIExhaustive:
 
         # application/xml
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             content=b"<xml><data>test</data></xml>",
             headers={"Content-Type": "application/xml"},
         )
@@ -896,7 +742,7 @@ class TestAPIExhaustive:
 
         # 无 Content-Type
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             content=b"raw data",
         )
         assert resp.status_code in (400, 415, 422)
@@ -904,7 +750,7 @@ class TestAPIExhaustive:
     def test_pipeline_status_polling(self, client, sample_md_file):
         """Pipeline 状态轮询模拟"""
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": sample_md_file},
             data={"mode": "auto", "dimensions": "basic", "formats": "excel"},
         )
@@ -913,7 +759,7 @@ class TestAPIExhaustive:
         # 模拟轮询：每 0.5s 查询一次，共 10 次
         statuses = []
         for _ in range(10):
-            resp = client.get(f"/api/pipeline/{pid}/progress")
+            resp = client.get(f"/api/v1/pipeline/{pid}/progress")
             if resp.status_code == 200:
                 data = resp.json()
                 statuses.append(data.get("status", "unknown"))

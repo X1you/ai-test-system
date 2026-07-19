@@ -150,28 +150,20 @@ class TestSSEEndpoint:
     """SSE 实时推送端点"""
 
     def test_sse_route_registered(self):
-        """SSE 路由已注册到 app — API 路由嵌套在 _IncludedRouter 中"""
+        """SSE stream 路由已注册（Sprint 6.1: 通过 OpenAPI schema 验证）"""
         from web.app import app
 
-        all_paths = set()
-        for r in app.routes:
-            path = getattr(r, "path", None)
-            if path:
-                all_paths.add(path)
-            # 遍历 _IncludedRouter 的 original_router 子路由
-            original = getattr(r, "original_router", None)
-            if original:
-                for sub in getattr(original, "routes", []):
-                    spath = getattr(sub, "path", None)
-                    if spath:
-                        all_paths.add(spath)
-        assert "/api/pipeline/{pipeline_id}/stream" in all_paths
+        schema = app.openapi()
+        paths = schema.get("paths", {})
+        assert "/api/v1/pipeline/{pipeline_id}/stream" in paths, \
+            f"SSE route not found in OpenAPI paths: {list(paths.keys())[:10]}"
 
     def test_sse_router_has_correct_prefix(self):
-        """SSE 路由前缀正确"""
+        """SSE 路由前缀正确（Sprint 6.1: prefix 移至 app.include_router 层）"""
         from web.api.sse import router
 
-        assert router.prefix == "/api/pipeline"
+        # router 本身不再携带 prefix，由 app.py 统一挂载 /api/v1/pipeline
+        assert router.prefix == ""
 
     def test_heartbeat_interval_is_15s(self):
         """心跳间隔为 15 秒"""

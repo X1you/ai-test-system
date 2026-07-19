@@ -70,7 +70,7 @@ class TestAPIResponseTime:
     def test_config_api_fast(self, client):
         """配置 API < 200ms"""
         start = time.time()
-        resp = client.get("/api/config")
+        resp = client.get("/api/v1/config")
         elapsed = time.time() - start
         assert resp.status_code == 200
         assert elapsed < 0.3, f"配置 API 响应时间 {elapsed:.3f}s > 0.3s"
@@ -78,20 +78,14 @@ class TestAPIResponseTime:
     def test_pipeline_list_fast(self, client):
         """Pipeline 列表 < 200ms"""
         start = time.time()
-        resp = client.get("/api/pipeline/list")
+        resp = client.get("/api/v1/pipeline/list")
         elapsed = time.time() - start
         assert resp.status_code == 200
         assert elapsed < 0.3, f"Pipeline 列表响应时间 {elapsed:.3f}s > 0.3s"
 
     def test_auth_api_fast(self, client):
-        """认证 API 响应 < 200ms"""
-        start = time.time()
-        resp = client.post("/api/auth/login", json={
-            "username": "test", "password": "test",
-        })
-        elapsed = time.time() - start
-        assert resp.status_code in (200, 401)
-        assert elapsed < 0.3, f"认证 API 响应时间 {elapsed:.3f}s > 0.3s"
+        """Sprint 6.0: Auth 已切除，此测试跳过"""
+        pytest.skip("Auth module removed in Sprint 6.0")
 
 
 class TestConcurrentRequests:
@@ -115,7 +109,7 @@ class TestConcurrentRequests:
     def test_concurrent_config_api(self, client):
         """5 个并发配置 API 请求"""
         def make_request():
-            return client.get("/api/config")
+            return client.get("/api/v1/config")
 
         start = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -207,7 +201,7 @@ class TestFileUploadPerformance:
         content = io.BytesIO(b"# Test requirements\n- Feature 1\n- Feature 2\n")
         start = time.time()
         resp = client.post(
-            "/api/pipeline/start",
+            "/api/v1/pipeline/start",
             files={"file": ("test.md", content, "text/markdown")},
             data={"mode": "semi", "dimensions": "basic", "formats": "excel"},
         )
