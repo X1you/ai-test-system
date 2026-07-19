@@ -140,9 +140,61 @@ async def start_pipeline(
 
 @router.get("/{pipeline_id}/progress")
 async def get_progress(pipeline_id: str):
-    """获取进度（Sprint 6.1 起统一返回 JSON，HTMX HTML 分支已移除）。"""
-    task = _require_task(pipeline_id)
-    return task.get_progress()
+    """获取进度（Sprint 6.1 起统一返回 JSON，HTMX HTML 分支已移除）。
+
+    优先从内存 TaskManager 获取活跃任务；
+    内存中不存在时回退到 DB 构建历史进度（重启后的 interrupted/cancelled/error 等）。
+    """
+    tm = get_task_manager()
+    task = tm.get_task(pipeline_id)
+    if task:
+        return task.get_progress()
+
+    # ── DB 回退：构建历史任务的只读进度视图 ──
+    try:
+        from db.repository import get_repository
+        from core.pipeline import STEP_REGISTRY, TOTAL_STEPS
+
+        repo = get_repository()
+        p = repo.get_pipeline(pipeline_id)
+        if not p:
+            raise HTTPException(404, "Pipeline 不存在")
+
+        completed_ids = set(repo.get_completed_step_ids(pipeline_id))
+        db_steps = repo.get_steps(pipeline_id)
+        step_detail = {s.step_id: s for s in db_steps}
+
+        steps_view = []
+        for meta in STEP_REGISTRY:
+            if meta.id in completed_ids:
+                st = "done"
+            else:
+                st = "pending"
+            detail_obj = step_detail.get(meta.id)
+            steps_view.append({
+                "id": meta.id,
+                "name": meta.name,
+                "status": st,
+                "detail": detail_obj.detail if detail_obj else None,
+            })
+
+        return {
+            "pipeline_id": p.id,
+            "percent": round(len(completed_ids) / TOTAL_STEPS * 100),
+            "status": p.status,
+            "mode": p.mode,
+            "completed_steps": sorted(completed_ids),
+            "current_step": max(completed_ids, default=0) + 1 if p.status == "running" else 0,
+            "steps": steps_view,
+            "logs": [],
+            "llm_stats": {},
+            "error": p.error,
+            "started_at": p.started_at.isoformat() if p.started_at else "",
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(404, "Pipeline 不存在")
 
 
 @router.get("/{pipeline_id}/status")
