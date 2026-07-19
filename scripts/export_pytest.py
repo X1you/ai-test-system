@@ -37,10 +37,15 @@ class PyTestGenerator:
     """将 v4.0 结构化用例 JSON 翻译为 PyTest 测试函数源码。"""
 
     @staticmethod
-    def _python_string_escape(s: str) -> str:
-        if not s:
+    def _python_string_escape(s: Any) -> str:
+        """转义为 Python 字符串字面量（兼容 str/dict/list）。"""
+        if s is None or s == "":
             return '""'
-        return repr(s)
+        if isinstance(s, str):
+            return repr(s)
+        # dict/list → json 字符串再 repr
+        import json as _json
+        return repr(_json.dumps(s, ensure_ascii=False))
 
     @staticmethod
     def _extract_http_status(oracle_text: str) -> tuple[int | None, str]:
@@ -149,7 +154,10 @@ class PyTestGenerator:
 
         lines.append(f"    # 发起 HTTP 请求（Mock 靶机）")
         lines.append(f"    url = f'{{base_url}}{path}'")
-        lines.append(f"    payload = {{'test_data': test_data, 'case_id': '{test_data[:40]}'}}")
+        # test_data 可能是 str 或 dict，统一转 str 并去除引号避免破坏 f-string
+        td_display = test_data if isinstance(test_data, str) else str(test_data)
+        td_display = td_display.replace("'", "").replace('"', "")[:40]
+        lines.append(f"    payload = {{'test_data': test_data, 'case_id': '{td_display}'}}")
         lines.append(f"    try:")
         lines.append(f"        response = requests.{method.lower()}(url, json=payload, timeout=5)")
         lines.append(f"    except requests.RequestException as e:")
@@ -248,7 +256,9 @@ class PyTestGenerator:
 
             # test_data
             if test_data:
-                lines.append(f'    test_data = {PyTestGenerator._python_string_escape(test_data[:200])}')
+                # test_data 可能是 str 或 dict/list，统一处理
+                td_str = test_data if isinstance(test_data, str) else str(test_data)
+                lines.append(f'    test_data = {PyTestGenerator._python_string_escape(td_str[:200] if isinstance(td_str, str) else td_str)}')
                 lines.append("")
 
             # 真实 HTTP 调用

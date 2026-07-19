@@ -428,3 +428,81 @@ def _preview_excel(file_path: Path) -> dict:
         raise
     except Exception as e:
         raise HTTPException(500, f"Excel 读取失败: {e}")
+
+
+# ─── v5.0 自动化测试工程 ZIP 动态打包导出 ───
+
+
+@router.get("/{pipeline_id}/export_pytest_project")
+async def export_pytest_project_zip(
+    pipeline_id: str,
+    user: dict = Depends(require_user),
+):
+    """将 Pipeline 的 testcases.json 导出为完整 PyTest 沙箱工程 ZIP。
+
+    v5.0 核心路由：动态调用 scripts/export_pytest.py 生成完整工程目录，
+    然后内存打包为 ZIP 二进制流返回给浏览器下载。
+
+    流程：
+      1. 读取 Pipeline 的 testcases.json
+      2. 调用 export_pytest.export_project 生成临时工程目录
+      3. 内存 ZIP 打包（io.BytesIO + zipfile）
+      4. StreamingResponse 返回二进制流
+    """
+    import io
+    import shutil
+    import tempfile
+    import zipfile
+
+    from fastapi.responses import StreamingResponse
+
+    task = _require_task(pipeline_id)
+
+    # 1. 检查 testcases.json 是否存在
+    json_path = Path(task.output_dir) / "testcases.json"
+    if not json_path.exists():
+        raise HTTPException(
+            404,
+            "testcases.json 不存在。请先完成 Step 4（用例生成）。",
+        )
+
+    # 2. 在临时目录生成完整 PyTest 工程
+    #    延迟导入避免循环依赖
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.export_pytest import export_project
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project_dir = Path(tmpdir) / "automated_test_project"
+        count = export_project(
+            str(json_path),
+            str(project_dir),
+            module_name=f"Pipeline_{pipeline_id[:8]}_Tests",
+        )
+        if count == 0:
+            raise HTTPException(500, "工程生成失败：无可用用例")
+
+        # 3. 内存 ZIP 打包（排除 .venv 和 __pycache__）
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in project_dir.rglob("*"):
+                if file_path.is_file():
+                    # 排除虚拟环境和缓存
+                    rel = file_path.relative_to(project_dir)
+                    if any(part in (".venv", "__pycache__", ".pytest_cache")
+                           for part in rel.parts):
+                        continue
+                    arcname = f"automated_test_project/{rel}"
+                    zf.write(file_path, arcname)
+
+        # 4. 重置指针并返回流
+        zip_buffer.seek(0)
+        filename = f"automated_test_project_{pipeline_id[:8]}.zip"
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
