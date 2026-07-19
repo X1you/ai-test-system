@@ -119,9 +119,10 @@ class TaskManager:
                         "mode": p.mode,
                     })
                     seen_ids.add(p.id)
-        except Exception:
+        except Exception as e:
             # DB 未就绪时仅返回内存任务
-            pass
+            import logging
+            logging.getLogger("web").warning(f"DB 任务列表回退失败: {e}")
 
         return tasks
 

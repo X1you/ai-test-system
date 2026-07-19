@@ -340,8 +340,9 @@ def _get_output_dir(pipeline_id: str) -> Path:
         p = repo.get_pipeline(pipeline_id)
         if p and p.output_dir:
             return Path(p.output_dir)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("web").warning(f"DB 回退查询 output_dir 失败 ({pipeline_id}): {e}")
     raise HTTPException(404, "Pipeline 不存在")
 
 
