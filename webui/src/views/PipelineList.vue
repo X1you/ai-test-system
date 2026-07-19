@@ -35,10 +35,11 @@
 
     <!-- Table -->
     <div v-if="loading" class="loading-state" role="status">加载中…</div>
+    <div v-else-if="loadError" class="error-hint" role="alert">{{ loadError }} · <button class="link-btn" @click="loadList()">重试</button></div>
     <EmptyState v-else-if="items.length === 0" message="暂无匹配任务">
       <router-link to="/pipeline/new" class="link-accent">创建新任务 →</router-link>
     </EmptyState>
-    <table v-else class="list-table">
+    <table v-else class="list-table" aria-label="Pipeline 任务列表">
       <thead>
         <tr>
           <th scope="col">状态</th>
@@ -103,6 +104,7 @@ const router = useRouter()
 
 const items = ref([])
 const loading = ref(true)
+const loadError = ref('')
 const keyword = ref(route.query.q || '')
 const statusFilter = ref(route.query.status || '')
 const page = ref(parseInt(route.query.page) || 1)
@@ -151,7 +153,7 @@ async function loadList() {
     if (statusFilter.value === 'other') {
       items.value = items.value.filter(t => !['running', 'pending', 'done'].includes(t.status))
     }
-  } catch { /* ignore */ }
+  } catch (e) { loadError.value = '任务列表加载失败' }
   loading.value = false
 }
 
@@ -298,6 +300,23 @@ onUnmounted(() => stopPolling())
   padding: var(--space-2xl);
   color: var(--text-tertiary);
 }
+.error-hint {
+  text-align: center;
+  padding: var(--space-xl);
+  color: var(--feedback-error-text);
+  background: var(--feedback-error-bg);
+  border-radius: var(--radius-md);
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+.link-btn:hover { opacity: 0.8; }
 
 .link-accent { color: var(--accent); font-size: var(--text-sm); }
 

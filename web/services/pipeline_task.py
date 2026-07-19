@@ -170,7 +170,7 @@ class PipelineTask:
                 formats=self.formats,
             )
 
-            self._finalize(state, pipeline)
+            self._finalize(state, pipeline, run_mode)
         except _PipelineCancelled:
             self.status = "cancelled"
             self._on_log("WARN", "Pipeline 已取消（中断执行）")
@@ -185,16 +185,22 @@ class PipelineTask:
                 "error", {"pipeline_id": self.pipeline_id, "error": str(e)}
             )
 
-    def _finalize(self, state: dict, pipeline: Pipeline | None = None):
+    def _finalize(self, state: dict, pipeline: Pipeline | None = None, run_mode: str = "semi"):
         """根据最终状态设置任务状态、持久化、发布终态事件。"""
         done = state.get("completed_steps", [])
         if TOTAL_STEPS in done:
             self.status = "done"
             self._on_log("OK", "全流程执行完成 ✅")
         elif len(done) < 6:
-            # 未到 Step 6 → 暂停等待人工
-            self.status = "paused"
-            self._on_log("HUMAN", "Pipeline 暂停 — 等待人工执行测试")
+            if run_mode == "auto":
+                # auto 模式不应暂停 — 未完成即为错误
+                self.status = "error"
+                self.error = "Pipeline 未全部完成（auto 模式不暂停）"
+                self._on_log("ERR", f"Pipeline 异常终止 — 仅完成 {len(done)}/{TOTAL_STEPS} 步")
+            else:
+                # semi/step 模式 → 暂停等待人工
+                self.status = "paused"
+                self._on_log("HUMAN", "Pipeline 暂停 — 等待人工执行测试")
         else:
             self.status = "done"
 

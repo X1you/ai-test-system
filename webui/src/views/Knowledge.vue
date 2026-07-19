@@ -10,13 +10,15 @@
         class="tabs__btn"
         :class="{ 'tabs__btn--active': activeTab === tab.id }"
         role="tab"
+        :id="`tab-${tab.id}`"
         :aria-selected="activeTab === tab.id"
+        :aria-controls="`panel-${tab.id}`"
         @click="activeTab = tab.id"
       >{{ tab.label }}</button>
     </div>
 
     <!-- Config Tab -->
-    <section v-if="activeTab === 'config'" class="tab-panel" role="tabpanel" aria-label="配置">
+    <section v-if="activeTab === 'config'" id="panel-config" class="tab-panel" role="tabpanel" aria-labelledby="tab-config">
       <div class="card-grid">
         <!-- Current config -->
         <div class="card">
@@ -81,7 +83,7 @@
     </section>
 
     <!-- Search Tab -->
-    <section v-if="activeTab === 'search'" class="tab-panel" role="tabpanel" aria-label="搜索">
+    <section v-if="activeTab === 'search'" id="panel-search" class="tab-panel" role="tabpanel" aria-labelledby="tab-search">
       <div class="search-bar">
         <input
           v-model="searchQuery"
@@ -106,7 +108,7 @@
     </section>
 
     <!-- Import Tab -->
-    <section v-if="activeTab === 'import'" class="tab-panel" role="tabpanel" aria-label="导入">
+    <section v-if="activeTab === 'import'" id="panel-import" class="tab-panel" role="tabpanel" aria-labelledby="tab-import">
       <div class="card">
         <h2 class="card__title">Excel 用例回灌</h2>
         <p class="card__desc">上传 .xlsx 文件，导入历史用例到知识库</p>
@@ -129,7 +131,16 @@
           </div>
           <div class="form-group">
             <label for="add-category">分类</label>
-            <input id="add-category" v-model="addForm.category" placeholder="如 business-rules" autocomplete="off" />
+            <select id="add-category" v-model="addForm.category">
+              <option value="" disabled>请选择分类</option>
+              <option value="business-rules">业务规则</option>
+              <option value="historical-cases">历史用例</option>
+              <option value="pitfalls">线上坑点</option>
+              <option value="templates">模板</option>
+              <option value="data-dictionary">数据字典</option>
+              <option value="business-specs">业务规格</option>
+              <option value="team-standards">团队规范</option>
+            </select>
           </div>
           <div class="form-group form-group--full">
             <label for="add-content">内容</label>

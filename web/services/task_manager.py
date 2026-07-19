@@ -97,6 +97,7 @@ class TaskManager:
                 "total_steps": 7,
                 "started_at": task.started_at,
                 "requirements": Path(task.requirements_path).name,
+                "mode": task.mode,
             })
             seen_ids.add(tid)
 
@@ -115,6 +116,7 @@ class TaskManager:
                         "total_steps": 7,
                         "started_at": p.started_at.isoformat() if p.started_at else "",
                         "requirements": Path(p.requirements_path).name if p.requirements_path else "",
+                        "mode": p.mode,
                     })
                     seen_ids.add(p.id)
         except Exception:

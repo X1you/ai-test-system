@@ -19,6 +19,7 @@ const labelMap = {
   paused: '已暂停',
   error: '出错',
   cancelled: '已取消',
+  interrupted: '已中断',
 }
 
 const label = computed(() => labelMap[props.status] || props.status)
@@ -77,6 +78,12 @@ const label = computed(() => labelMap[props.status] || props.status)
 }
 .status-badge--cancelled .status-badge__dot,
 .status-badge--pending .status-badge__dot { background: var(--status-cancelled); }
+
+.status-badge--interrupted {
+  background: var(--feedback-warn-bg, rgba(234,179,8,0.1));
+  color: var(--feedback-warn-text, #b45309);
+}
+.status-badge--interrupted .status-badge__dot { background: var(--status-paused, #eab308); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }

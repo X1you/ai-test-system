@@ -171,6 +171,28 @@ async def _shutdown_task_manager():
     except Exception:
         pass
 
+# ─── 启动时清理僵尸任务（重启后 running/pending 不可能还在运行）───
+@app.on_event("startup")
+async def _cleanup_stale_tasks():
+    try:
+        from db.repository import get_repository
+        from db.models import Pipeline
+        from db.session import session_scope
+        with session_scope() as session:
+            stale = (
+                session.query(Pipeline)
+                .filter(Pipeline.status.in_(["running", "pending"]))
+                .all()
+            )
+            for p in stale:
+                p.status = "interrupted"
+                p.error = "服务重启，任务中断"
+            if stale:
+                import logging
+                logging.getLogger("web").info(f"启动清理：{len(stale)} 个僵尸任务标记为 interrupted")
+    except Exception:
+        pass
+
 # ─── 全局异常处理（Phase 6）───
 
 

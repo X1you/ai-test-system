@@ -30,10 +30,11 @@
         <router-link to="/pipelines" class="section-link">查看全部 →</router-link>
       </div>
       <div v-if="recentLoading" class="loading-hint" role="status">加载中…</div>
+      <div v-else-if="loadError" class="error-hint" role="alert">{{ loadError }} · <button class="link-btn" @click="loadStats()">重试</button></div>
       <EmptyState v-else-if="recentTasks.length === 0" message="暂无任务">
         <router-link to="/pipeline/new" class="btn-primary">创建第一个任务</router-link>
       </EmptyState>
-      <table v-else class="task-table">
+      <table v-else class="task-table" aria-label="最近任务列表">
         <thead>
           <tr>
             <th scope="col">状态</th>
@@ -90,6 +91,7 @@ const stats = ref({ running: 0, done: 0, total: 0, other: 0 })
 const kbTotal = ref(0)
 const recentTasks = ref([])
 const recentLoading = ref(true)
+const loadError = ref('')
 
 function dotClass(val) {
   if (val === 'ok' || val === 'disabled' || val === 'not_configured') return 'health-bar__dot--ok'
@@ -118,7 +120,7 @@ async function loadStats() {
     const data = await api.get('/pipeline/list?page_size=5')
     stats.value = data.all_stats || stats.value
     recentTasks.value = data.items || data.pipelines || []
-  } catch { /* ignore */ }
+  } catch (e) { loadError.value = '任务数据加载失败' }
   recentLoading.value = false
 }
 
@@ -126,7 +128,7 @@ async function loadKb() {
   try {
     const data = await api.get('/knowledge/status')
     kbTotal.value = data.total || 0
-  } catch { /* ignore */ }
+  } catch { /* KB 非关键，静默降级 */ }
 }
 
 async function quickStart(file) {
@@ -224,6 +226,23 @@ onMounted(() => {
   padding: var(--space-xl);
   color: var(--text-tertiary);
 }
+.error-hint {
+  text-align: center;
+  padding: var(--space-xl);
+  color: var(--feedback-error-text);
+  background: var(--feedback-error-bg);
+  border-radius: var(--radius-md);
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+.link-btn:hover { opacity: 0.8; }
 
 /* Task table */
 .task-table {
