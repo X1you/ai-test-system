@@ -17,7 +17,6 @@ import json
 from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
-from web.middleware.auth import require_user
 from web.services.event_bus import get_event_bus
 
 router = APIRouter(prefix="/api/pipeline", tags=["sse"])
@@ -31,7 +30,7 @@ TERMINAL_EVENTS = ("done", "error", "cancelled")
 
 @router.get("/{pipeline_id}/stream")
 async def stream_progress(
-    pipeline_id: str, request: Request, user: dict = Depends(require_user)
+    pipeline_id: str, request: Request
 ):
     """SSE 实时推送 Pipeline 进度事件
 

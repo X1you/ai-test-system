@@ -118,6 +118,53 @@
             <div id="kb-import-result" class="mt-md" style="display:none;"></div>
         </div>
 
+        <!-- Sprint 6.0: 动态知识库配置 -->
+        <div class="kb-side-card">
+            <div class="kb-section-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                动态配置
+            </div>
+            <p class="kb-side-desc">热切换知识库后端，无需重启服务</p>
+            <form id="kb-config-form"
+                  hx-post="/api/kb/update_config"
+                  hx-target="#kb-config-result"
+                  hx-swap="innerHTML"
+                  aria-label="动态知识库配置">
+                <div class="form-group">
+                    <label class="form-label" for="kb-provider">Provider 类型</label>
+                    <select id="kb-provider" name="provider_type" class="form-select" required>
+                        <option value="mcp_filesystem">本地文件系统 (Vault 目录)</option>
+                        <option value="obsidian_api">Obsidian Local REST API</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="kb-vault-path">Vault 路径（mcp_filesystem 必填）</label>
+                    <input type="text" id="kb-vault-path" name="vault_path" class="form-input"
+                           placeholder="/Users/you/Documents/my-vault">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="kb-conn-url">连接 URL（obsidian_api 必填）</label>
+                    <input type="text" id="kb-conn-url" name="connection_url" class="form-input"
+                           placeholder="https://localhost:27124">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="kb-auth-token">Auth Token（obsidian_api 必填）</label>
+                    <input type="password" id="kb-auth-token" name="auth_token" class="form-input"
+                           placeholder="Bearer Token">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" id="kb-config-btn">
+                    保存并热切换
+                </button>
+            </form>
+            <div id="kb-config-result" class="mt-md"></div>
+            <button class="btn btn-secondary btn-sm btn-block mt-md"
+                    hx-get="/api/kb/current_config"
+                    hx-target="#kb-config-result"
+                    hx-swap="innerHTML">
+                查看当前生效配置
+            </button>
+        </div>
+
     </aside>
 
 </div>

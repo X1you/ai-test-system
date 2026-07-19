@@ -15,37 +15,21 @@
     <noscript><link rel="stylesheet" href="{{ "custom.css" | static_v }}"></noscript>
     <script src="{{ "js/htmx.min.js" | static_v }}"></script>
     <script>
-    // ═══ 认证基础设施（必须在 <head> 中，优先于所有页面内容脚本执行）═══
-    // 1. HTMX 请求自动注入 JWT Token — 解决 hx-get/hx-post 的 401 问题
-    // 2. 全局 authFetch() — 解决手动 fetch() 调用的 401 问题
-    // 原因：<main> 内的内联脚本（如 loadPipelines()）和 hx-trigger="load"
-    //       在 body 底部脚本之前执行，若不在 <head> 注册会导致 authFetch 未定义。
+    // ═══ Sprint 6.0：本地单机模式（无 JWT）═══
+    // HTMX 请求无需注入 Token；CSRF Token 注入保留（POST 防护）
     (function() {
         function getCookie(name) {
             var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
             return match ? match[2] : '';
         }
-
-        // HTMX 请求拦截：自动注入 JWT + CSRF Token
         document.addEventListener('htmx:configRequest', function(evt) {
-            var jwtToken = localStorage.getItem('access_token');
-            if (jwtToken) {
-                evt.detail.headers['Authorization'] = 'Bearer ' + jwtToken;
-            }
             var csrfToken = getCookie('csrf_token');
             if (csrfToken) {
                 evt.detail.headers['X-CSRF-Token'] = csrfToken;
             }
         });
-
-        // 全局 authFetch：封装 fetch，自动携带 JWT Token
+        // 全局 fetch 别名（保留向后兼容：原页面可能调用 authFetch）
         window.authFetch = function(url, options) {
-            options = options || {};
-            options.headers = options.headers || {};
-            var token = localStorage.getItem('access_token');
-            if (token) {
-                options.headers['Authorization'] = 'Bearer ' + token;
-            }
             return fetch(url, options);
         };
     })();
@@ -77,19 +61,19 @@
                 </button>
                 <ul class="app-nav-links" role="menubar">
                     <li role="none">
-                        <a href="/" role="menuitem" {% block nav_home_active %}{% endblock %}>
+                        <a href="/" role="menuitem" hx-get="/view/pipelines" hx-target="#main-content" hx-push-url="true" {% block nav_home_active %}{% endblock %}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
                             <span>首页</span>
                         </a>
                     </li>
                     <li role="none">
-                        <a href="/pipelines" role="menuitem" {% block nav_pipelines_active %}{% endblock %}>
+                        <a href="/pipelines" role="menuitem" hx-get="/view/pipelines" hx-target="#main-content" hx-push-url="true" {% block nav_pipelines_active %}{% endblock %}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
                             <span>任务</span>
                         </a>
                     </li>
                     <li role="none">
-                        <a href="/knowledge" role="menuitem" {% block nav_kb_active %}{% endblock %}>
+                        <a href="/knowledge" role="menuitem" hx-get="/view/knowledge" hx-target="#main-content" hx-push-url="true" {% block nav_kb_active %}{% endblock %}>
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                             <span>知识库</span>
                         </a>
@@ -98,10 +82,6 @@
                 <button class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色主题" aria-label="切换深色/浅色主题">
                     <span id="theme-icon" aria-hidden="true">🌙</span>
                 </button>
-                <span id="user-info" style="display:none; align-items:center; gap:8px; font-size:0.85rem; color:var(--text-secondary);">
-                    <span id="user-name"></span>
-                    <button class="btn btn-secondary btn-sm" onclick="doLogout()" title="登出" aria-label="登出">登出</button>
-                </span>
             </div>
         </div>
     </nav>
@@ -111,7 +91,6 @@
     <main class="app-main" role="main" id="main-content" tabindex="-1" hx-target="this" hx-swap="innerHTML transition:true">
         {% block content %}{% endblock %}
     </main>
-
     <footer class="app-footer" role="contentinfo">
         <span>AI TestGen v2.0.0</span>
         <span aria-hidden="true"> · </span>
@@ -140,55 +119,8 @@
         }
     })();
 
-    // 加载用户信息
-    (function() {
-        var token = localStorage.getItem('access_token');
-        if (!token) return;
-        var userInfo = document.getElementById('user-info');
-        var userName = document.getElementById('user-name');
-        fetch('/api/auth/me', {
-            headers: {'Authorization': 'Bearer ' + token}
-        })
-        .then(function(r) {
-            if (r.status === 401) {
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('username');
-                localStorage.removeItem('role');
-                if (window.location.pathname !== '/login') {
-                    window.location.href = '/login?reason=expired';
-                }
-                return null;
-            }
-            if (r.status >= 500) {
-                console.warn('服务器异常，认证状态检查失败');
-                return null;
-            }
-            return r.json();
-        })
-        .then(function(data) {
-            if (data && data.username) {
-                userInfo.style.display = 'flex';
-                userName.textContent = data.username;
-            }
-        })
-        .catch(function() {
-            console.warn('网络连接异常，认证状态检查失败');
-        });
-    })();
-
-    function doLogout() {
-        fetch('/api/auth/logout', { method: 'POST' })
-            .then(function() {
-                localStorage.removeItem('access_token');
-                localStorage.removeItem('username');
-                localStorage.removeItem('role');
-                window.location.href = '/login';
-            })
-            .catch(function() {
-                localStorage.removeItem('access_token');
-                window.location.href = '/login';
-            });
-    }
+    // 加载用户信息（Sprint 6.0 已移除 auth 模块）
+    // 本地单机模式，无需加载用户状态
 
     function confirmAction(message, callback) {
         if (window.confirm(message)) {
@@ -196,8 +128,17 @@
         }
     }
 
-    // JWT Token 自动注入 + authFetch 已移至 <head>（确保在页面内容脚本之前执行）
-    // CSRF + JWT 注入见 <head> 中的 htmx:configRequest 事件监听器
+    // Sprint 6.0：全局 HTMX 错误 Toast（替代原 auth 跳转逻辑）
+    document.addEventListener('htmx:responseError', function(evt) {
+        var xhr = evt.detail.xhr;
+        var status = xhr ? xhr.status : 0;
+        var msg = '请求失败: HTTP ' + (status || '未知');
+        if (typeof showToast === 'function') {
+            showToast(msg, 'error');
+        } else {
+            console.error(msg);
+        }
+    });
 
     document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('keydown', function(e) {

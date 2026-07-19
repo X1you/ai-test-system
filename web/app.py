@@ -32,9 +32,8 @@ from starlette.responses import Response
 
 from core.config_loader import load_config
 from core.errors import AppError, app_error_handler
-from web.api import auth as auth_api
 from web.api import config as config_api
-from web.api import knowledge, pipeline, webhooks
+from web.api import knowledge, pipeline, views, webhooks
 from web.services.task_manager import get_task_manager
 
 # SSE 路由（Phase 3，可能尚未创建）
@@ -87,7 +86,7 @@ app.add_exception_handler(AppError, app_error_handler)
 app.include_router(knowledge.router)
 app.include_router(config_api.router)
 app.include_router(webhooks.router)
-app.include_router(auth_api.router)
+app.include_router(views.router)
 if sse_api is not None:
     app.include_router(sse_api.router)
 if integrations_router is not None:
@@ -164,14 +163,6 @@ try:
     app.add_middleware(LoggingMiddleware)
 except ImportError:
     pass  # structlog 未安装时跳过
-
-# ─── JWT 密钥校验（启动时显式调用）───
-try:
-    from web.middleware.auth import validate_secret_on_startup
-
-    validate_secret_on_startup()
-except ImportError:
-    pass
 
 # ─── KB 缓存预热（后台异步，不阻塞启动）───
 # 首次 status/search 请求要构建单例 + 全量遍历 Vault（~5s），
@@ -278,12 +269,6 @@ async def pipelines_page(request: Request):
         "title": "Pipeline 列表",
         "running_count": running_count,
     })
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    """登录页"""
-    return templates.TemplateResponse(request, "login.html", {})
 
 
 @app.get("/health")

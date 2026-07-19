@@ -169,3 +169,33 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User {self.username} role={self.role}>"
+
+
+class KBConfig(Base):
+    """知识库动态配置（Sprint 6.0）
+
+    替代 config.yaml 静态读取，支持运行时热切换 + 冷启动容错。
+    同时仅一行 is_active=True 的记录生效。
+    """
+    __tablename__ = "kb_configs"
+    __table_args__ = (
+        Index("ix_kb_configs_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # obsidian_api / mcp_filesystem / dummy
+    provider_type: Mapped[str] = mapped_column(String(32), default="obsidian_api")
+    # Obsidian Local REST API 的 base_url，或 MCP server 的连接 URL
+    connection_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Bearer token 或 API key
+    auth_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # 本地 Vault 路径（mcp_filesystem provider 必填）
+    vault_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    def __repr__(self) -> str:
+        return f"<KBConfig id={self.id} provider={self.provider_type} active={self.is_active}>"

@@ -24,7 +24,6 @@ from fastapi.templating import Jinja2Templates
 
 from core.config_loader import load_config
 from core.utils import safe_join_path
-from web.middleware.auth import require_user
 from web.services.task_manager import get_task_manager
 
 # ─── 常量 ───
@@ -99,7 +98,6 @@ def _detect_file_type(name: str) -> str:
 
 @router.post("/start")
 async def start_pipeline(
-    user: dict = Depends(require_user),
     file: UploadFile = File(...),
     mode: str = Form("semi"),
     dimensions: str = Form("basic"),
@@ -156,7 +154,6 @@ async def start_pipeline(
 async def get_progress(
     pipeline_id: str,
     request: Request,
-    user: dict = Depends(require_user),
 ):
     """获取进度。
 
@@ -188,7 +185,6 @@ async def get_progress(
 @router.get("/{pipeline_id}/status")
 async def get_status(
     pipeline_id: str,
-    user: dict = Depends(require_user),
 ):
     """详细状态。"""
     task = _require_task(pipeline_id)
@@ -197,7 +193,6 @@ async def get_status(
 
 @router.get("/list")
 async def list_pipelines(
-    user: dict = Depends(require_user),
     page: int = 1,
     page_size: int = 20,
     keyword: str = "",
@@ -266,7 +261,6 @@ async def list_pipelines(
 @router.post("/{pipeline_id}/cancel")
 async def cancel_pipeline(
     pipeline_id: str,
-    user: dict = Depends(require_user),
 ):
     """取消 Pipeline。"""
     task = _require_task(pipeline_id)
@@ -281,7 +275,6 @@ async def cancel_pipeline(
 @router.post("/{pipeline_id}/resume")
 async def resume_pipeline(
     pipeline_id: str,
-    user: dict = Depends(require_user),
     file: UploadFile = None,
 ):
     """断点继续（可上传已执行结果的 Excel 覆盖 output 目录中的 testcases.xlsx）。"""
@@ -312,7 +305,6 @@ async def resume_pipeline(
 @router.get("/{pipeline_id}/artifacts")
 async def list_artifacts(
     pipeline_id: str,
-    user: dict = Depends(require_user),
 ):
     """产物列表。"""
     task = _require_task(pipeline_id)
@@ -338,7 +330,6 @@ async def list_artifacts(
 async def download_artifact(
     pipeline_id: str,
     name: str,
-    user: dict = Depends(require_user),
 ):
     """下载产物。"""
     task = _require_task(pipeline_id)
@@ -363,7 +354,6 @@ async def download_artifact(
 async def preview_artifact(
     pipeline_id: str,
     name: str,
-    user: dict = Depends(require_user),
 ):
     """预览产物（Markdown 渲染 / Excel 表格）。"""
     task = _require_task(pipeline_id)
@@ -436,7 +426,6 @@ def _preview_excel(file_path: Path) -> dict:
 @router.get("/{pipeline_id}/export_pytest_project")
 async def export_pytest_project_zip(
     pipeline_id: str,
-    user: dict = Depends(require_user),
 ):
     """将 Pipeline 的 testcases.json 导出为完整 PyTest 沙箱工程 ZIP。
 
