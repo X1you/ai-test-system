@@ -14,6 +14,42 @@
     <link rel="stylesheet" href="{{ "custom.css" | static_v }}" media="print" onload="this.media='all'">
     <noscript><link rel="stylesheet" href="{{ "custom.css" | static_v }}"></noscript>
     <script src="{{ "js/htmx.min.js" | static_v }}"></script>
+    <script>
+    // ═══ 认证基础设施（必须在 <head> 中，优先于所有页面内容脚本执行）═══
+    // 1. HTMX 请求自动注入 JWT Token — 解决 hx-get/hx-post 的 401 问题
+    // 2. 全局 authFetch() — 解决手动 fetch() 调用的 401 问题
+    // 原因：<main> 内的内联脚本（如 loadPipelines()）和 hx-trigger="load"
+    //       在 body 底部脚本之前执行，若不在 <head> 注册会导致 authFetch 未定义。
+    (function() {
+        function getCookie(name) {
+            var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+            return match ? match[2] : '';
+        }
+
+        // HTMX 请求拦截：自动注入 JWT + CSRF Token
+        document.addEventListener('htmx:configRequest', function(evt) {
+            var jwtToken = localStorage.getItem('access_token');
+            if (jwtToken) {
+                evt.detail.headers['Authorization'] = 'Bearer ' + jwtToken;
+            }
+            var csrfToken = getCookie('csrf_token');
+            if (csrfToken) {
+                evt.detail.headers['X-CSRF-Token'] = csrfToken;
+            }
+        });
+
+        // 全局 authFetch：封装 fetch，自动携带 JWT Token
+        window.authFetch = function(url, options) {
+            options = options || {};
+            options.headers = options.headers || {};
+            var token = localStorage.getItem('access_token');
+            if (token) {
+                options.headers['Authorization'] = 'Bearer ' + token;
+            }
+            return fetch(url, options);
+        };
+    })();
+    </script>
     <script src="{{ "app.js" | static_v }}" defer></script>
 </head>
 <body hx-boost="true">
@@ -160,19 +196,8 @@
         }
     }
 
-    // CSRF Token 自动注入 HTMX 请求
-    (function() {
-        function getCookie(name) {
-            var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-            return match ? match[2] : '';
-        }
-        document.body.addEventListener('htmx:configRequest', function(evt) {
-            var token = getCookie('csrf_token');
-            if (token) {
-                evt.detail.headers['X-CSRF-Token'] = token;
-            }
-        });
-    })();
+    // JWT Token 自动注入 + authFetch 已移至 <head>（确保在页面内容脚本之前执行）
+    // CSRF + JWT 注入见 <head> 中的 htmx:configRequest 事件监听器
 
     document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('keydown', function(e) {

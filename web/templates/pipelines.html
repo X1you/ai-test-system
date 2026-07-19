@@ -126,7 +126,7 @@ function loadPipelines() {
             + "&keyword=" + encodeURIComponent(_keyword)
             + "&status=" + encodeURIComponent(_statusFilter);
 
-    fetch(url, { headers: { "Accept": "application/json" } })
+    authFetch(url, { headers: { "Accept": "application/json" } })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             renderPipelines(data);

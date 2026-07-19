@@ -124,6 +124,11 @@ function renderArtifacts(data) {
             html += '<a href="/api/pipeline/' + data.pipeline_id + '/artifacts/' + a.name +
                     '" class="btn btn-secondary btn-sm" download aria-label="下载 ' + escapeHtml(a.display_name) + '">下载 ' + escapeHtml(a.display_name) + '</a>';
         });
+        // ★ v5.0 新增：ZIP 沙箱工程下载按钮
+        html += '<div class="btn-group ml-2" role="group">' +
+                '<button onclick="downloadPyTestProject(\'' + data.pipeline_id + '\')" class="btn btn-outline-primary shadow-sm" id="btn-download-zip">' +
+                '<i class="fas fa-file-archive"></i> 下载自动化工程 (.zip)' +
+                '</button></div>';
         html += '</div>';
     }
     document.getElementById('artifacts-area').innerHTML = html;

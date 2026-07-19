@@ -654,3 +654,107 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   })();
 })();
+
+
+// ═══════════════════════════════════════════════════════════════
+// ★ v5.0 新增：ZIP 沙箱工程下载（异步二进制流 + UI 防抖）
+// ═══════════════════════════════════════════════════════════════
+async function downloadPyTestProject(pipelineId) {
+    const btn = document.getElementById('btn-download-zip');
+    const originalHTML = btn.innerHTML;
+
+    // UI 防抖与加载状态
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> 正在实时编译打包...';
+    btn.disabled = true;
+
+    try {
+        const response = await authFetch('/api/pipeline/' + pipelineId + '/export_pytest_project', {
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            let errMsg = '打包沙箱工程失败';
+            try {
+                const errData = await response.json();
+                errMsg = errData.detail || errMsg;
+            } catch (e) { /* 忽略解析失败 */ }
+            throw new Error(errMsg);
+        }
+
+        // 解析二进制数据流并触发原生下载
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = downloadUrl;
+        a.download = 'automated_test_project_' + pipelineId + '.zip';
+        document.body.appendChild(a);
+        a.click();
+
+        // 释放内存
+        window.URL.revokeObjectURL(downloadUrl);
+        document.body.removeChild(a);
+
+        // 成功反馈
+        btn.innerHTML = '<i class="fas fa-check"></i> 下载成功';
+        btn.classList.replace('btn-outline-primary', 'btn-success');
+        setTimeout(function () {
+            btn.innerHTML = originalHTML;
+            btn.classList.replace('btn-success', 'btn-outline-primary');
+        }, 3000);
+
+    } catch (error) {
+        alert('🚨 下载异常: ' + error.message);
+        btn.innerHTML = originalHTML;
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ★ v5.0 新增：3D Oracle & Teardown 结构化渲染组件
+// ═══════════════════════════════════════════════════════════════
+function buildOracleAndTeardownHTML(tc) {
+    var htmlContent = '';
+
+    // 1. 三维断言 (3D Oracle) 渲染
+    if (tc.expected_oracle && typeof tc.expected_oracle === 'object') {
+        htmlContent +=
+            '<div class="oracle-section mt-3">' +
+            '<h6 class="font-weight-bold text-dark"><i class="fas fa-crosshairs"></i> 多维断言 (Expected Oracle)</h6>' +
+            '<div class="list-group list-group-sm">' +
+            '<div class="list-group-item list-group-item-light border-left-primary">' +
+            '<strong><i class="fas fa-network-wired"></i> API 层:</strong> ' + (tc.expected_oracle.api_response || 'N/A') +
+            '</div>' +
+            '<div class="list-group-item list-group-item-light border-left-info">' +
+            '<strong><i class="fas fa-database"></i> DB 层:</strong> ' + (tc.expected_oracle.db_assertion || 'N/A') +
+            '</div>' +
+            '<div class="list-group-item list-group-item-light border-left-warning">' +
+            '<strong><i class="fas fa-terminal"></i> Log 层:</strong> ' + (tc.expected_oracle.log_monitor || 'N/A') +
+            '</div>' +
+            '</div>' +
+            '</div>';
+    } else {
+        // 兜底逻辑：兼容 v3.0 以前的旧数据结构
+        htmlContent +=
+            '<div class="mt-2"><strong>预期结果:</strong> ' + (tc.expected_result || tc.expected || '无') + '</div>';
+    }
+
+    // 2. 环境清理 (Teardown Steps) 渲染
+    if (tc.teardown_steps && Array.isArray(tc.teardown_steps) && tc.teardown_steps.length > 0) {
+        var stepsHtml = '';
+        tc.teardown_steps.forEach(function (step) {
+            stepsHtml += '<li>' + step + '</li>';
+        });
+        htmlContent +=
+            '<div class="teardown-section mt-3 p-2 bg-light border rounded" style="border-style: dashed !important;">' +
+            '<h6 class="text-muted mb-1"><i class="fas fa-broom"></i> 环境清理 (Teardown)</h6>' +
+            '<ul class="text-muted small mb-0 pl-3">' +
+            stepsHtml +
+            '</ul>' +
+            '</div>';
+    }
+
+    return htmlContent;
+}
