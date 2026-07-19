@@ -166,12 +166,14 @@ class TestPageRoutes:
     """页面路由测试（Sprint 6.1: 全部改为 JSON）"""
 
     def test_index_page(self, client):
-        """首页返回 JSON 元信息"""
+        """首页：前端已构建时返回 SPA HTML，未构建时返回 JSON 元信息"""
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "application/json" in resp.headers.get("content-type", "")
-        data = resp.json()
-        assert "name" in data
+        ct = resp.headers.get("content-type", "")
+        assert "text/html" in ct or "application/json" in ct
+        if "application/json" in ct:
+            data = resp.json()
+            assert "name" in data
 
     def test_login_page_removed(self, client):
         """登录页已移除（Sprint 6.0 切除 Auth）→ SPA fallback"""
@@ -215,11 +217,12 @@ class TestAPIContentType:
         assert resp.status_code == 200
         assert "application/json" in resp.headers.get("content-type", "")
 
-    def test_page_returns_json(self, client):
-        """页面返回 JSON（Sprint 6.1）"""
+    def test_page_returns_json_or_spa(self, client):
+        """页面返回 JSON（未构建）或 SPA HTML（已构建）"""
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "application/json" in resp.headers.get("content-type", "")
+        ct = resp.headers.get("content-type", "")
+        assert "application/json" in ct or "text/html" in ct
 
 
 if __name__ == "__main__":

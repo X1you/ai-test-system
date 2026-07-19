@@ -112,11 +112,9 @@ class TestXSSProtection:
     """XSS 防护"""
 
     def test_xss_in_page_content(self, client):
-        """页面内容不被 XSS 注入（Sprint 6.1: 返回 JSON）"""
+        """页面内容不被 XSS 注入（SPA HTML 或 JSON 均不含未转义脚本）"""
         resp = client.get("/")
-        # Sprint 6.1: 页面返回 JSON
-        assert "application/json" in resp.headers.get("content-type", "")
-        # JSON 响应中不应包含未转义的脚本标签
+        assert resp.status_code == 200
         text = resp.text
         assert "<script>alert" not in text.lower()
 

@@ -214,7 +214,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/")
 async def index():
-    """根路径 — 返回系统元信息（SPA 由前端工程接管）"""
+    """根路径 — 前端已构建时返回 SPA，否则返回系统元信息"""
+    _dist_index = Path(__file__).parent / "static" / "dist" / "index.html"
+    if _dist_index.exists():
+        from fastapi.responses import FileResponse
+        return FileResponse(str(_dist_index))
     tm = get_task_manager()
     return {
         "name": "AI 测试用例生成系统",
@@ -292,6 +296,11 @@ _index_file = _dist_dir / "index.html"
 
 if _index_file.exists():
     from fastapi.responses import FileResponse
+
+    # 挂载 Vite 构建产物中的 /assets 目录（JS/CSS/图片等）
+    _assets_dir = _dist_dir / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="spa-assets")
 
     @app.get("/{catchall:path}")
     async def serve_spa(catchall: str):
