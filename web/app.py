@@ -181,7 +181,7 @@ async def _cleanup_stale_tasks():
         with session_scope() as session:
             stale = (
                 session.query(Pipeline)
-                .filter(Pipeline.status.in_(["running", "pending"]))
+                .filter(Pipeline.status.in_(["running", "pending", "paused"]))
                 .all()
             )
             for p in stale:
