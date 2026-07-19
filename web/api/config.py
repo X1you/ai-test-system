@@ -3,14 +3,29 @@
 配置 API 路由
 
 Endpoints:
-  GET /api/config  — 查看配置（API Key 脱敏）
+  GET  /api/config  — 查看配置（API Key 脱敏）
+  PUT  /api/config  — 更新安全配置字段（pipeline / knowledge_base / output）
 """
 
-from fastapi import APIRouter
+from pathlib import Path
 
-from core.config_loader import load_config, validate_config
+import yaml
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from core.config_loader import load_config, validate_config, PROJECT_ROOT
 
 router = APIRouter(tags=["config"])
+
+# ─── 允许前端更新的白名单字段 ───
+_UPDATABLE_SECTIONS = {"pipeline", "knowledge_base", "output"}
+
+
+class ConfigUpdate(BaseModel):
+    """前端可更新的配置字段（不含 LLM 敏感信息）。"""
+    pipeline: dict | None = None
+    knowledge_base: dict | None = None
+    output: dict | None = None
 
 
 @router.get("")
@@ -50,6 +65,62 @@ async def get_config():
             "default_formats": pipe.get("default_formats", "excel"),
             "self_check": pipe.get("self_check", False),
         },
+        "validation": {
+            "valid": len(errors) == 0,
+            "errors": errors,
+        },
+    }
+
+
+@router.put("")
+async def update_config(body: ConfigUpdate):
+    """更新安全配置字段（pipeline / knowledge_base / output）。
+
+    只允许白名单 section，LLM 敏感配置不可通过此接口修改。
+    更新后写回 config.yaml 并重新校验。
+    """
+    cfg_path = PROJECT_ROOT / "config.yaml"
+
+    # 读取现有 YAML
+    user_config: dict = {}
+    if cfg_path.exists():
+        try:
+            with open(cfg_path, encoding="utf-8") as f:
+                user_config = yaml.safe_load(f) or {}
+        except Exception:
+            user_config = {}
+
+    # 合并白名单字段
+    updates = body.model_dump(exclude_none=True)
+    changed = []
+    for section, values in updates.items():
+        if section not in _UPDATABLE_SECTIONS:
+            raise HTTPException(400, f"不允许修改配置段: {section}")
+        if not isinstance(values, dict):
+            raise HTTPException(400, f"配置段 {section} 必须是对象")
+        if section not in user_config:
+            user_config[section] = {}
+        user_config[section].update(values)
+        changed.append(section)
+
+    if not changed:
+        raise HTTPException(400, "未提供任何可更新的配置字段")
+
+    # 写回 YAML
+    try:
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            yaml.dump(user_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    except Exception as e:
+        raise HTTPException(500, f"写入配置文件失败: {e}")
+
+    # 重新加载并校验
+    config = load_config()
+    errors = validate_config(config)
+
+    return {
+        "ok": True,
+        "message": f"已更新: {', '.join(changed)}",
+        "changed": changed,
         "validation": {
             "valid": len(errors) == 0,
             "errors": errors,

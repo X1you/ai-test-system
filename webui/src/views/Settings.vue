@@ -2,7 +2,7 @@
   <div class="settings-view">
     <PageHeader title="设置" subtitle="系统配置与健康状态" />
 
-    <!-- System config -->
+    <!-- System config (read-only) -->
     <section class="card" aria-label="系统配置">
       <h2 class="card__title">系统配置</h2>
       <div v-if="configLoading" class="loading-hint" role="status">加载中…</div>
@@ -16,22 +16,7 @@
             <div><dt>API Key</dt><dd class="mono">{{ config.llm?.api_key }}</dd></div>
             <div><dt>Temperature</dt><dd class="tabular-nums">{{ config.llm?.temperature }}</dd></div>
           </dl>
-        </div>
-        <div class="config-block">
-          <h3>Pipeline 默认值</h3>
-          <dl class="config-dl">
-            <div><dt>模式</dt><dd>{{ config.pipeline?.default_mode }}</dd></div>
-            <div><dt>维度</dt><dd>{{ config.pipeline?.default_dimensions }}</dd></div>
-            <div><dt>格式</dt><dd>{{ config.pipeline?.default_formats }}</dd></div>
-            <div><dt>自检</dt><dd>{{ config.pipeline?.self_check ? '开启' : '关闭' }}</dd></div>
-          </dl>
-        </div>
-        <div class="config-block">
-          <h3>知识库</h3>
-          <dl class="config-dl">
-            <div><dt>启用</dt><dd>{{ config.knowledge_base?.enabled ? '是' : '否' }}</dd></div>
-            <div><dt>Vault 路径</dt><dd class="mono">{{ config.knowledge_base?.vault_path }}</dd></div>
-          </dl>
+          <p class="config-note">LLM 配置通过 config.yaml / 环境变量管理，不可在此修改</p>
         </div>
         <div v-if="config.validation" class="config-block">
           <h3>配置校验</h3>
@@ -44,6 +29,87 @@
         </div>
       </div>
     </section>
+
+    <!-- Editable: Pipeline defaults -->
+    <section class="card" aria-label="Pipeline 默认值">
+      <h2 class="card__title">Pipeline 默认值</h2>
+      <div class="edit-form">
+        <div class="form-row">
+          <label class="form-label" for="cfg-mode">默认模式</label>
+          <select id="cfg-mode" v-model="form.pipeline.default_mode" class="form-select">
+            <option value="auto">自动（全自动执行）</option>
+            <option value="semi">半自动（关键步骤暂停）</option>
+            <option value="step">完整（每步暂停）</option>
+          </select>
+        </div>
+        <fieldset class="form-fieldset">
+          <legend>默认测试维度</legend>
+          <div class="checkbox-grid">
+            <label v-for="d in dimensionOptions" :key="d.value" class="checkbox-item">
+              <input type="checkbox" :value="d.value" v-model="selectedDimensions" />
+              <span>{{ d.label }}</span>
+            </label>
+          </div>
+        </fieldset>
+        <fieldset class="form-fieldset">
+          <legend>默认输出格式</legend>
+          <div class="checkbox-grid">
+            <label v-for="f in formatOptions" :key="f.value" class="checkbox-item">
+              <input type="checkbox" :value="f.value" v-model="selectedFormats" />
+              <span>{{ f.label }}</span>
+            </label>
+          </div>
+        </fieldset>
+        <div class="form-row">
+          <label class="form-label" for="cfg-selfcheck">自检</label>
+          <label class="toggle-switch">
+            <input id="cfg-selfcheck" type="checkbox" v-model="form.pipeline.self_check" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span>{{ form.pipeline.self_check ? '开启' : '关闭' }}</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Editable: Knowledge base -->
+    <section class="card" aria-label="知识库配置">
+      <h2 class="card__title">知识库</h2>
+      <div class="edit-form">
+        <div class="form-row">
+          <label class="form-label" for="cfg-kb-enabled">启用知识库</label>
+          <label class="toggle-switch">
+            <input id="cfg-kb-enabled" type="checkbox" v-model="form.knowledge_base.enabled" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span>{{ form.knowledge_base.enabled ? '已启用' : '已禁用' }}</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="form-label" for="cfg-kb-path">Vault 路径</label>
+          <input id="cfg-kb-path" type="text" v-model="form.knowledge_base.vault_path"
+                 class="form-input mono" placeholder="~/Documents/test-interview-kb" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Editable: Output -->
+    <section class="card" aria-label="输出配置">
+      <h2 class="card__title">输出</h2>
+      <div class="edit-form">
+        <div class="form-row">
+          <label class="form-label" for="cfg-output-dir">输出目录</label>
+          <input id="cfg-output-dir" type="text" v-model="form.output.dir"
+                 class="form-input mono" placeholder="./output" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Save bar -->
+    <div class="save-bar" role="status" aria-live="polite">
+      <span v-if="saveMsg" :class="saveOk ? 'save-ok' : 'save-err'">{{ saveMsg }}</span>
+      <button class="btn-save" :disabled="saving" @click="saveConfig">
+        {{ saving ? '保存中…' : '保存配置' }}
+      </button>
+    </div>
 
     <!-- Health -->
     <section class="card" aria-label="健康检查">
@@ -78,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import { api } from '../composables/useApi'
 import { useTheme } from '../composables/useTheme'
@@ -91,9 +157,36 @@ const themeOptions = [
   { value: 'dark', label: '暗色' },
 ]
 
+const dimensionOptions = [
+  { value: 'basic', label: '功能测试' },
+  { value: 'api', label: 'API 测试' },
+  { value: 'security', label: '安全测试' },
+  { value: 'performance', label: '性能测试' },
+  { value: 'compatibility', label: '兼容性测试' },
+  { value: 'usability', label: '易用性测试' },
+]
+
+const formatOptions = [
+  { value: 'excel', label: 'Excel (.xlsx)' },
+  { value: 'json', label: 'JSON' },
+  { value: 'xmind', label: 'XMind' },
+]
+
 const config = ref(null)
 const configLoading = ref(true)
 const health = ref(null)
+
+// ─── 可编辑表单 ───
+const form = reactive({
+  pipeline: { default_mode: 'semi', self_check: true },
+  knowledge_base: { enabled: true, vault_path: '' },
+  output: { dir: './output' },
+})
+const selectedDimensions = ref(['basic'])
+const selectedFormats = ref(['excel'])
+const saving = ref(false)
+const saveMsg = ref('')
+const saveOk = ref(true)
 
 function healthDot(val) {
   if (val === 'ok' || val === 'disabled' || val === 'not_configured') return 'health-item__dot--ok'
@@ -103,7 +196,24 @@ function healthDot(val) {
 
 async function loadConfig() {
   configLoading.value = true
-  try { config.value = await api.get('/config') } catch { /* ignore */ }
+  try {
+    const c = await api.get('/config')
+    config.value = c
+    // 填充编辑表单
+    if (c.pipeline) {
+      form.pipeline.default_mode = c.pipeline.default_mode || 'semi'
+      form.pipeline.self_check = !!c.pipeline.self_check
+      // 维度/格式可能是逗号分隔字符串
+      const dims = (c.pipeline.default_dimensions || 'basic').split(',').map(s => s.trim()).filter(Boolean)
+      selectedDimensions.value = dims
+      const fmts = (c.pipeline.default_formats || 'excel').split(',').map(s => s.trim()).filter(Boolean)
+      selectedFormats.value = fmts
+    }
+    if (c.knowledge_base) {
+      form.knowledge_base.enabled = !!c.knowledge_base.enabled
+      form.knowledge_base.vault_path = c.knowledge_base.vault_path || ''
+    }
+  } catch { /* ignore */ }
   configLoading.value = false
 }
 
@@ -112,6 +222,37 @@ async function loadHealth() {
     const resp = await fetch('/health')
     health.value = await resp.json()
   } catch { health.value = null }
+}
+
+async function saveConfig() {
+  saving.value = true
+  saveMsg.value = ''
+  try {
+    const body = {
+      pipeline: {
+        default_mode: form.pipeline.default_mode,
+        default_dimensions: selectedDimensions.value.join(','),
+        default_formats: selectedFormats.value.join(','),
+        self_check: form.pipeline.self_check,
+      },
+      knowledge_base: {
+        enabled: form.knowledge_base.enabled,
+        vault_path: form.knowledge_base.vault_path,
+      },
+      output: {
+        dir: form.output.dir,
+      },
+    }
+    const res = await api.put('/config', { json: body })
+    saveOk.value = true
+    saveMsg.value = res.message || '保存成功'
+    // 刷新只读配置
+    await loadConfig()
+  } catch (e) {
+    saveOk.value = false
+    saveMsg.value = e.message || '保存失败'
+  }
+  saving.value = false
 }
 
 onMounted(() => { loadConfig(); loadHealth() })
@@ -174,6 +315,7 @@ onMounted(() => { loadConfig(); loadHealth() })
 .config-dl dt { color: var(--text-tertiary); }
 .config-dl dd { color: var(--text-primary); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+.config-note { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: var(--space-sm); }
 
 .valid-ok { color: var(--feedback-success-text); font-size: var(--text-sm); }
 .valid-err { color: var(--feedback-error-text); font-size: var(--text-sm); }
@@ -183,6 +325,131 @@ onMounted(() => { loadConfig(); loadHealth() })
   font-size: var(--text-sm);
   color: var(--feedback-error-text);
 }
+
+/* ─── Edit form ─── */
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+.form-label {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.form-select,
+.form-input {
+  flex: 1;
+  max-width: 320px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+.form-select:focus,
+.form-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.form-fieldset {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+}
+.form-fieldset legend {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  padding: 0 var(--space-xs);
+}
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+/* Toggle switch */
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.toggle-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-default);
+  position: relative;
+  transition: background var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+.toggle-switch input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Save bar */
+.save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+}
+.save-ok { font-size: var(--text-sm); color: var(--feedback-success-text); }
+.save-err { font-size: var(--text-sm); color: var(--feedback-error-text); }
+.btn-save {
+  padding: var(--space-sm) var(--space-xl);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.btn-save:hover { opacity: 0.85; }
+.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-save:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Health */
 .health-grid {
