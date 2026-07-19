@@ -138,6 +138,61 @@ async def start_pipeline(
     )
 
 
+def _db_progress(pipeline_id: str) -> dict:
+    """从 DB 构建历史任务的只读进度视图（重启后内存无 task 时回退）。"""
+    from db.repository import get_repository
+    from core.pipeline import STEP_REGISTRY, TOTAL_STEPS
+
+    repo = get_repository()
+    p = repo.get_pipeline(pipeline_id)
+    if not p:
+        raise HTTPException(404, "Pipeline 不存在")
+
+    completed_ids = set(repo.get_completed_step_ids(pipeline_id))
+    db_steps = repo.get_steps(pipeline_id)
+    step_detail = {s.step_id: s for s in db_steps}
+
+    steps_view = []
+    for meta in STEP_REGISTRY:
+        st = "done" if meta.id in completed_ids else "pending"
+        detail_obj = step_detail.get(meta.id)
+        steps_view.append({
+            "id": meta.id,
+            "name": meta.name,
+            "status": st,
+            "detail": detail_obj.detail if detail_obj else None,
+        })
+
+    return {
+        "pipeline_id": p.id,
+        "percent": round(len(completed_ids) / TOTAL_STEPS * 100),
+        "status": p.status,
+        "mode": p.mode,
+        "completed_steps": sorted(completed_ids),
+        "current_step": max(completed_ids, default=0) + 1 if p.status == "running" else 0,
+        "steps": steps_view,
+        "logs": [],
+        "llm_stats": {},
+        "error": p.error,
+        "started_at": p.started_at.isoformat() if p.started_at else "",
+        "output_dir": p.output_dir,
+    }
+
+
+def _require_task_or_db(pipeline_id: str):
+    """获取内存 task；不存在时返回 (None, db_progress_dict)。"""
+    tm = get_task_manager()
+    task = tm.get_task(pipeline_id)
+    if task:
+        return task, None
+    try:
+        return None, _db_progress(pipeline_id)
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(404, "Pipeline 不存在")
+
+
 @router.get("/{pipeline_id}/progress")
 async def get_progress(pipeline_id: str):
     """获取进度（Sprint 6.1 起统一返回 JSON，HTMX HTML 分支已移除）。
@@ -145,56 +200,10 @@ async def get_progress(pipeline_id: str):
     优先从内存 TaskManager 获取活跃任务；
     内存中不存在时回退到 DB 构建历史进度（重启后的 interrupted/cancelled/error 等）。
     """
-    tm = get_task_manager()
-    task = tm.get_task(pipeline_id)
+    task, db_data = _require_task_or_db(pipeline_id)
     if task:
         return task.get_progress()
-
-    # ── DB 回退：构建历史任务的只读进度视图 ──
-    try:
-        from db.repository import get_repository
-        from core.pipeline import STEP_REGISTRY, TOTAL_STEPS
-
-        repo = get_repository()
-        p = repo.get_pipeline(pipeline_id)
-        if not p:
-            raise HTTPException(404, "Pipeline 不存在")
-
-        completed_ids = set(repo.get_completed_step_ids(pipeline_id))
-        db_steps = repo.get_steps(pipeline_id)
-        step_detail = {s.step_id: s for s in db_steps}
-
-        steps_view = []
-        for meta in STEP_REGISTRY:
-            if meta.id in completed_ids:
-                st = "done"
-            else:
-                st = "pending"
-            detail_obj = step_detail.get(meta.id)
-            steps_view.append({
-                "id": meta.id,
-                "name": meta.name,
-                "status": st,
-                "detail": detail_obj.detail if detail_obj else None,
-            })
-
-        return {
-            "pipeline_id": p.id,
-            "percent": round(len(completed_ids) / TOTAL_STEPS * 100),
-            "status": p.status,
-            "mode": p.mode,
-            "completed_steps": sorted(completed_ids),
-            "current_step": max(completed_ids, default=0) + 1 if p.status == "running" else 0,
-            "steps": steps_view,
-            "logs": [],
-            "llm_stats": {},
-            "error": p.error,
-            "started_at": p.started_at.isoformat() if p.started_at else "",
-        }
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(404, "Pipeline 不存在")
+    return db_data
 
 
 @router.get("/{pipeline_id}/status")
@@ -202,8 +211,10 @@ async def get_status(
     pipeline_id: str,
 ):
     """详细状态。"""
-    task = _require_task(pipeline_id)
-    return task.get_progress()
+    task, db_data = _require_task_or_db(pipeline_id)
+    if task:
+        return task.get_progress()
+    return db_data
 
 
 @router.get("/list")
@@ -317,13 +328,29 @@ async def resume_pipeline(
     }
 
 
+def _get_output_dir(pipeline_id: str) -> Path:
+    """获取任务的 output_dir：优先内存 task，回退 DB。"""
+    tm = get_task_manager()
+    task = tm.get_task(pipeline_id)
+    if task:
+        return Path(task.output_dir)
+    try:
+        from db.repository import get_repository
+        repo = get_repository()
+        p = repo.get_pipeline(pipeline_id)
+        if p and p.output_dir:
+            return Path(p.output_dir)
+    except Exception:
+        pass
+    raise HTTPException(404, "Pipeline 不存在")
+
+
 @router.get("/{pipeline_id}/artifacts")
 async def list_artifacts(
     pipeline_id: str,
 ):
     """产物列表。"""
-    task = _require_task(pipeline_id)
-    output_dir = Path(task.output_dir)
+    output_dir = _get_output_dir(pipeline_id)
 
     artifacts = []
     for fname, display_name in _ARTIFACT_NAMES.items():
@@ -347,11 +374,11 @@ async def download_artifact(
     name: str,
 ):
     """下载产物。"""
-    task = _require_task(pipeline_id)
+    output_dir = _get_output_dir(pipeline_id)
 
     # 安全校验：防止路径穿越
     try:
-        file_path = safe_join_path(task.output_dir, name)
+        file_path = safe_join_path(str(output_dir), name)
     except ValueError:
         raise HTTPException(400, "非法文件名")
 
@@ -371,11 +398,11 @@ async def preview_artifact(
     name: str,
 ):
     """预览产物（Markdown 渲染 / Excel 表格）。"""
-    task = _require_task(pipeline_id)
+    output_dir = _get_output_dir(pipeline_id)
 
     # 安全校验：防止路径穿越
     try:
-        file_path = safe_join_path(task.output_dir, name)
+        file_path = safe_join_path(str(output_dir), name)
     except ValueError:
         raise HTTPException(400, "非法文件名")
 
@@ -460,10 +487,10 @@ async def export_pytest_project_zip(
 
     from fastapi.responses import StreamingResponse
 
-    task = _require_task(pipeline_id)
+    output_dir = _get_output_dir(pipeline_id)
 
     # 1. 检查 testcases.json 是否存在
-    json_path = Path(task.output_dir) / "testcases.json"
+    json_path = output_dir / "testcases.json"
     if not json_path.exists():
         raise HTTPException(
             404,
