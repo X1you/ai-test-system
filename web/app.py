@@ -190,8 +190,9 @@ async def _cleanup_stale_tasks():
             if stale:
                 import logging
                 logging.getLogger("web").info(f"启动清理：{len(stale)} 个僵尸任务标记为 interrupted")
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("web").error(f"启动清理失败: {e}", exc_info=True)
 
 # ─── 全局异常处理（Phase 6）───
 
