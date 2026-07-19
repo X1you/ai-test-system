@@ -28,6 +28,54 @@ class ConfigUpdate(BaseModel):
     output: dict | None = None
 
 
+def _patch_yaml_file(cfg_path: Path, updates: dict) -> None:
+    """行级替换 YAML 文件中的键值，保留注释和原始格式。"""
+    lines = cfg_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    result: list[str] = []
+    pending: dict[str, dict] = {s: dict(v) for s, v in updates.items()}
+    current_section: str | None = None
+
+    def _fmt(v) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return str(v)
+
+    def _flush(section: str | None):
+        if section and section in pending and pending[section]:
+            for k, v in pending[section].items():
+                result.append(f"  {k}: {_fmt(v)}\n")
+            pending[section] = {}
+
+    for line in lines:
+        stripped = line.rstrip("\n\r")
+        # 顶级 section 行（无缩进 `word:`）
+        if stripped and not stripped[0].isspace() and stripped.endswith(":") and not stripped.startswith("#"):
+            _flush(current_section)
+            current_section = stripped[:-1].strip()
+            result.append(line)
+            continue
+        # 段内 key: value 行
+        if current_section in pending and stripped and stripped[0].isspace():
+            content = stripped.lstrip()
+            if ":" in content and not content.startswith("#"):
+                key = content.split(":", 1)[0].strip()
+                if key in pending[current_section]:
+                    indent = stripped[: len(stripped) - len(content)]
+                    result.append(f"{indent}{key}: {_fmt(pending[current_section].pop(key))}\n")
+                    continue
+        result.append(line)
+
+    _flush(current_section)
+    # 文件末尾追加全新段
+    for section, vals in pending.items():
+        if vals:
+            result.append(f"\n{section}:\n")
+            for k, v in vals.items():
+                result.append(f"  {k}: {_fmt(v)}\n")
+
+    cfg_path.write_text("".join(result), encoding="utf-8")
+
+
 @router.get("")
 async def get_config():
     """查看当前配置（API Key 脱敏）"""
@@ -106,10 +154,9 @@ async def update_config(body: ConfigUpdate):
     if not changed:
         raise HTTPException(400, "未提供任何可更新的配置字段")
 
-    # 写回 YAML
+    # 写回 YAML（行级替换，保留注释和格式）
     try:
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            yaml.dump(user_config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        _patch_yaml_file(cfg_path, updates)
     except Exception as e:
         raise HTTPException(500, f"写入配置文件失败: {e}")
 
