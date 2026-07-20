@@ -22,6 +22,9 @@ _meta.json
 node_modules/
 webui/node_modules/
 
+# Vue 前端构建产物（由 `npm run build` 生成，不入版本库）
+web/static/dist/
+
 # Runtime output (do not commit)
 output/
 test-run/
