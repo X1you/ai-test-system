@@ -328,6 +328,8 @@ class KnowledgeBaseManager:
                     _logger.debug("yaml_frontmatter_parse_failed", error=str(e))
                     frontmatter = {}
         return frontmatter
+
+    def _format_obsidian_note(self, item: KnowledgeItem) -> str:
         """格式化为 Obsidian Note (YAML frontmatter + wikilinks)"""
         now = datetime.now().isoformat()
 
@@ -410,7 +412,7 @@ class KnowledgeBaseManager:
                             })
 
             except Exception as e:
-                print(f"⚠️ Obsidian 检索失败，fallback 到本地: {e}", file=sys.stderr)
+                _logger.warning("kb_obsidian_search_failed_fallback_local", query=query, error=str(e))
 
         # 本地文件搜索 (fallback 或补充)
         if not all_items or not self.use_obsidian:
@@ -468,10 +470,10 @@ class KnowledgeBaseManager:
             content = self._format_obsidian_note(item)
             try:
                 if self.obsidian.create_file(filepath, content):
-                    print(f"✅ 已保存到 Obsidian: {filepath}")
+                    _logger.info("kb_saved_to_obsidian", filepath=filepath, category=item.category)
                     return True
             except Exception as e:
-                print(f"⚠️ Obsidian 保存失败，fallback 到本地: {e}", file=sys.stderr)
+                _logger.warning("kb_obsidian_save_failed_fallback_local", filepath=filepath, error=str(e))
 
         # Fallback 到本地
         category_dir = self.kb_dir / item.category
@@ -487,21 +489,20 @@ class KnowledgeBaseManager:
             f.write(f"**标签**: {', '.join(item.tags)}\n\n")
             f.write(item.content)
 
-        print(f"✅ 已保存到本地: {filepath}")
+        _logger.info("kb_saved_to_local", filepath=str(filepath), category=item.category)
         return True
 
     def ingest(self, source_file: str, category: str, module: str = "") -> int:
         """回灌知识 (从 Excel 或 Markdown)"""
         if not os.path.exists(source_file):
-            print(f"❌ 文件不存在: {source_file}")
+            _logger.error("kb_ingest_file_not_found", source_file=source_file)
             return 0
 
         count = 0
 
         if source_file.endswith('.xlsx'):
             if not OPENPYXL_AVAILABLE:
-                print("❌ openpyxl 未安装，无法处理 Excel 文件")
-                print("   安装: pip install openpyxl")
+                _logger.error("kb_ingest_openpyxl_missing", hint="pip install openpyxl")
                 return 0
 
             # Excel 回灌
@@ -546,10 +547,10 @@ class KnowledgeBaseManager:
                     count += 1
 
         else:
-            print(f"❌ 不支持的文件格式: {source_file}")
+            _logger.error("kb_ingest_unsupported_format", source_file=source_file)
             return 0
 
-        print(f"✅ 已回灌 {count} 条知识到知识库")
+        _logger.info("kb_ingest_done", source_file=source_file, category=category, count=count)
         return count
 
     def export(self, query: str, output_file: str = "knowledge-context.md") -> str:
@@ -601,7 +602,7 @@ class KnowledgeBaseManager:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
 
-        print(f"✅ 已导出知识上下文: {output_path}")
+        _logger.info("kb_export_done", output_path=str(output_path), query=query, results=len(results))
         return str(output_path)
 
     def status(self) -> dict:
@@ -634,7 +635,7 @@ class KnowledgeBaseManager:
 
                 summary['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             except Exception as e:
-                print(f"⚠️ Obsidian 状态查询失败: {e}", file=sys.stderr)
+                _logger.warning("kb_obsidian_status_failed", error=str(e))
 
         # 本地统计
         for cat, cat_dir in self.category_paths.items():

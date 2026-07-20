@@ -18,6 +18,22 @@ from typing import Any
 # 项目根目录（core/ 的上一级）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# 结构化日志 — structlog 优先，降级到 print（与 core.logger 一致）
+try:
+    import structlog
+    _logger = structlog.get_logger("core.config_loader")
+except ImportError:
+    class _FallbackLogger:
+        def _log(self, level, event, **kw):
+            parts = [f"[{level}] [core.config_loader] {event}"]
+            parts.extend(f"{k}={v}" for k, v in kw.items())
+            print(" ".join(parts), file=sys.stderr)
+        def debug(self, e, **k): self._log("DEBUG", e, **k)
+        def info(self, e, **k): self._log("INFO", e, **k)
+        def warning(self, e, **k): self._log("WARN", e, **k)
+        def error(self, e, **k): self._log("ERROR", e, **k)
+    _logger = _FallbackLogger()
+
 # 默认配置（config.yaml 不存在时使用）
 DEFAULT_CONFIG = {
     "llm": {
@@ -141,9 +157,9 @@ def load_config(config_path: str | None = None) -> dict:
             with open(cfg_path, encoding="utf-8") as f:
                 user_config = yaml.safe_load(f) or {}
         except ImportError:
-            print("⚠️  PyYAML 未安装，使用默认配置", file=sys.stderr)
+            _logger.warning("pyyaml_not_installed", fallback="default_config")
         except Exception as e:
-            print(f"⚠️  读取配置文件失败: {e}，使用默认配置", file=sys.stderr)
+            _logger.warning("config_file_read_failed", path=str(cfg_path), error=str(e), fallback="default_config")
 
     # 4. 合并
     config = _deep_merge(DEFAULT_CONFIG, user_config)

@@ -287,15 +287,23 @@ async def health():
     except Exception:
         checks["llm"] = "error"
 
-    # 检查知识库
+    # 检查知识库（DB 数据源，与 /knowledge/status 同源）
     try:
-        config = load_config()
-        kb_cfg = config.get("knowledge_base", {})
-        if kb_cfg.get("enabled"):
-            vault = Path(kb_cfg.get("vault_path", ""))
-            checks["knowledge_base"] = "ok" if vault.exists() else "vault_not_found"
+        from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
+
+        mgr = get_dynamic_kb_manager()
+        if mgr.is_configured():
+            cfg = mgr.get_config()
+            vault = Path(cfg.get("vault_path", "")) if cfg and cfg.get("vault_path") else None
+            if vault and vault.exists():
+                checks["knowledge_base"] = "ok"
+            elif vault:
+                checks["knowledge_base"] = "vault_not_found"
+            else:
+                # obsidian_api 等 provider 不依赖本地 vault 路径
+                checks["knowledge_base"] = "ok"
         else:
-            checks["knowledge_base"] = "disabled"
+            checks["knowledge_base"] = "not_configured"
     except Exception:
         checks["knowledge_base"] = "error"
 

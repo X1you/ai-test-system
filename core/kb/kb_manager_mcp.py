@@ -16,6 +16,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from mcp_client import KnowledgeItem, MCPClient
 
+# 结构化日志 — structlog 优先，降级到 print（与 core.logger 一致）
+try:
+    import structlog
+    _logger = structlog.get_logger("core.kb.kb_manager_mcp")
+except ImportError:
+    class _FallbackLogger:
+        def _log(self, level, event, **kw):
+            parts = [f"[{level}] [core.kb.kb_manager_mcp] {event}"]
+            parts.extend(f"{k}={v}" for k, v in kw.items())
+            print(" ".join(parts), file=sys.stderr)
+        def debug(self, e, **k): self._log("DEBUG", e, **k)
+        def info(self, e, **k): self._log("INFO", e, **k)
+        def warning(self, e, **k): self._log("WARN", e, **k)
+        def error(self, e, **k): self._log("ERROR", e, **k)
+    _logger = _FallbackLogger()
+
 # ============================================================================
 # 配置
 # ============================================================================
@@ -65,7 +81,7 @@ class KnowledgeBaseManager:
         其他分类: 仍按平铺存储（业务规则/坑点等天然是独立条目）
         """
         if not os.path.exists(source_file):
-            print(f"❌ 文件不存在: {source_file}")
+            _logger.error("kb_ingest_file_not_found", source_file=source_file)
             return 0
 
         count = 0
@@ -157,10 +173,9 @@ class KnowledgeBaseManager:
                             if self.add(item):
                                 count += 1
             except ImportError:
-                print("❌ openpyxl 未安装，无法处理 Excel 文件")
-                print("   安装: pip install openpyxl")
+                _logger.error("kb_ingest_openpyxl_missing", hint="pip install openpyxl")
             except Exception as e:
-                print(f"❌ Excel 文件读取失败（可能已损坏）: {e}")
+                _logger.error("kb_ingest_excel_read_failed", source_file=source_file, error=str(e))
 
         elif source_file.endswith('.md'):
             # Markdown 回灌
@@ -179,10 +194,10 @@ class KnowledgeBaseManager:
                 if self.add(item):
                     count = 1
         else:
-            print(f"❌ 不支持的文件格式: {source_file}")
+            _logger.error("kb_ingest_unsupported_format", source_file=source_file)
             return 0
 
-        print(f"✅ 已回灌 {count} 条知识到知识库")
+        _logger.info("kb_ingest_done", source_file=source_file, category=category, count=count)
         return count
 
     def export(self, query: str, output_file: str = "knowledge-context.md") -> str:
@@ -241,7 +256,7 @@ class KnowledgeBaseManager:
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))
 
-        print(f"✅ 已导出知识上下文: {output_path}")
+        _logger.info("kb_export_done", output_path=str(output_path), query=query, results=len(results))
         return str(output_path)
 
     def status(self) -> dict:
