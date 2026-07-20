@@ -94,24 +94,12 @@
       </div>
     </section>
 
-    <!-- Editable: Knowledge base -->
+    <!-- 知识库配置已迁移到「知识库」页面（DB 数据源） -->
     <section class="card" aria-label="知识库配置">
       <h2 class="card__title">知识库</h2>
-      <div class="edit-form">
-        <div class="form-row">
-          <label class="form-label" for="cfg-kb-enabled">启用知识库</label>
-          <label class="toggle-switch">
-            <input id="cfg-kb-enabled" type="checkbox" v-model="form.knowledge_base.enabled" />
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span>{{ form.knowledge_base.enabled ? '已启用' : '已禁用' }}</span>
-          </label>
-        </div>
-        <div class="form-row">
-          <label class="form-label" for="cfg-kb-path">Vault 路径</label>
-          <input id="cfg-kb-path" type="text" v-model="form.knowledge_base.vault_path"
-                 class="form-input mono" placeholder="~/Documents/test-interview-kb" />
-        </div>
-      </div>
+      <p class="card__desc">知识库配置（Provider / Vault / Token）已迁移到
+        <router-link to="/knowledge" class="link">知识库页面</router-link> 统一管理。
+      </p>
     </section>
 
     <!-- Editable: Output -->
@@ -217,7 +205,6 @@ const healthUpdated = ref(0)
 const form = reactive({
   llm: { provider: 'deepseek', model: '', base_url: '', api_key: '', temperature: 0.3 },
   pipeline: { default_mode: 'semi', self_check: true },
-  knowledge_base: { enabled: true, vault_path: '' },
   output: { dir: './output' },
 })
 const selectedDimensions = ref(['positive', 'negative', 'boundary', 'exception'])
@@ -272,10 +259,6 @@ async function loadConfig() {
       const fmts = (c.pipeline.default_formats || 'excel').split(',').map(s => s.trim()).filter(Boolean)
       selectedFormats.value = fmts
     }
-    if (c.knowledge_base) {
-      form.knowledge_base.enabled = !!c.knowledge_base.enabled
-      form.knowledge_base.vault_path = c.knowledge_base.vault_path || ''
-    }
   } catch { /* ignore */ }
   configLoading.value = false
 }
@@ -326,10 +309,6 @@ async function saveConfig() {
         default_dimensions: selectedDimensions.value.join(','),
         default_formats: selectedFormats.value.join(','),
         self_check: form.pipeline.self_check,
-      },
-      knowledge_base: {
-        enabled: form.knowledge_base.enabled,
-        vault_path: form.knowledge_base.vault_path,
       },
       output: {
         dir: form.output.dir,
