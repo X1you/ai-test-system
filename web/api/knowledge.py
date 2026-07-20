@@ -57,12 +57,29 @@ async def kb_status():
 
 
 @router.get("/search")
-async def kb_search(q: str = Query(..., description="搜索关键词")):
-    """搜索知识库（DB 数据源，与 /status 同源）。"""
+async def kb_search(
+    q: str = Query(..., description="搜索关键词"),
+    page: int = Query(1, ge=1, description="页码（从 1 开始）"),
+    page_size: int = Query(20, ge=1, le=100, description="每页条数"),
+):
+    """搜索知识库（DB 数据源，与 /status 同源），支持分页。"""
     from web.services.kb_cache import search as kb_search_cached
 
-    results = kb_search_cached(q, limit=20)
-    return {"query": q, "results": results, "total": len(results)}
+    # 缓存层一次取足（上限 500），API 层切片分页
+    all_results = kb_search_cached(q, limit=500)
+    total = len(all_results)
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, pages)  # 越界页码钳制到最后一页
+    start = (page - 1) * page_size
+    results = all_results[start:start + page_size]
+    return {
+        "query": q,
+        "results": results,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+    }
 
 
 @router.post("/import")
