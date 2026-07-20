@@ -20,81 +20,54 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
-from core.config_loader import load_config
-
 # ★ Sprint 6.1：移除 prefix（由 app.py 统一挂载 /api/v1/knowledge）
 router = APIRouter(tags=["knowledge"])
 
 KB_SCRIPT = Path(__file__).resolve().parents[2] / "core" / "kb" / "kb_manager_mcp.py"
 
 
+def _kb_subprocess_env() -> dict:
+    """构造 KB 子进程环境变量：注入 DB 动态配置的 vault_path。
+
+    import/add 子命令通过 OBSIDIAN_VAULT 环境变量定位 vault。
+    从 DynamicKBManager 取当前生效的 vault_path（DB 数据源），
+    避免 import/add 写入旧 config.yaml 的 vault。
+    未配置时回退到当前进程环境（向后兼容）。
+    """
+    env = {**__import__("os").environ}
+    try:
+        from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
+        cfg = get_dynamic_kb_manager().get_config()
+        if cfg and cfg.get("vault_path"):
+            env["OBSIDIAN_VAULT"] = cfg["vault_path"]
+    except Exception:
+        pass
+    return env
+
+
 @router.get("/status")
 async def kb_status():
-    """知识库统计（带 60s 缓存，单例复用避免每次 fork 子进程）。"""
-    config = load_config()
-    kb_config = config.get("knowledge_base", {})
+    """知识库统计（DB 数据源，带 60s 缓存）。
 
-    if not kb_config.get("enabled", False):
-        return {"enabled": False, "total": 0, "categories": {}, "message": "知识库未启用"}
-
-    vault_path = kb_config.get("vault_path", "")
-    if not vault_path or not Path(vault_path).exists():
-        return {"enabled": True, "total": 0, "categories": {}, "message": "Vault 路径不存在"}
-
-    if not KB_SCRIPT.exists():
-        return {"enabled": True, "total": 0, "categories": {}, "message": "KB 脚本缺失"}
-
-    # 复用缓存（避免每次 fork）
-    try:
-        from web.services.kb_cache import get_status
-        return get_status()
-    except ImportError:
-        pass
-
-    # 兜底：直接 fork
-    try:
-        result = subprocess.run(
-            [sys.executable, str(KB_SCRIPT), "status", "--json"],
-            capture_output=True, text=True, timeout=30,
-            env={**__import__("os").environ, "OBSIDIAN_VAULT": vault_path},
-        )
-        if result.returncode == 0:
-            return json.loads(result.stdout)
-    except Exception as e:
-        return {"enabled": True, "error": str(e)[:200]}
-
-    return {"enabled": True, "total": 0, "categories": {}}
+    统一走 DynamicKBManager（与 /current_config 同源），避免「生效配置」读 DB
+    而「统计」读 config.yaml 导致两卡片数据源不一致。
+    """
+    from web.services.kb_cache import get_status
+    return get_status()
 
 
 @router.get("/search")
 async def kb_search(q: str = Query(..., description="搜索关键词")):
-    """搜索知识库"""
-    config = load_config()
-    kb_config = config.get("knowledge_base", {})
-    if not kb_config.get("enabled", False):
-        return {"query": q, "results": [], "total": 0, "message": "知识库未启用"}
+    """搜索知识库（DB 数据源，与 /status 同源）。"""
+    from web.services.kb_cache import search as kb_search_cached
 
-    vault_path = kb_config.get("vault_path", "")
-
-    try:
-        result = subprocess.run(
-            [sys.executable, str(KB_SCRIPT), "search", q, "--json", "--limit", "20"],
-            capture_output=True, text=True, timeout=30,
-            env={**__import__("os").environ, "OBSIDIAN_VAULT": vault_path},
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            data["query"] = q
-            return data
-    except Exception as e:
-        return {"query": q, "results": [], "total": 0, "error": str(e)[:200]}
-
-    return {"query": q, "results": [], "total": 0}
+    results = kb_search_cached(q, limit=20)
+    return {"query": q, "results": results, "total": len(results)}
 
 
 @router.post("/import")
 async def kb_import(file: UploadFile = File(...)):
-    """从 Excel 文件导入测试用例回灌知识库"""
+    """从 Excel 文件导入测试用例回灌知识库（写入 DB 配置的 vault）"""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "仅支持 .xlsx/.xls 文件")
 
@@ -108,11 +81,18 @@ async def kb_import(file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
+        # ★ 从 DB 动态配置取 vault_path，避免写入旧 config.yaml 的 vault
+        env = _kb_subprocess_env()
         result = subprocess.run(
             [sys.executable, str(KB_SCRIPT), "import", tmp_path, "--category", "historical-cases"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=60, env=env,
         )
         if result.returncode == 0:
+            try:
+                from web.services.kb_cache import invalidate_all
+                invalidate_all()
+            except ImportError:
+                pass
             try:
                 data = json.loads(result.stdout)
                 return {"ok": True, "imported": data.get("imported", 0), "message": "导入成功"}
@@ -133,7 +113,7 @@ async def kb_add(
     tags: str = Form(""),
     module: str = Form(""),
 ):
-    """添加单条知识条目"""
+    """添加单条知识条目（写入 DB 配置的 vault）"""
     cmd = [
         sys.executable, str(KB_SCRIPT), "add",
         "--title", title,
@@ -144,7 +124,9 @@ async def kb_add(
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # ★ 从 DB 动态配置取 vault_path
+        env = _kb_subprocess_env()
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
         if result.returncode == 0:
             try:
                 from web.services.kb_cache import invalidate_all
@@ -181,7 +163,6 @@ async def update_kb_config(req: KBConfigRequest):
       4. 立即热切换（get_dynamic_kb_manager().reload()）
     """
     import logging
-    import requests
 
     logger = logging.getLogger("ai-test-system")
 
@@ -196,6 +177,8 @@ async def update_kb_config(req: KBConfigRequest):
     # 2. 连通性测试
     try:
         if req.provider_type == "obsidian_api" and req.connection_url:
+            import requests  # 延迟导入：仅 obsidian_api 连通性测试需要
+
             headers = {"Authorization": f"Bearer {req.auth_token}"} if req.auth_token else {}
             resp = requests.get(
                 req.connection_url.rstrip("/") + "/health",
@@ -247,6 +230,9 @@ async def update_kb_config(req: KBConfigRequest):
     try:
         from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
         get_dynamic_kb_manager().reload()
+        # ★ 配置热切换后失效 kb_cache（status/search 缓存指向旧 vault，必须清空）
+        from web.services.kb_cache import invalidate_all
+        invalidate_all()
     except Exception as e:
         logger.error("KB reload 失败: %s", e)
 

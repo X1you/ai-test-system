@@ -1,27 +1,29 @@
 """
-知识库缓存服务。
+知识库缓存服务（Sprint 6.1：统一 DB 数据源）。
 
-解决 P3-C 性能问题：每次 KB API 请求都 subprocess.run fork 子进程跑
-kb_manager_mcp.py，Python 冷启动 + Vault 全量遍历 = 6-7 秒。
+历史问题（已修复）：
+  原 kb_cache 读 config.yaml（静态），而 /current_config / /update_config 走 DB（动态），
+  导致 UI「生效配置」和「知识库统计」两个卡片数据源不一致——用户改了配置后统计卡
+  仍指向旧 vault，甚至因 status 返回缺 enabled 字段而误报「知识库未启用」。
+
+修复：status / search 统一走 DynamicKBManager（DB 数据源），与 /current_config 同源。
 
 两层优化：
-  1. 模块级单例：复用 KnowledgeBaseManager 实例，避免每次 fork 子进程
+  1. 复用 DynamicKBManager 单例的 client（DB 热切换后 reload 重建，无需 fork 子进程）
   2. 结果缓存：status 缓存 60s（数据变化不频繁），search 按 query 缓存 30s
 
 缓存失效：
   - import/add 写入操作后自动清空缓存（调用 invalidate_*）
-  - vault_path 配置变化时单例自动重建
+  - /update_config 热切换后调用 invalidate_all()（由路由层负责）
 
 容错：
-  - 单例初始化失败（vault 不存在等）返回 None，路由层优雅降级
+  - DynamicKBManager 未配置（Dummy 模式）时返回 enabled=False 的降级结果
   - 不影响 Web 服务启动
 """
 
 import threading
 import time
 from collections import OrderedDict
-
-from core.config_loader import load_config
 
 # 缓存 TTL（秒）
 STATUS_TTL = 60      # status 数据变化不频繁
@@ -30,56 +32,48 @@ SEARCH_TTL = 30      # search 按 query 缓存
 # search 缓存条目上限（防止高频不同 query 导致内存无限增长）
 SEARCH_CACHE_MAX = 128
 
-# 单例 + 缓存（线程安全）
-_kb_instance = None
-_kb_lock = threading.Lock()
-_kb_vault_path = None  # 记录当前单例对应的 vault_path，变化时重建
-
 # 缓存存储：(timestamp, data)
 _status_cache: tuple[float, dict | None] = (0, None)
 _search_cache: OrderedDict[str, tuple[float, list]] = OrderedDict()
 _cache_lock = threading.Lock()
 
 
-def get_kb_manager():
-    """获取 KnowledgeBaseManager 单例（vault_path 变化时自动重建）。
+def _get_manager():
+    """获取 DynamicKBManager 单例（DB 数据源）。
 
-    Returns:
-        KnowledgeBaseManager 实例，初始化失败返回 None。
+    返回的 manager.get_client() 在 reload() 后会自动替换为新 client。
     """
-    global _kb_instance, _kb_vault_path
+    from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
+    return get_dynamic_kb_manager()
 
-    config = load_config()
-    kb_config = config.get("knowledge_base", {})
 
-    if not kb_config.get("enabled", False):
-        return None
+def get_kb_manager():
+    """向后兼容入口（原签名保留）。
 
-    vault_path = kb_config.get("vault_path", "")
-    if not vault_path:
-        return None
+    返回 DynamicKBManager 底层的 client；未配置时返回 None。
+    """
+    m = _get_manager()
+    if m.is_configured():
+        return m.get_client()
+    return None
 
-    # vault_path 变化或首次调用 → 加锁重建
-    if _kb_instance is None or _kb_vault_path != vault_path:
-        with _kb_lock:
-            # double-check（可能其他线程已经建好了）
-            if _kb_instance is None or _kb_vault_path != vault_path:
-                try:
-                    from core.kb.kb_manager_mcp import KnowledgeBaseManager
 
-                    _kb_instance = KnowledgeBaseManager(vault_path=vault_path)
-                    _kb_vault_path = vault_path
-                except Exception:
-                    # 初始化失败（vault 不存在等），保持 None，下次重试
-                    _kb_instance = None
+def _status_from_client(client) -> dict:
+    """调用 client.status() 并补齐 enabled 字段。
 
-    return _kb_instance
+    MCPClient.status() 原始返回不含 enabled，导致前端 v-if="!status.enabled"
+    误判为「知识库未启用」。这里统一注入 enabled=True。
+    """
+    result = client.status()
+    if isinstance(result, dict):
+        result.setdefault("enabled", True)
+    return result
 
 
 def get_status() -> dict:
-    """获取知识库统计（带 60s 缓存）。
+    """获取知识库统计（带 60s 缓存，DB 数据源）。
 
-    单例不可用时回退到原始的 subprocess 方式（向后兼容）。
+    未配置（Dummy 模式）时返回 enabled=False 的降级结果。
     """
     global _status_cache
 
@@ -89,25 +83,28 @@ def get_status() -> dict:
         if data is not None and (now - ts) < STATUS_TTL:
             return data
 
-    # 缓存未命中或过期 → 实际查询
-    mgr = get_kb_manager()
-    if mgr is not None:
-        try:
-            result = mgr.status()
-            with _cache_lock:
-                _status_cache = (now, result)
-            return result
-        except Exception as e:
-            return {"enabled": True, "error": str(e), "total": 0}
+    m = _get_manager()
+    if not m.is_configured():
+        # DB 无 active 配置 → Dummy 模式
+        result = {"enabled": False, "total": 0, "categories": {}, "message": "知识库未配置（Dummy 模式）"}
+        with _cache_lock:
+            _status_cache = (now, result)
+        return result
 
-    # 单例不可用 → 回退 subprocess（保留原行为）
-    return _status_via_subprocess()
+    client = m.get_client()
+    try:
+        result = _status_from_client(client)
+        with _cache_lock:
+            _status_cache = (now, result)
+        return result
+    except Exception as e:
+        return {"enabled": True, "error": str(e)[:200], "total": 0, "categories": {}}
 
 
 def search(query: str, limit: int = 20) -> list[dict]:
-    """搜索知识库（按 query 缓存 30s）。
+    """搜索知识库（按 query 缓存 30s，DB 数据源）。
 
-    单例不可用时回退到原始的 subprocess 方式。
+    未配置（Dummy 模式）时返回空列表。
     """
     now = time.time()
     cache_key = f"{query}:{limit}"
@@ -120,88 +117,41 @@ def search(query: str, limit: int = 20) -> list[dict]:
                 _search_cache.move_to_end(cache_key)  # LRU: 标记为最近使用
                 return data
 
-    mgr = get_kb_manager()
-    if mgr is not None:
-        try:
-            results = mgr.search(query, limit=limit)
-            with _cache_lock:
-                _search_cache[cache_key] = (now, results)
-                _search_cache.move_to_end(cache_key)
-                # LRU 淘汰：超出上限移除最旧条目
-                while len(_search_cache) > SEARCH_CACHE_MAX:
-                    _search_cache.popitem(last=False)
-            return results
-        except Exception:
-            return []
+    m = _get_manager()
+    if not m.is_configured():
+        return []
 
-    # 单例不可用 → 回退 subprocess
-    return _search_via_subprocess(query, limit)
+    client = m.get_client()
+    try:
+        results = client.search(query, limit=limit) or []
+        with _cache_lock:
+            _search_cache[cache_key] = (now, results)
+            _search_cache.move_to_end(cache_key)
+            # LRU 淘汰：超出上限移除最旧条目
+            while len(_search_cache) > SEARCH_CACHE_MAX:
+                _search_cache.popitem(last=False)
+        return results
+    except Exception:
+        return []
 
 
-# ─── 缓存失效（写入操作后调用）───
+# ─── 缓存失效（写入操作 / 热切换后调用）───
 
 
 def invalidate_status():
-    """清除 status 缓存（import/add 后调用）。"""
+    """清除 status 缓存（import/add/update_config 后调用）。"""
     global _status_cache
     with _cache_lock:
         _status_cache = (0, None)
 
 
 def invalidate_search():
-    """清除所有 search 缓存（import/add 后调用）。"""
+    """清除所有 search 缓存（import/add/update_config 后调用）。"""
     with _cache_lock:
         _search_cache.clear()
 
 
 def invalidate_all():
-    """清除全部缓存（import/add 后调用）。"""
+    """清除全部缓存（import/add/update_config 后调用）。"""
     invalidate_status()
     invalidate_search()
-
-
-# ─── 向后兼容：subprocess 回退路径 ───
-
-
-def _status_via_subprocess() -> dict:
-    """单例不可用时的 subprocess 回退（保留原有行为）。"""
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    kb_script = Path(__file__).resolve().parents[2] / "core" / "kb" / "kb_manager_mcp.py"
-    if not kb_script.exists():
-        return {"enabled": True, "error": "知识库脚本不存在", "total": 0}
-    try:
-        result = subprocess.run(
-            [sys.executable, str(kb_script), "status"],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode == 0:
-            import json
-            return json.loads(result.stdout)
-        return {"enabled": True, "error": result.stderr[:200]}
-    except Exception as e:
-        return {"enabled": True, "error": str(e)}
-
-
-def _search_via_subprocess(query: str, limit: int = 20) -> list[dict]:
-    """单例不可用时的 subprocess 回退。"""
-    import subprocess
-    import sys
-    from pathlib import Path
-
-    kb_script = Path(__file__).resolve().parents[2] / "core" / "kb" / "kb_manager_mcp.py"
-    if not kb_script.exists():
-        return []
-    try:
-        result = subprocess.run(
-            [sys.executable, str(kb_script), "search", query],
-            capture_output=True, text=True, timeout=30,
-        )
-        if result.returncode == 0:
-            import json
-            return json.loads(result.stdout)[:limit]
-        return []
-    except Exception:
-        return []
