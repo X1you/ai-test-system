@@ -59,9 +59,11 @@ class TestHealthEndpoint:
 
     def test_health_response_format(self, client):
         """健康检查响应格式正确"""
+        from web.app import APP_VERSION
+
         resp = client.get("/health")
         data = resp.json()
-        assert data["version"] == "2.0.0"
+        assert data["version"] == APP_VERSION
         assert data["status"] in ("ok", "degraded")
 
 

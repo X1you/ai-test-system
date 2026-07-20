@@ -41,6 +41,9 @@ try:
 except ImportError:
     sse_api = None
 
+# 单一版本常量（与 CHANGELOG.md 保持同步）
+APP_VERSION = "2.1.0"
+
 # 集成服务路由（Phase 2）
 try:
     from integrations.service import router as integrations_router
@@ -52,7 +55,7 @@ except ImportError:
 app = FastAPI(
     title="AI 测试用例生成系统",
     description="从需求到测试报告的全流程自动化",
-    version="2.0.0-alpha",
+    version=APP_VERSION,
 )
 
 # 静态文件
@@ -288,7 +291,7 @@ async def index():
     tm = get_task_manager()
     return {
         "name": "AI 测试用例生成系统",
-        "version": "2.0.0",
+        "version": APP_VERSION,
         "running_count": tm.get_running_count(),
         "spa_hint": "前端 Vue 工程见 webui/，启动方式见 README",
     }
@@ -357,7 +360,7 @@ async def health():
         status_code=200 if all_ok else 503,
         content={
             "status": "ok" if all_ok else "degraded",
-            "version": "2.0.0",
+            "version": APP_VERSION,
             "checks": checks,
         },
     )
