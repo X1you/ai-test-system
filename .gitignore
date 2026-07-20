@@ -57,3 +57,4 @@ web/uploads/*
 
 # CodeGraph index cache
 .codegraph/
+
