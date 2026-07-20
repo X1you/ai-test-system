@@ -6,7 +6,33 @@
 
 ---
 
-## [1.3.0] — 2026-07-15
+## [2.1.0] — 2026-07-20
+
+### 🐛 修复
+- **KB 双数据源不一致**：`/status` `/search` 读 config.yaml 而 `/current_config` 读 DB，导致知识库页面「生效配置」和「统计」两卡片指向不同 vault。统一到 DynamicKBManager（DB 数据源），补齐 `enabled` 字段（MCPClient.status() 原无此字段，前端误报「未启用」）。
+- **健康检查 KB 状态读旧 config.yaml**：`/health` 端点的 knowledge_base 检查改走 DB（DynamicKBManager），与 `/knowledge/status` 同源。
+- **`/update_config` 500 错误**：`requests` 顶层导入在未安装时崩溃，改为延迟导入。
+- **rate limit 测试持续失败**：slowapi 在 production 可选依赖组，dev 环境未安装时优雅跳过。
+
+### ✨ 新增
+- **interrupted 任务可恢复（方案 A）**：服务重启后 DB 中 interrupted 的任务可通过「继续执行」按钮恢复。`TaskManager.rebuild_task_from_db()` 从 DB 重建内存 PipelineTask，恢复已完成步骤（断点续跑依据）。
+- **服务重启自动恢复（方案 B）**：启动时自动扫描 interrupted 任务，对有已完成步骤 + requirements 文件存在的重建到内存，用户刷新页面即可看到进度并点继续。不引入外部依赖（无 Redis/Celery）。
+- **工作区清理脚本** `scripts/clean_workspace.py`：清理 uploads 陈旧文件 + output 空目录（interrupted 任务遗留），默认 dry-run。
+
+### 🔧 优化
+- **Sprint 6.2 UI**：Dashboard 健康面板重设计（卡片网格 + 骨架屏 + 手动刷新），主题双态化（light/dark）。
+- **测试覆盖**：新增 25 个回归测试（KB 数据源 11 + interrupted-resume 7 + KB cache 16 重写），551 passed / 4 skipped。
+
+---
+
+## [2.0.0] — 2026-07-19
+
+### ✨ Sprint 6.1：前后端彻底分离
+- 后端 FastAPI 纯 JSON API，路由统一 `/api/v1/*`
+- 前端 Vue 3 SPA（Vite 6 + vue-router），dev 5173 代理→8090
+- Auth 切除，知识库动态配置（DynamicKBManager + KBConfig 表 + 热切换）
+
+---
 
 ### 🔧 优化
 |- **P0.1**: 修复 `generate_report.py` 的 `_fmt_pct` 方法调用错误
