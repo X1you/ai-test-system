@@ -4,7 +4,10 @@
 
 Endpoints:
   GET  /api/config  — 查看配置（API Key 脱敏）
-  PUT  /api/config  — 更新安全配置字段（pipeline / knowledge_base / output）
+  PUT  /api/config  — 更新安全配置字段（pipeline / output / llm）
+
+注：知识库配置已迁移到 DB（DynamicKBManager），通过 /knowledge/update_config 管理，
+不再走本端点。GET 仍返回 knowledge_base（只读，兼容旧消费者）。
 """
 
 from pathlib import Path
@@ -18,7 +21,7 @@ from core.config_loader import load_config, validate_config, PROJECT_ROOT
 router = APIRouter(tags=["config"])
 
 # ─── 允许前端更新的白名单字段 ───
-_UPDATABLE_SECTIONS = {"pipeline", "knowledge_base", "output", "llm"}
+_UPDATABLE_SECTIONS = {"pipeline", "output", "llm"}
 
 # ─── LLM 段允许更新的字段（api_key 特殊处理：空=不改） ───
 _LLM_UPDATABLE_FIELDS = {"provider", "model", "base_url", "temperature", "api_key"}
@@ -27,7 +30,6 @@ _LLM_UPDATABLE_FIELDS = {"provider", "model", "base_url", "temperature", "api_ke
 class ConfigUpdate(BaseModel):
     """前端可更新的配置字段。"""
     pipeline: dict | None = None
-    knowledge_base: dict | None = None
     output: dict | None = None
     llm: dict | None = None
 
