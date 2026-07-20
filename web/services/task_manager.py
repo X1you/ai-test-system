@@ -102,16 +102,25 @@ class TaskManager:
             seen_ids.add(tid)
 
         # 2. 从 DB 补充历史任务（内存中没有的）
+        #    ★ 自愈：DB 中 running/pending/paused 但不在内存 → 僵尸任务，标记 interrupted
         try:
             from db.repository import get_repository
+            from db.session import session_scope
+            from db.models import Pipeline
             repo = get_repository()
             db_pipelines = repo.list_pipelines(limit=50)
+            zombie_ids = []
             for p in db_pipelines:
                 if p.id not in seen_ids:
+                    status = p.status
+                    # 僵尸检测：DB 说 running 但内存中没有 → 服务重启后遗留
+                    if status in ("running", "pending", "paused"):
+                        status = "interrupted"
+                        zombie_ids.append(p.id)
                     completed = repo.get_completed_step_ids(p.id)
                     tasks.append({
                         "pipeline_id": p.id,
-                        "status": p.status,
+                        "status": status,
                         "completed_steps": len(completed),
                         "total_steps": 7,
                         "started_at": p.started_at.isoformat() if p.started_at else "",
@@ -119,6 +128,19 @@ class TaskManager:
                         "mode": p.mode,
                     })
                     seen_ids.add(p.id)
+            # 批量修复僵尸任务（写回 DB）
+            if zombie_ids:
+                with session_scope() as session:
+                    session.query(Pipeline).filter(
+                        Pipeline.id.in_(zombie_ids)
+                    ).update(
+                        {"status": "interrupted", "error": "服务重启，任务中断（列表自愈）"},
+                        synchronize_session="fetch",
+                    )
+                import logging
+                logging.getLogger("web").info(
+                    f"列表自愈：{len(zombie_ids)} 个僵尸任务标记为 interrupted"
+                )
         except Exception as e:
             # DB 未就绪时仅返回内存任务
             import logging
