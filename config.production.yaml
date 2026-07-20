@@ -2,7 +2,7 @@
 #
 # 使用方法：
 #   cp config.production.yaml config.yaml
-#   修改 JWT_SECRET、LLM_API_KEY 等敏感配置
+#   修改 LLM_API_KEY 等敏感配置（.env 或环境变量注入）
 
 llm:
   provider: deepseek
@@ -44,9 +44,7 @@ server:
   workers: 1                    # SQLite 模式建议单 worker
 
 security:
-  jwt_secret: ${JWT_SECRET}     # 必须 ≥ 32 字符
-  jwt_expire_hours: 24
-  rate_limit: "60/minute"       # API 限流
+  rate_limit: "60/minute"       # API 限流（slowapi，production 可选依赖）
   cors_origins: []              # CORS 白名单（空=不允许跨域）
 
 logging:
