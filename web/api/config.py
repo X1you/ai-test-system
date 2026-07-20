@@ -18,14 +18,18 @@ from core.config_loader import load_config, validate_config, PROJECT_ROOT
 router = APIRouter(tags=["config"])
 
 # ─── 允许前端更新的白名单字段 ───
-_UPDATABLE_SECTIONS = {"pipeline", "knowledge_base", "output"}
+_UPDATABLE_SECTIONS = {"pipeline", "knowledge_base", "output", "llm"}
+
+# ─── LLM 段允许更新的字段（api_key 特殊处理：空=不改） ───
+_LLM_UPDATABLE_FIELDS = {"provider", "model", "base_url", "temperature", "api_key"}
 
 
 class ConfigUpdate(BaseModel):
-    """前端可更新的配置字段（不含 LLM 敏感信息）。"""
+    """前端可更新的配置字段。"""
     pipeline: dict | None = None
     knowledge_base: dict | None = None
     output: dict | None = None
+    llm: dict | None = None
 
 
 def _patch_yaml_file(cfg_path: Path, updates: dict) -> None:
@@ -122,9 +126,9 @@ async def get_config():
 
 @router.put("")
 async def update_config(body: ConfigUpdate):
-    """更新安全配置字段（pipeline / knowledge_base / output）。
+    """更新安全配置字段（pipeline / knowledge_base / output / llm）。
 
-    只允许白名单 section，LLM 敏感配置不可通过此接口修改。
+    只允许白名单 section。LLM 的 api_key 只在传入非空非掩码值时更新。
     更新后写回 config.yaml 并重新校验。
     """
     cfg_path = PROJECT_ROOT / "config.yaml"
@@ -146,10 +150,26 @@ async def update_config(body: ConfigUpdate):
             raise HTTPException(400, f"不允许修改配置段: {section}")
         if not isinstance(values, dict):
             raise HTTPException(400, f"配置段 {section} 必须是对象")
+
+        # LLM 段：只允许白名单字段，api_key 特殊处理
+        if section == "llm":
+            filtered = {}
+            for k, v in values.items():
+                if k not in _LLM_UPDATABLE_FIELDS:
+                    continue
+                # api_key 为空或掩码格式 → 不修改（保留原值）
+                if k == "api_key":
+                    if not v or "..." in str(v) or v == "***":
+                        continue
+                filtered[k] = v
+            values = filtered
+            updates[section] = filtered
+
         if section not in user_config:
             user_config[section] = {}
         user_config[section].update(values)
-        changed.append(section)
+        if values:
+            changed.append(section)
 
     if not changed:
         raise HTTPException(400, "未提供任何可更新的配置字段")
