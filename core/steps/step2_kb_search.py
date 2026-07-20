@@ -32,14 +32,21 @@ class Step2KBSearch(BaseStep):
 
         self.log(f"Step {self.step_id}/7: {self.step_name} (RAG)", "STEP")
 
-        # 检查知识库是否启用
-        kb_config = self.config.get("knowledge_base", {})
-        if not kb_config.get("enabled", False):
-            self.log("知识库未启用，跳过 RAG 检索", "WARN")
+        # 检查知识库是否启用（DB 数据源，与知识库页面配置同源）
+        try:
+            from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
+
+            mgr = get_dynamic_kb_manager()
+            if not mgr.is_configured():
+                self.log("知识库未配置，跳过 RAG 检索", "WARN")
+                return StepResult(ok=True, data={"skipped": True, "hits": 0})
+            kb_cfg = mgr.get_config() or {}
+            vault_path = kb_cfg.get("vault_path", "")
+        except Exception as e:
+            self.log(f"知识库配置读取失败: {e}，跳过 RAG 检索", "WARN")
             return StepResult(ok=True, data={"skipped": True, "hits": 0})
 
-        vault_path = kb_config.get("vault_path", "")
-        if not vault_path or not Path(vault_path).exists():
+        if not vault_path or not Path(vault_path).expanduser().exists():
             self.log(
                 f"知识库路径不存在: {vault_path}，跳过 RAG 检索",
                 "WARN",
@@ -68,7 +75,7 @@ class Step2KBSearch(BaseStep):
                 text=True,
                 timeout=60,
                 env={**__import__("os").environ,
-                     "OBSIDIAN_VAULT": kb_config.get("vault_path", "")},
+                     "OBSIDIAN_VAULT": vault_path},
             )
         except subprocess.TimeoutExpired:
             self.log("知识库检索超时", "WARN")
@@ -86,7 +93,7 @@ class Step2KBSearch(BaseStep):
 
         # ★ 三态区分（v4.0 架构审计修复 TC-005）
         # 原实现只记 "未命中相关知识"，无法区分配置问题 vs 正常无匹配
-        vault = Path(kb_config.get("vault_path", "")).expanduser()
+        vault = Path(vault_path).expanduser()
         total_files = 0
         if vault.exists():
             total_files = sum(1 for _ in vault.rglob("*.md"))

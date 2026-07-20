@@ -116,28 +116,34 @@ class TestStep2KBIntegration:
     """Step2 与知识库的集成"""
 
     def test_missing_vault_graceful_skip(self, tmp_path):
-        """vault 不存在时应优雅跳过，不崩溃"""
+        """vault 不存在时应优雅跳过，不崩溃（DB 数据源）"""
+        from unittest.mock import patch as _patch, MagicMock
         from core.steps.step2_kb_search import Step2KBSearch
 
-        cfg = {
-            "knowledge_base": {
-                "enabled": True,
-                "vault_path": str(tmp_path / "nonexistent_vault_xyz"),
-            }
+        mock_mgr = MagicMock()
+        mock_mgr.is_configured.return_value = True
+        mock_mgr.get_config.return_value = {
+            "vault_path": str(tmp_path / "nonexistent_vault_xyz"),
         }
+        cfg = {}  # step2 不再读 config.yaml 的 knowledge_base
         step2 = Step2KBSearch(str(tmp_path / "out"), cfg, llm=None)
-        result = step2.run(requirements_analysis="## 模块一：测试")
+        with _patch("core.kb.dynamic_kb_manager.get_dynamic_kb_manager", return_value=mock_mgr):
+            result = step2.run(requirements_analysis="## 模块一：测试")
 
         assert result.ok, f"应返回 ok=True（优雅跳过）, got error={result.data}"
         assert result.data.get("skipped") is True
 
     def test_disabled_kb_skips(self, tmp_path):
-        """知识库禁用时应跳过"""
+        """知识库未配置时应跳过（DB 数据源）"""
+        from unittest.mock import patch as _patch, MagicMock
         from core.steps.step2_kb_search import Step2KBSearch
 
-        cfg = {"knowledge_base": {"enabled": False, "vault_path": ""}}
+        mock_mgr = MagicMock()
+        mock_mgr.is_configured.return_value = False
+        cfg = {}
         step2 = Step2KBSearch(str(tmp_path / "out"), cfg, llm=None)
-        result = step2.run(requirements_analysis="test")
+        with _patch("core.kb.dynamic_kb_manager.get_dynamic_kb_manager", return_value=mock_mgr):
+            result = step2.run(requirements_analysis="test")
         assert result.ok
         assert result.data.get("skipped") is True
 

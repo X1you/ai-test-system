@@ -698,12 +698,20 @@ class Pipeline:
         Returns:
             实际回灌条数（回灌失败返回 0）
         """
-        kb_config = self.config.get("knowledge_base", {})
-        if not kb_config.get("enabled", False):
-            self._notify_log("KB", "知识库未启用，跳过回灌")
+        # 知识库配置改从 DB 读取（与知识库页面配置同源）
+        try:
+            from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
+
+            mgr = get_dynamic_kb_manager()
+            if not mgr.is_configured():
+                self._notify_log("KB", "知识库未配置，跳过回灌")
+                return 0
+            kb_cfg = mgr.get_config() or {}
+            vault_path = kb_cfg.get("vault_path", "")
+        except Exception as e:
+            self._notify_log("WARN", f"知识库配置读取失败: {e}，跳过回灌")
             return 0
 
-        vault_path = kb_config.get("vault_path", "")
         if not vault_path:
             self._notify_log("WARN", "vault_path 未配置，跳过回灌")
             return 0
