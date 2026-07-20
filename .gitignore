@@ -54,3 +54,6 @@ web/uploads/*
 # 保留 examples/ 和特定示例目录下的文件
 !examples/**
 !**/demo_*
+
+# CodeGraph index cache
+.codegraph/
