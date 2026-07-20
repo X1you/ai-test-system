@@ -261,25 +261,6 @@ class TestKnowledgeBaseBoundary:
         assert "enabled" in data or "source" in data or "total" in data
 
 
-# ─── 认证 Token 边界 ───
-
-
-class TestAuthTokenBoundary:
-    """认证 Token 边界条件（Sprint 6.0: Auth 已切除，全部跳过）"""
-
-    def test_malformed_jwt_token(self):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_empty_authorization_header(self):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_no_bearer_prefix(self):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_extremely_long_token(self):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-
 # ─── 配置边界条件 ───
 
 

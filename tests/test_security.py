@@ -192,26 +192,6 @@ class TestFileUploadSecurity:
             )
 
 
-class TestAuthSecurity:
-    """认证安全（Sprint 6.0: Auth 已切除，全部跳过）"""
-
-    def test_protected_endpoint_without_token(self):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_protected_endpoint_invalid_token(self, client):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_protected_endpoint_empty_token(self):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_protected_endpoint_wrong_scheme(self, client):
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-    def test_jwt_token_not_reusable_across_roles(self, monkeypatch, tmp_path):
-        """Sprint 6.0: Auth 已切除，此测试跳过"""
-        pytest.skip("Auth module removed in Sprint 6.0")
-
-
 class TestRateLimiting:
     """速率限制测试"""
 

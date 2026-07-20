@@ -54,7 +54,7 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="function")
 def client():
-    """创建测试客户端（Sprint 6.0: Auth 已切除，无需登录）"""
+    """创建测试客户端"""
     from fastapi.testclient import TestClient
 
     from web.app import app

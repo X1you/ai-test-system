@@ -62,13 +62,6 @@ db = [
     "alembic>=1.13",
 ]
 
-# 认证与安全
-auth = [
-    "python-jose[cryptography]>=3.3",
-    "bcrypt>=4.1",
-    "pydantic>=2.0",
-]
-
 # 生产加固（结构化日志 + 限流）
 production = [
     "structlog>=24.1",
@@ -88,7 +81,7 @@ dev = [
 
 # 全量安装（除 dev 外的全部可选组）
 all = [
-    "ai-test-system[web,xmind,excel,db,auth,production]",
+    "ai-test-system[web,xmind,excel,db,production]",
 ]
 
 # 开发全量（all + dev）
