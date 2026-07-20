@@ -27,6 +27,15 @@ os.environ.setdefault("LLM_API_KEY", "sk-test-dummy-key-for-testing")
 
 from fastapi.testclient import TestClient
 
+
+def _slowapi_missing() -> bool:
+    """slowapi 在 production 可选依赖组，dev 环境可能未安装。"""
+    try:
+        import slowapi  # noqa: F401
+        return False
+    except ImportError:
+        return True
+
 # ═══════════════════════════════════════════════════════════════
 # Fixtures
 # ═══════════════════════════════════════════════════════════════
@@ -159,13 +168,25 @@ class TestDotenvExportPrefix:
 # ═══════════════════════════════════════════════════════════════
 
 class TestRateLimitWired:
-    """速率限制器已正确挂载到应用"""
+    """速率限制器已正确挂载到应用。
 
+    注：slowapi 在 production 可选依赖组，dev 环境未安装时跳过。
+    安装方式：uv sync --extra production
+    """
+
+    @pytest.mark.skipif(
+        _slowapi_missing(),
+        reason="slowapi 未安装（production 可选依赖）。安装：uv sync --extra production",
+    )
     def test_limiter_attached_to_app(self, client):
         """app.state.limiter 应已设置"""
         from web.app import app
         assert hasattr(app.state, "limiter"), "限速器应挂载到 app.state.limiter"
 
+    @pytest.mark.skipif(
+        _slowapi_missing(),
+        reason="slowapi 未安装（production 可选依赖）。安装：uv sync --extra production",
+    )
     def test_rate_limit_exception_handler_registered(self, client):
         """RateLimitExceeded 异常处理器应已注册"""
         from slowapi.errors import RateLimitExceeded
