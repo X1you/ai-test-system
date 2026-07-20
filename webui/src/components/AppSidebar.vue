@@ -21,51 +21,11 @@
         <span class="nav-label">{{ item.label }}</span>
       </router-link>
     </nav>
-
-    <!-- Footer -->
-    <div class="sidebar-footer">
-      <!-- Theme toggle (lightweight icon) -->
-      <button
-        class="theme-icon-btn"
-        :aria-label="`切换主题（当前：${themeLabel}）`"
-        :title="`主题：${themeLabel}`"
-        @click="cycleTheme"
-      >
-        <!-- Sun (light) -->
-        <svg v-if="resolvedTheme === 'light'" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-          <path fill="currentColor" d="M10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0-8a1 1 0 0 1-1-1V3a1 1 0 1 1 2 0v1a1 1 0 0 1-1 1zm0 12a1 1 0 0 1-1-1v-1a1 1 0 1 1 2 0v1a1 1 0 0 1-1 1zm8-7h-1a1 1 0 1 0 0 2h1a1 1 0 1 0 0-2zM4 10a1 1 0 0 1-1 1H2a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1zm12.7-6.7a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4-1.4l.7-.7a1 1 0 0 1 1.4 0zM5.4 15.6l-.7.7a1 1 0 0 1-1.4-1.4l.7-.7a1 1 0 0 1 1.4 1.4zm9.2 0a1 1 0 0 1 1.4-1.4l.7.7a1 1 0 0 1-1.4 1.4l-.7-.7zM5.4 5.4a1 1 0 0 1-1.4 0l-.7-.7a1 1 0 0 1 1.4-1.4l.7.7a1 1 0 0 1 0 1.4z"/>
-        </svg>
-        <!-- Moon (dark) -->
-        <svg v-else viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-          <path fill="currentColor" d="M14.5 11a6 6 0 0 1-7.4-7.4A6 6 0 1 0 14.5 11z"/>
-        </svg>
-      </button>
-    </div>
   </aside>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useTheme } from '../composables/useTheme'
-import { useToast } from '../composables/useToast'
-
-const toast = useToast()
-
-const { theme, resolvedTheme, setTheme } = useTheme()
-
-const themeLabel = computed(() => {
-  const map = { system: '跟随系统', light: '亮色', dark: '暗色' }
-  return map[theme.value] || '跟随系统'
-})
-
-const themeOrder = ['light', 'dark', 'system']
-
-function cycleTheme() {
-  const idx = themeOrder.indexOf(theme.value)
-  const next = themeOrder[(idx + 1) % themeOrder.length]
-  setTheme(next)
-  toast.info(`主题已切换：${themeLabel.value}`, 2000)
-}
+import { ref, onMounted, onUnmounted } from 'vue'
 
 const navItems = [
   {
@@ -174,37 +134,6 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   flex-shrink: 0;
 }
 
-.sidebar-footer {
-  margin-top: auto;
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--border-default);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.theme-icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  transition: background var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out);
-}
-.theme-icon-btn:hover {
-  background: var(--bg-inset);
-  color: var(--accent);
-}
-.theme-icon-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 /* ─── Mobile: bottom tab bar ─── */
 @media (max-width: 768px) {
   .sidebar {
@@ -224,8 +153,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
     z-index: 100;
   }
 
-  .sidebar-brand,
-  .sidebar-footer {
+  .sidebar-brand {
     display: none;
   }
 

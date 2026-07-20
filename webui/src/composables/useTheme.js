@@ -1,26 +1,19 @@
-import { ref, computed, watch } from 'vue'
+import { ref, watch } from 'vue'
 
 const STORAGE_KEY = 'ai-test-theme'
 
 /**
  * 主题管理 composable
- * 三态：system / light / dark
- * 暴露：theme（存储值）、resolvedTheme（实际渲染值）、setTheme
+ * 双态：light / dark（localStorage 持久化）
+ * 暴露：theme、setTheme、toggleTheme
  */
 export function useTheme() {
-  const stored = localStorage.getItem(STORAGE_KEY) || 'system'
-  const theme = ref(stored)
-
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-
-  const resolvedTheme = computed(() =>
-    theme.value === 'system'
-      ? (mediaQuery.matches ? 'dark' : 'light')
-      : theme.value
-  )
+  const stored = localStorage.getItem(STORAGE_KEY)
+  // 旧版存储值可能为 'system'，一律回落为 light
+  const theme = ref(stored === 'dark' ? 'dark' : 'light')
 
   function applyTheme() {
-    document.documentElement.setAttribute('data-theme', resolvedTheme.value)
+    document.documentElement.setAttribute('data-theme', theme.value)
 
     // 同步 <meta name="theme-color">
     let meta = document.querySelector('meta[name="theme-color"]')
@@ -29,19 +22,18 @@ export function useTheme() {
       meta.name = 'theme-color'
       document.head.appendChild(meta)
     }
-    meta.content = resolvedTheme.value === 'dark' ? '#12121a' : '#f5f5fa'
+    meta.content = theme.value === 'dark' ? '#12121a' : '#f5f5fa'
   }
 
   function setTheme(value) {
-    theme.value = value
-    localStorage.setItem(STORAGE_KEY, value)
+    theme.value = value === 'dark' ? 'dark' : 'light'
+    localStorage.setItem(STORAGE_KEY, theme.value)
     applyTheme()
   }
 
-  // 监听系统主题变化
-  mediaQuery.addEventListener('change', () => {
-    if (theme.value === 'system') applyTheme()
-  })
+  function toggleTheme() {
+    setTheme(theme.value === 'dark' ? 'light' : 'dark')
+  }
 
   // theme 变化时自动重新应用
   watch(theme, applyTheme)
@@ -49,5 +41,5 @@ export function useTheme() {
   // 初始化
   applyTheme()
 
-  return { theme, resolvedTheme, setTheme }
+  return { theme, setTheme, toggleTheme }
 }

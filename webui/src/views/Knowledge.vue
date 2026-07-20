@@ -92,19 +92,25 @@
           placeholder="搜索知识库…"
           aria-label="搜索知识库"
           spellcheck="false"
-          @keydown.enter="doSearch"
+          @keydown.enter="doSearch(1)"
         />
-        <button class="btn-primary" @click="doSearch">搜索</button>
+        <button class="btn-primary" @click="doSearch(1)">搜索</button>
       </div>
       <div v-if="searchLoading" class="loading-hint" role="status">搜索中…</div>
       <EmptyState v-else-if="searchResults.length === 0 && searchDone" message="未找到匹配结果" />
-      <ul v-else class="search-results">
-        <li v-for="(r, i) in searchResults" :key="i" class="search-result">
-          <h3 class="search-result__title">{{ r.title || r.name || '未命名' }}</h3>
-          <p v-if="r.category" class="search-result__cat">{{ r.category }}</p>
-          <p class="search-result__snippet">{{ r.snippet || r.content?.slice(0, 200) || '' }}</p>
-        </li>
-      </ul>
+      <template v-else>
+        <ul class="search-results">
+          <li v-for="(r, i) in searchResults" :key="`${searchPage}-${i}`" class="search-result">
+            <h3 class="search-result__title">{{ r.title || r.name || '未命名' }}</h3>
+            <p v-if="r.category" class="search-result__cat">{{ r.category }}</p>
+            <p class="search-result__snippet">{{ r.snippet || r.content?.slice(0, 200) || '' }}</p>
+          </li>
+        </ul>
+        <div class="search-footer">
+          <span class="search-footer__total">共 {{ searchTotal }} 条结果</span>
+          <Pagination :page="searchPage" :pages="searchPages" @change="doSearch" />
+        </div>
+      </template>
     </section>
 
     <!-- Import Tab -->
@@ -169,6 +175,7 @@ import { ref, onMounted } from 'vue'
 import PageHeader from '../components/PageHeader.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FileDropZone from '../components/FileDropZone.vue'
+import Pagination from '../components/Pagination.vue'
 import { api } from '../composables/useApi'
 
 const tabs = [
@@ -213,14 +220,22 @@ const searchQuery = ref('')
 const searchResults = ref([])
 const searchLoading = ref(false)
 const searchDone = ref(false)
+const searchPage = ref(1)
+const searchPages = ref(1)
+const searchTotal = ref(0)
 
-async function doSearch() {
+async function doSearch(page = 1) {
   if (!searchQuery.value.trim()) return
   searchLoading.value = true
   searchDone.value = false
   try {
-    const data = await api.get(`/knowledge/search?q=${encodeURIComponent(searchQuery.value)}`)
+    const data = await api.get(
+      `/knowledge/search?q=${encodeURIComponent(searchQuery.value)}&page=${page}&page_size=20`
+    )
     searchResults.value = data.results || []
+    searchPage.value = data.page || 1
+    searchPages.value = data.pages || 1
+    searchTotal.value = data.total || 0
   } catch { searchResults.value = [] }
   searchLoading.value = false
   searchDone.value = true
@@ -425,4 +440,17 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
 .search-result__title { font-size: var(--text-base); font-weight: 600; margin-bottom: var(--space-xs); }
 .search-result__cat { font-size: var(--text-xs); color: var(--accent); margin-bottom: var(--space-xs); }
 .search-result__snippet { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
+
+.search-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  padding-top: var(--space-md);
+}
+.search-footer__total {
+  font-size: var(--text-sm);
+  color: var(--text-tertiary);
+}
 </style>

@@ -188,7 +188,6 @@ const toast = useToast()
 const { theme: currentTheme, setTheme } = useTheme()
 
 const themeOptions = [
-  { value: 'system', label: '跟随系统' },
   { value: 'light', label: '亮色' },
   { value: 'dark', label: '暗色' },
 ]
@@ -352,7 +351,7 @@ async function saveConfig() {
 
 function onThemeChange(val) {
   setTheme(val)
-  const labels = { system: '跟随系统', light: '亮色', dark: '暗色' }
+  const labels = { light: '亮色', dark: '暗色' }
   toast.info(`主题已切换：${labels[val]}`, 2000)
 }
 
