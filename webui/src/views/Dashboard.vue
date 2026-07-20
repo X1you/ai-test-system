@@ -83,6 +83,9 @@ import StatusBadge from '../components/StatusBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FileDropZone from '../components/FileDropZone.vue'
 import { api } from '../composables/useApi'
+import { useToast } from '../composables/useToast'
+
+const toast = useToast()
 
 const router = useRouter()
 
@@ -135,13 +138,14 @@ async function quickStart(file) {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('mode', 'semi')
-  formData.append('dimensions', 'functional,api,security')
+  formData.append('dimensions', 'positive,negative,boundary,exception')
   formData.append('formats', 'excel,json')
   try {
     const data = await api.upload('/pipeline/start', formData)
+    toast.success('任务已启动')
     router.push(`/pipeline/${data.pipeline_id}`)
   } catch (e) {
-    alert(`启动失败: ${e.message}`)
+    toast.error(`启动失败: ${e.message}`)
   }
 }
 

@@ -72,11 +72,14 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import FileDropZone from '../components/FileDropZone.vue'
 import { api } from '../composables/useApi'
+import { useToast } from '../composables/useToast'
+
+const toast = useToast()
 
 const router = useRouter()
 
@@ -87,23 +90,23 @@ const submitError = ref('')
 
 const form = ref({
   mode: 'semi',
-  dimensions: ['functional', 'api', 'security'],
+  dimensions: ['positive', 'negative', 'boundary'],
   formats: ['excel', 'json'],
 })
 
 const modes = [
   { value: 'auto', label: '自动', desc: '全自动执行，不暂停' },
   { value: 'semi', label: '半自动', desc: '关键步骤暂停等待确认' },
-  { value: 'full', label: '完整', desc: '每步暂停，逐步确认' },
+  { value: 'step', label: '完整', desc: '每步暂停，逐步确认' },
 ]
 
 const dimensions = [
-  { value: 'functional', label: '功能测试' },
-  { value: 'api', label: 'API 测试' },
-  { value: 'security', label: '安全测试' },
+  { value: 'positive', label: '正向测试' },
+  { value: 'negative', label: '负向测试' },
+  { value: 'boundary', label: '边界测试' },
+  { value: 'exception', label: '异常测试' },
   { value: 'performance', label: '性能测试' },
-  { value: 'compatibility', label: '兼容性测试' },
-  { value: 'usability', label: '易用性测试' },
+  { value: 'security', label: '安全测试' },
 ]
 
 const formats = [
@@ -138,13 +141,39 @@ async function submit() {
 
   try {
     const data = await api.upload('/pipeline/start', formData)
+    toast.success('任务已启动')
     router.push(`/pipeline/${data.pipeline_id}`)
   } catch (e) {
     submitError.value = e.message || '启动失败'
+    toast.error(`启动失败: ${e.message}`)
   } finally {
     submitting.value = false
   }
 }
+
+// 从后端加载 Pipeline 默认配置（与设置页同步）
+onMounted(async () => {
+  try {
+    const c = await api.get('/config')
+    if (c.pipeline) {
+      const pipe = c.pipeline
+      if (pipe.default_mode) form.value.mode = pipe.default_mode
+      // 解析维度：可能是 "basic"/"all" 或逗号分隔的具体维度
+      const dims = pipe.default_dimensions || 'basic'
+      if (dims === 'basic') {
+        form.value.dimensions = ['positive', 'negative', 'boundary', 'exception']
+      } else if (dims === 'all') {
+        form.value.dimensions = ['positive', 'negative', 'boundary', 'exception', 'performance', 'security']
+      } else {
+        form.value.dimensions = dims.split(',').map(s => s.trim()).filter(Boolean)
+      }
+      // 解析格式
+      if (pipe.default_formats) {
+        form.value.formats = pipe.default_formats.split(',').map(s => s.trim()).filter(Boolean)
+      }
+    }
+  } catch { /* 静默降级使用内置默认值 */ }
+})
 </script>
 
 <style scoped>

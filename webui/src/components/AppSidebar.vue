@@ -24,25 +24,22 @@
 
     <!-- Footer -->
     <div class="sidebar-footer">
-      <!-- Health indicator -->
-      <div class="health-row" :title="healthTitle">
-        <span class="health-dot" :class="`health-dot--${healthStatus}`" aria-hidden="true"></span>
-        <span class="health-text">{{ healthLabel }}</span>
-      </div>
-
-      <!-- Theme toggle -->
-      <div class="theme-toggle" role="radiogroup" aria-label="主题切换">
-        <button
-          v-for="t in themes"
-          :key="t.value"
-          class="theme-btn"
-          :class="{ 'theme-btn--active': theme === t.value }"
-          :aria-label="`主题: ${t.label}`"
-          :aria-checked="theme === t.value"
-          role="radio"
-          @click="setTheme(t.value)"
-        >{{ t.label }}</button>
-      </div>
+      <!-- Theme toggle (lightweight icon) -->
+      <button
+        class="theme-icon-btn"
+        :aria-label="`切换主题（当前：${themeLabel}）`"
+        :title="`主题：${themeLabel}`"
+        @click="cycleTheme"
+      >
+        <!-- Sun (light) -->
+        <svg v-if="resolvedTheme === 'light'" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path fill="currentColor" d="M10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0-8a1 1 0 0 1-1-1V3a1 1 0 1 1 2 0v1a1 1 0 0 1-1 1zm0 12a1 1 0 0 1-1-1v-1a1 1 0 1 1 2 0v1a1 1 0 0 1-1 1zm8-7h-1a1 1 0 1 0 0 2h1a1 1 0 1 0 0-2zM4 10a1 1 0 0 1-1 1H2a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1zm12.7-6.7a1 1 0 0 1 0 1.4l-.7.7a1 1 0 0 1-1.4-1.4l.7-.7a1 1 0 0 1 1.4 0zM5.4 15.6l-.7.7a1 1 0 0 1-1.4-1.4l.7-.7a1 1 0 0 1 1.4 1.4zm9.2 0a1 1 0 0 1 1.4-1.4l.7.7a1 1 0 0 1-1.4 1.4l-.7-.7zM5.4 5.4a1 1 0 0 1-1.4 0l-.7-.7a1 1 0 0 1 1.4-1.4l.7.7a1 1 0 0 1 0 1.4z"/>
+        </svg>
+        <!-- Moon (dark) -->
+        <svg v-else viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path fill="currentColor" d="M14.5 11a6 6 0 0 1-7.4-7.4A6 6 0 1 0 14.5 11z"/>
+        </svg>
+      </button>
     </div>
   </aside>
 </template>
@@ -50,14 +47,25 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useTheme } from '../composables/useTheme'
+import { useToast } from '../composables/useToast'
 
-const { theme, setTheme } = useTheme()
+const toast = useToast()
 
-const themes = [
-  { value: 'system', label: '自动' },
-  { value: 'light', label: '亮' },
-  { value: 'dark', label: '暗' },
-]
+const { theme, resolvedTheme, setTheme } = useTheme()
+
+const themeLabel = computed(() => {
+  const map = { system: '跟随系统', light: '亮色', dark: '暗色' }
+  return map[theme.value] || '跟随系统'
+})
+
+const themeOrder = ['light', 'dark', 'system']
+
+function cycleTheme() {
+  const idx = themeOrder.indexOf(theme.value)
+  const next = themeOrder[(idx + 1) % themeOrder.length]
+  setTheme(next)
+  toast.info(`主题已切换：${themeLabel.value}`, 2000)
+}
 
 const navItems = [
   {
@@ -86,39 +94,6 @@ const navItems = [
     icon: '<path fill="currentColor" d="M10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a7.6 7.6 0 0 0-2-1.2L12.5 1h-5l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5a7.4 7.4 0 0 0 0 2.4l-2 1.5 2 3.5 2.4-1a7.6 7.6 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.6 7.6 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.06-.4.1-.8.1-1.2z"/>',
   },
 ]
-
-// Health check
-const healthStatus = ref('unknown')
-const healthLabel = computed(() => {
-  const map = { ok: '系统正常', degraded: '部分降级', error: '连接失败', unknown: '检测中…' }
-  return map[healthStatus.value] || '检测中…'
-})
-const healthTitle = ref('')
-
-let healthTimer = null
-
-async function checkHealth() {
-  try {
-    const resp = await fetch('/health')
-    const data = await resp.json()
-    healthStatus.value = data.status === 'ok' ? 'ok' : 'degraded'
-    healthTitle.value = Object.entries(data.checks || {})
-      .map(([k, v]) => `${k}: ${v}`)
-      .join('\n')
-  } catch {
-    healthStatus.value = 'error'
-    healthTitle.value = '无法连接后端'
-  }
-}
-
-onMounted(() => {
-  checkHealth()
-  healthTimer = setInterval(checkHealth, 60000)
-})
-
-onUnmounted(() => {
-  if (healthTimer) clearInterval(healthTimer)
-})
 
 // Mobile detection (for bottom tab bar)
 const isMobile = ref(window.innerWidth < 768)
@@ -204,61 +179,30 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   padding-top: var(--space-lg);
   border-top: 1px solid var(--border-default);
   display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
+  align-items: center;
+  justify-content: flex-end;
 }
 
-.health-row {
+.theme-icon-btn {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: 0 var(--space-sm);
-}
-
-.health-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.health-dot--ok { background: var(--status-done); }
-.health-dot--degraded { background: var(--status-paused); }
-.health-dot--error { background: var(--status-error); }
-.health-dot--unknown { background: var(--text-tertiary); }
-
-.health-text {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-}
-
-.theme-toggle {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-inset);
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  padding: 2px;
-}
-
-.theme-btn {
-  flex: 1;
-  padding: var(--space-xs) var(--space-sm);
-  border: none;
-  border-radius: calc(var(--radius-md) - 2px);
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   transition: background var(--duration-fast) var(--ease-out),
               color var(--duration-fast) var(--ease-out);
 }
-
-.theme-btn:hover {
-  color: var(--text-primary);
+.theme-icon-btn:hover {
+  background: var(--bg-inset);
+  color: var(--accent);
 }
-
-.theme-btn--active {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+.theme-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ─── Mobile: bottom tab bar ─── */

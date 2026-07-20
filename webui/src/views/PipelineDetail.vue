@@ -97,6 +97,9 @@ import ArtifactList from '../components/ArtifactList.vue'
 import ArtifactPreview from '../components/ArtifactPreview.vue'
 import { useSSE } from '../composables/useSSE'
 import { api } from '../composables/useApi'
+import { useToast } from '../composables/useToast'
+
+const toast = useToast()
 
 const route = useRoute()
 const id = route.params.id
@@ -149,19 +152,21 @@ async function confirmCancel() {
   if (!confirm('确定要取消此任务？')) return
   try {
     await api.post(`/pipeline/${id}/cancel`)
+    toast.success('任务已取消')
     refreshProgress()
   } catch (e) {
-    alert(`取消失败: ${e.message}`)
+    toast.error(`取消失败: ${e.message}`)
   }
 }
 
 async function resume() {
   try {
     await api.post(`/pipeline/${id}/resume`)
+    toast.success('任务已继续')
     refreshProgress()
     sseConnect()
   } catch (e) {
-    alert(`继续失败: ${e.message}`)
+    toast.error(`继续失败: ${e.message}`)
   }
 }
 
@@ -180,8 +185,9 @@ async function downloadArtifact(a) {
   try {
     const blob = await api.download(`/pipeline/${id}/artifacts/${a.name}`)
     triggerDownload(blob, a.name)
+    toast.success('下载已开始')
   } catch (e) {
-    alert(`下载失败: ${e.message}`)
+    toast.error(`下载失败: ${e.message}`)
   }
 }
 
@@ -189,8 +195,9 @@ async function exportProject() {
   try {
     const blob = await api.download(`/pipeline/${id}/export_pytest_project`)
     triggerDownload(blob, `pytest_project_${id}.zip`)
+    toast.success('导出已开始')
   } catch (e) {
-    alert(`导出失败: ${e.message}`)
+    toast.error(`导出失败: ${e.message}`)
   }
 }
 

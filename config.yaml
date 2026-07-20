@@ -1,10 +1,10 @@
 # AI 测试用例生成系统 — 配置文件
 
 llm:
-  provider: deepseek
+  provider: custom
   api_key: ${LLM_API_KEY}
-  base_url: https://api.deepseek.com
-  model: deepseek-v4-flash
+  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+  model: qwen3.8-max-preview
   temperature: 0.3
   max_tokens: 8192
   timeout: 120

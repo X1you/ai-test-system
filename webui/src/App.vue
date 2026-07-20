@@ -5,11 +5,13 @@
     <main id="main-content" class="app-main">
       <router-view />
     </main>
+    <ToastContainer />
   </div>
 </template>
 
 <script setup>
 import AppSidebar from './components/AppSidebar.vue'
+import ToastContainer from './components/ToastContainer.vue'
 </script>
 
 <style scoped>
