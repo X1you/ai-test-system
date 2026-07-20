@@ -171,14 +171,21 @@ async def _shutdown_task_manager():
     except Exception:
         pass
 
-# ─── 启动时清理僵尸任务（重启后 running/pending 不可能还在运行）───
+# ─── 启动时恢复可续跑的 interrupted 任务（方案 B：持久化恢复）───
 @app.on_event("startup")
-async def _cleanup_stale_tasks():
+async def _cleanup_and_recover_tasks():
+    """服务重启后：
+    1. running/pending/paused → interrupted（僵尸检测）
+    2. interrupted 中有已完成步骤 + requirements 存在的 → 重建到内存（paused）
+       用户刷新页面即可看到进度并点继续，无需手动处理中断
+    """
     try:
         from db.repository import get_repository
         from db.models import Pipeline
         from db.session import session_scope
+
         with session_scope() as session:
+            # 1. 僵尸检测：running/pending/paused → interrupted
             stale = (
                 session.query(Pipeline)
                 .filter(Pipeline.status.in_(["running", "pending", "paused"]))
@@ -189,7 +196,43 @@ async def _cleanup_stale_tasks():
                 p.error = "服务重启，任务中断"
             if stale:
                 import logging
-                logging.getLogger("web").info(f"启动清理：{len(stale)} 个僵尸任务标记为 interrupted")
+                logging.getLogger("web").info(
+                    f"启动清理：{len(stale)} 个僵尸任务标记为 interrupted"
+                )
+
+        # 2. 自动恢复：interrupted 中可续跑的重建到内存
+        try:
+            tm = get_task_manager()
+            from pathlib import Path as _Path
+
+            with session_scope() as session:
+                recoverable = (
+                    session.query(Pipeline)
+                    .filter(Pipeline.status == "interrupted")
+                    .all()
+                )
+            recovered = 0
+            for p in recoverable:
+                # 有已完成步骤 + requirements 文件仍存在 → 重建
+                req_ok = bool(
+                    p.requirements_path and _Path(p.requirements_path).exists()
+                )
+                if not req_ok:
+                    continue
+                steps = get_repository().get_completed_step_ids(p.id)
+                if not steps:
+                    continue  # 无已完成步骤，无需恢复（从头跑即可重新启动）
+                if p.id not in tm._tasks:
+                    tm.rebuild_task_from_db(p.id)
+                    recovered += 1
+            if recovered:
+                import logging
+                logging.getLogger("web").info(
+                    f"持久化恢复：{recovered} 个 interrupted 任务已重建到内存（paused）"
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger("web").warning(f"任务恢复失败（不影响启动）: {e}")
     except Exception as e:
         import logging
         logging.getLogger("web").error(f"启动清理失败: {e}", exc_info=True)
