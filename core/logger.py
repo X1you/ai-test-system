@@ -31,8 +31,10 @@ class _PrintLogger:
     def __init__(self, name: str):
         self.name = name
 
-    def _log(self, level: str, event: str, **kwargs: Any):
-        parts = [f"[{level}] [{self.name}] {event}"]
+    def _log(self, _level: str, event: str, **kwargs: Any):
+        # ★ 位置参数用 _level 而非 level，避免调用方传 level= 业务字段时冲突
+        # （如 pipeline.py: logger.info("step_log", level="WARN", ...) ）
+        parts = [f"[{_level}] [{self.name}] {event}"]
         for k, v in kwargs.items():
             parts.append(f"{k}={v}")
         print(" ".join(parts), file=sys.stderr)
