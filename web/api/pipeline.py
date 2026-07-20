@@ -303,10 +303,24 @@ async def resume_pipeline(
     pipeline_id: str,
     file: UploadFile = None,
 ):
-    """断点继续（可上传已执行结果的 Excel 覆盖 output 目录中的 testcases.xlsx）。"""
-    task = _require_task(pipeline_id)
+    """断点继续（可上传已执行结果的 Excel 覆盖 output 目录中的 testcases.xlsx）。
 
-    if task.status not in ("paused", "done"):
+    支持状态：paused / interrupted / done。
+    interrupted 任务（服务重启导致）会先从 DB 重建内存 task 再继续。
+    """
+    tm = get_task_manager()
+    task = tm.get_task(pipeline_id)
+
+    # interrupted 任务（重启后内存无 task）→ 从 DB 重建
+    if task is None:
+        task = tm.rebuild_task_from_db(pipeline_id)
+        if task is None:
+            raise HTTPException(
+                404,
+                "Pipeline 不存在，或需求文件已被清理无法恢复",
+            )
+
+    if task.status not in ("paused", "interrupted", "done"):
         raise HTTPException(400, f"当前状态不允许继续: {task.status}")
 
     # 如果有新上传的 Excel，覆盖旧文件

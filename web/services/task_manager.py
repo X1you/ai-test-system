@@ -79,6 +79,60 @@ class TaskManager:
         """获取任务"""
         return self._tasks.get(pipeline_id)
 
+    def rebuild_task_from_db(self, pipeline_id: str) -> PipelineTask | None:
+        """从 DB 重建 interrupted 任务的内存 PipelineTask（方案 A）。
+
+        场景：服务重启后 DB 中 interrupted/paused 的任务不在内存，
+              用户点「继续执行」时需要先重建内存 task 才能 resume。
+
+        重建逻辑：
+          1. 从 DB Pipeline 表读 requirements_path / mode / dimensions / formats / output_dir
+          2. 校验 requirements_path 仍存在（临时上传文件可能已清）
+          3. 从 DB PipelineStep 读已完成的 step ids（断点续跑依据）
+          4. 构造 PipelineTask 注入内存 _tasks，但不启动执行（由 resume_background 负责）
+
+        Args:
+            pipeline_id: Pipeline ID
+
+        Returns:
+            重建的 PipelineTask，DB 无记录或 requirements_path 丢失返回 None
+        """
+        from db.repository import get_repository
+
+        repo = get_repository()
+        p = repo.get_pipeline(pipeline_id)
+        if p is None:
+            return None
+
+        # 校验需求文件仍存在（临时上传文件可能被清理）
+        if not p.requirements_path or not Path(p.requirements_path).exists():
+            return None
+
+        # 加载当前配置（config 不持久化在 Pipeline 表，动态加载即可）
+        from core.config_loader import load_config
+        config = load_config()
+
+        # 读 DB 已完成步骤（断点续跑依据）
+        completed_steps = repo.get_completed_step_ids(pipeline_id)
+
+        task = PipelineTask(
+            pipeline_id=p.id,
+            output_dir=p.output_dir or str(self.output_base / p.id),
+            config=config,
+            requirements_path=p.requirements_path,
+            mode=p.mode or "semi",
+            dimensions=p.dimensions or "basic",
+            formats=p.formats or "excel",
+        )
+        # 恢复 DB 中已完成的步骤（断点续跑）
+        task.completed_steps = list(completed_steps)
+        # 保留 DB 原始状态（interrupted/paused/cancelled 等），由 resume 端点校验
+        task.status = p.status or "interrupted"
+        task.started_at = p.started_at.isoformat() if p.started_at else ""
+
+        self._tasks[pipeline_id] = task
+        return task
+
     def list_tasks(self) -> list:
         """列出所有任务
 

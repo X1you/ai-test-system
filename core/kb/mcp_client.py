@@ -16,6 +16,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# 结构化日志 — structlog 优先，降级到 print（与 core.logger 一致）
+try:
+    import structlog
+    _logger = structlog.get_logger("core.kb.mcp_client")
+except ImportError:
+    class _FallbackLogger:
+        def _log(self, level, event, **kw):
+            import sys
+            parts = [f"[{level}] [core.kb.mcp_client] {event}"]
+            parts.extend(f"{k}={v}" for k, v in kw.items())
+            print(" ".join(parts), file=sys.stderr)
+        def debug(self, e, **k): self._log("DEBUG", e, **k)
+        def info(self, e, **k): self._log("INFO", e, **k)
+        def warning(self, e, **k): self._log("WARN", e, **k)
+        def error(self, e, **k): self._log("ERROR", e, **k)
+    _logger = _FallbackLogger()
+
 # ============================================================================
 # 配置
 # ============================================================================
@@ -103,8 +120,10 @@ class ObsidianAPIClient:
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return None
+            _logger.warning("obsidian_api_http_error", method=method, path=path, code=e.code, reason=str(e.reason))
             raise
-        except Exception:
+        except Exception as e:
+            _logger.warning("obsidian_api_connection_failed", method=method, path=path, error=str(e))
             raise
 
     def search(self, query: str, context_length: int = 200) -> list[dict]:
@@ -117,15 +136,15 @@ class ObsidianAPIClient:
             })
             if result is not None:
                 return result.get('results', [])
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.warning("obsidian_search_context_failed", query=query, error=str(e))
         # Fallback: /search 端点
         try:
             result = self._request("POST", "/search", {"query": query})
             if result is not None:
                 return result.get('results', [])
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.warning("obsidian_search_fallback_failed", query=query, error=str(e))
         return []
 
     def is_available(self) -> bool:
@@ -141,7 +160,8 @@ class ObsidianAPIClient:
                 # 探测用短 timeout；无 key 请求（部分配置不需要 key）
                 self._request("GET", "/", timeout=0.5)
                 return True
-            except Exception:
+            except Exception as e:
+                _logger.debug("obsidian_api_probe_failed", base=base, error=str(e))
                 continue
         return False
 
@@ -266,9 +286,9 @@ class MCPClient:
         try:
             for cat_path in CATEGORY_PATHS.values():
                 (self.vault_path / cat_path).mkdir(parents=True, exist_ok=True)
-        except OSError:
+        except OSError as e:
             # vault 路径不存在或不可写 — 延迟到实际使用时报错
-            pass
+            _logger.warning("kb_vault_dir_create_failed", vault_path=str(self.vault_path), error=str(e))
 
     def _generate_id(self, content: str) -> str:
         """生成唯一ID"""
@@ -303,8 +323,9 @@ class MCPClient:
                         if ':' in line:
                             key, value = line.split(':', 1)
                             frontmatter[key.strip()] = value.strip()
-                except Exception:
+                except Exception as e:
                     # yaml.YAMLError 等格式损坏的 frontmatter → 安全降级为空 dict
+                    _logger.debug("yaml_frontmatter_parse_failed", filepath=getattr(self, '_current_filepath', ''), error=str(e))
                     frontmatter = {}
         return frontmatter
 
@@ -359,14 +380,17 @@ class MCPClient:
             file_size = full_path.stat().st_size
             if file_size > self.MAX_READ_FILE_SIZE:
                 # 大文件跳过，避免 OOM（search 层会静默跳过）
+                _logger.warning("kb_file_skipped_too_large", filepath=filepath, size=file_size, limit=self.MAX_READ_FILE_SIZE)
                 return None
-        except OSError:
+        except OSError as e:
+            _logger.warning("kb_file_stat_failed", filepath=filepath, error=str(e))
             return None
 
         try:
             with open(full_path, encoding='utf-8') as f:
                 content = f.read()
-        except OSError:
+        except OSError as e:
+            _logger.warning("kb_file_read_failed", filepath=filepath, error=str(e))
             return None
 
         return {
@@ -438,7 +462,8 @@ class MCPClient:
                             if hit_path.startswith(str(self.vault_path)):
                                 hit_path = str(Path(hit_path).relative_to(self.vault_path))
                             api_results.add(hit_path)
-            except Exception:
+            except Exception as e:
+                _logger.warning("kb_obsidian_api_search_failed", query=query, error=str(e))
                 api_results = None  # API 出错，降级到全量遍历
 
         # --- Layer 2+3: 文件遍历（带标签匹配）---
@@ -561,14 +586,16 @@ class MCPClient:
         # 写入文件
         try:
             full_path = self._safe_path(filepath)
-        except ValueError:
+        except ValueError as e:
+            _logger.warning("kb_create_path_blocked", filepath=filepath, error=str(e))
             return False
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-        except OSError:
+        except OSError as e:
+            _logger.error("kb_create_write_failed", filepath=filepath, error=str(e))
             return False
 
         item.filepath = filepath
@@ -581,7 +608,8 @@ class MCPClient:
         """
         try:
             full_path = self._safe_path(filepath)
-        except ValueError:
+        except ValueError as e:
+            _logger.warning("kb_update_path_blocked", filepath=filepath, error=str(e))
             return False
         if not full_path.exists():
             return False
@@ -589,7 +617,8 @@ class MCPClient:
         try:
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-        except OSError:
+        except OSError as e:
+            _logger.error("kb_update_write_failed", filepath=filepath, error=str(e))
             return False
 
         return True
@@ -601,7 +630,8 @@ class MCPClient:
         """
         try:
             full_path = self._safe_path(filepath)
-        except ValueError:
+        except ValueError as e:
+            _logger.warning("kb_delete_path_blocked", filepath=filepath, error=str(e))
             return False
         if not full_path.exists():
             return False

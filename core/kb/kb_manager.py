@@ -24,6 +24,22 @@ try:
 except ImportError:
     OPENPYXL_AVAILABLE = False
 
+# 结构化日志 — structlog 优先，降级到 print（与 core.logger 一致）
+try:
+    import structlog
+    _logger = structlog.get_logger("core.kb.kb_manager")
+except ImportError:
+    class _FallbackLogger:
+        def _log(self, level, event, **kw):
+            parts = [f"[{level}] [core.kb.kb_manager] {event}"]
+            parts.extend(f"{k}={v}" for k, v in kw.items())
+            print(" ".join(parts), file=sys.stderr)
+        def debug(self, e, **k): self._log("DEBUG", e, **k)
+        def info(self, e, **k): self._log("INFO", e, **k)
+        def warning(self, e, **k): self._log("WARN", e, **k)
+        def error(self, e, **k): self._log("ERROR", e, **k)
+    _logger = _FallbackLogger()
+
 
 # ============================================================================
 # 配置
@@ -235,12 +251,14 @@ class ObsidianClient:
                 "contextLength": context_length
             })
             return result.get('results', []) if result else []
-        except Exception:
+        except Exception as e:
+            _logger.debug("obsidian_search_context_failed", query=query, error=str(e))
             # Fallback 到 /search
             try:
                 result = self._request("POST", "/search", {"query": query})
                 return result.get('results', []) if result else []
-            except Exception:
+            except Exception as e2:
+                _logger.debug("obsidian_search_fallback_failed", query=query, error=str(e2))
                 return []
 
     def is_available(self) -> bool:
@@ -248,7 +266,8 @@ class ObsidianClient:
         try:
             result = self._request("GET", "/")
             return result is not None
-        except Exception:
+        except Exception as e:
+            _logger.debug("obsidian_api_unavailable", error=str(e))
             return False
 
 
@@ -304,12 +323,11 @@ class KnowledgeBaseManager:
                         if ':' in line:
                             key, value = line.split(':', 1)
                             frontmatter[key.strip()] = value.strip()
-                except Exception:
+                except Exception as e:
                     # yaml.YAMLError 等格式损坏的 frontmatter → 安全降级为空 dict
+                    _logger.debug("yaml_frontmatter_parse_failed", error=str(e))
                     frontmatter = {}
         return frontmatter
-
-    def _format_obsidian_note(self, item: KnowledgeItem) -> str:
         """格式化为 Obsidian Note (YAML frontmatter + wikilinks)"""
         now = datetime.now().isoformat()
 

@@ -13,7 +13,7 @@
           @click="confirmCancel"
         >取消</button>
         <button
-          v-if="progress?.status === 'paused'"
+          v-if="progress?.status === 'paused' || progress?.status === 'interrupted'"
           class="btn-action btn-action--accent"
           @click="resume"
         >继续执行</button>
