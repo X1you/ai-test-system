@@ -86,6 +86,8 @@ class PipelineTask:
     llm_stats: dict = field(default_factory=dict)
     error: str = ""
     started_at: str = ""
+    # 知识库回灌统计（Step5/Step7 完成后填充）
+    kb_ingest: dict = field(default_factory=dict)
     _thread: threading.Thread | None = None
     _cancel_flag: bool = False
     # ★ 修复 TC-002：logs 读写锁，保护 append+切片复合操作的原子性
@@ -250,6 +252,12 @@ class PipelineTask:
         if pipeline and pipeline.llm:
             self.llm_stats = pipeline.llm.stats
 
+        # 提取知识库回灌统计（Step5/Step7 完成后存入 state）
+        kb_cases = state.get("ingested_cases_count", 0)
+        kb_pitfalls = state.get("ingested_pitfalls_count", 0)
+        if kb_cases or kb_pitfalls:
+            self.kb_ingest = {"cases": kb_cases, "pitfalls": kb_pitfalls}
+
         # 持久化最终状态到 DB
         self._persist_pipeline(self.status)
 
@@ -352,6 +360,7 @@ class PipelineTask:
             "current_step": current_step,
             "steps": self._build_steps_view(),
             "logs": logs_snapshot,
+            "kb_ingest": self.kb_ingest or {"cases": 0, "pitfalls": 0},
             "llm_stats": self.llm_stats,
             "error": self.error,
             "started_at": self.started_at,
