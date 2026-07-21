@@ -46,10 +46,6 @@ DEFAULT_CONFIG = {
         "timeout": 120,
         "retry": 2,
     },
-    "knowledge_base": {
-        "enabled": True,
-        "vault_path": str(Path.home() / "Documents" / "test-interview-kb"),
-    },
     "pipeline": {
         "default_mode": "semi",
         "default_dimensions": "basic",
@@ -168,9 +164,6 @@ def load_config(config_path: str | None = None) -> dict:
     config = _expand_vars(config)
 
     # 6. 路径展开
-    config["knowledge_base"]["vault_path"] = _expand_path(
-        config["knowledge_base"].get("vault_path", "")
-    )
     config["output"]["dir"] = _expand_path(config["output"].get("dir", ""))
 
     return config

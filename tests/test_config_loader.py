@@ -31,7 +31,6 @@ class TestDefaultConfig:
         from core.config_loader import DEFAULT_CONFIG
 
         assert "llm" in DEFAULT_CONFIG
-        assert "knowledge_base" in DEFAULT_CONFIG
         assert "pipeline" in DEFAULT_CONFIG
         assert "output" in DEFAULT_CONFIG
         assert "integrations" in DEFAULT_CONFIG

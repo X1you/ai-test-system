@@ -7,7 +7,7 @@ Endpoints:
   PUT  /api/config  — 更新安全配置字段（pipeline / output / llm）
 
 注：知识库配置已迁移到 DB（DynamicKBManager），通过 /knowledge/update_config 管理，
-不再走本端点。GET 仍返回 knowledge_base（只读，兼容旧消费者）。
+不再走本端点。GET 返回的 knowledge_base 字段改从 DB 读取（只读，兼容旧消费者）。
 """
 
 from pathlib import Path
@@ -96,7 +96,18 @@ async def get_config():
     else:
         masked = "未配置"
 
-    kb = config.get("knowledge_base", {})
+    # 知识库配置改从 DB 读取（与知识库页面/健康检查同源）
+    try:
+        from core.kb.dynamic_kb_manager import get_dynamic_kb_manager
+
+        _mgr = get_dynamic_kb_manager()
+        _kb_cfg = _mgr.get_config() or {}
+        kb = {
+            "enabled": _mgr.is_configured(),
+            "vault_path": _kb_cfg.get("vault_path", "N/A"),
+        }
+    except Exception:
+        kb = {"enabled": False, "vault_path": "N/A"}
     pipe = config.get("pipeline", {})
 
     errors = validate_config(config)

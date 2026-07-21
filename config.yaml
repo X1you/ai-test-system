@@ -10,10 +10,7 @@ llm:
   timeout: 120
   retry: 2
 
-knowledge_base:
-  enabled: true
-  vault_path: ~/Documents/test-interview-kb
-
+# 注：知识库配置已迁移到 DB（通过知识库页面管理），不再使用 config.yaml
 pipeline:
   default_mode: semi
   default_dimensions: basic
