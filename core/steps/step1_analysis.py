@@ -10,8 +10,11 @@ import re
 from pathlib import Path
 
 from core.llm_client import LLMError
+from core.logger import get_logger
 from core.prompt_loader import build_kb_context, load_prompt, render
 from core.steps.base import BaseStep, StepResult
+
+_logger = get_logger("core.steps.step1")
 
 
 class Step1Analysis(BaseStep):
@@ -156,7 +159,8 @@ class Step1Analysis(BaseStep):
             if len(text) > 0 and replace_chars / len(text) > 0.30:
                 return None
             return text
-        except Exception:
+        except Exception as e:
+            _logger.warning("step1_safe_read_fallback_failed", error=str(e), size=len(raw))
             return None
 
     @staticmethod

@@ -20,8 +20,11 @@ import sys
 from pathlib import Path
 
 from core.llm_client import LLMError
+from core.logger import get_logger
 from core.prompt_loader import load_prompt, render
 from core.steps.base import BaseStep, StepResult
+
+_logger = get_logger("core.steps.step4")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_GEN_EXCEL = PROJECT_ROOT / "scripts" / "generate_excel.py"
@@ -634,6 +637,7 @@ class Step4Generate(BaseStep):
             else:
                 self.log(f"XMind 生成失败: {result.stderr[:200]}", "WARN")
         except Exception as e:
+            _logger.warning("step4_xmind_generate_failed", dimensions=dimensions, error=str(e))
             self.log(f"XMind 生成异常: {e}", "WARN")
 
     # ─── 辅助方法 ───
@@ -671,7 +675,8 @@ class Step4Generate(BaseStep):
             count = (ws.max_row - 1) if ws else 0
             wb.close()
             return max(count, 0)
-        except Exception:
+        except Exception as e:
+            _logger.warning("step4_count_cases_failed", path=str(xlsx_path), error=str(e))
             return 0
 
     @staticmethod
@@ -698,5 +703,6 @@ class Step4Generate(BaseStep):
                     filled += 1
             wb.close()
             return filled > 0
-        except Exception:
+        except Exception as e:
+            _logger.warning("step4_has_results_failed", path=str(xlsx_path), error=str(e))
             return False

@@ -78,8 +78,12 @@ def record_llm_call(provider: str, model: str, duration_seconds: float, success:
         LLM_REQUEST_TOTAL.labels(
             provider=provider, status="success" if success else "error"
         ).inc()
-    except Exception:
-        pass
+    except Exception as e:
+        # 指标记录失败不应阻断业务，但需留痕便于排查（指标系统自身的异常）
+        import logging
+        logging.getLogger("core.metrics").debug(
+            "metrics_record_llm_call_failed: %s", e
+        )
 
 
 def record_fallback(from_provider: str, to_provider: str):
@@ -91,8 +95,11 @@ def record_fallback(from_provider: str, to_provider: str):
         LLM_PROVIDER_FALLBACK.labels(
             from_provider=from_provider, to_provider=to_provider
         ).inc()
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("core.metrics").debug(
+            "metrics_record_fallback_failed: %s", e
+        )
 
 
 def is_metrics_enabled() -> bool:

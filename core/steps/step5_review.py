@@ -6,8 +6,11 @@ Step 5: 用例评审（AI 步骤）
 """
 
 from core.llm_client import LLMError
+from core.logger import get_logger
 from core.prompt_loader import build_kb_context, load_prompt, render
 from core.steps.base import BaseStep, StepResult
+
+_logger = get_logger("core.steps.step5")
 
 
 class Step5Review(BaseStep):
@@ -83,7 +86,8 @@ class Step5Review(BaseStep):
                 response = self.llm.chat(retry_prompt)
             except LLMError:
                 self.log("  重跑失败，使用原始输出", "WARN")
-            except Exception:
+            except Exception as e:
+                _logger.warning("step5_retry_unexpected_error", error=str(e))
                 self.log("  重跑异常，使用原始输出", "WARN")
 
         # 4. 写入文件

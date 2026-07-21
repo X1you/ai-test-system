@@ -305,8 +305,9 @@ def _run_startup_tasks():
         threading.Thread(
             target=_warmup_kb_cache, daemon=True, name="kb-cache-warmup"
         ).start()
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("web").debug("kb_cache_warmup_failed: %s", e)
 
 
 def _run_shutdown_tasks():
@@ -316,8 +317,9 @@ def _run_shutdown_tasks():
     """
     try:
         get_task_manager().shutdown()
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("web").warning("task_manager_shutdown_failed: %s", e)
 
 # ─── 全局异常处理（Phase 6）───
 

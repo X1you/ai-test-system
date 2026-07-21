@@ -41,8 +41,11 @@ def _kb_subprocess_env() -> dict:
         cfg = get_dynamic_kb_manager().get_config()
         if cfg and cfg.get("vault_path"):
             env["OBSIDIAN_VAULT"] = cfg["vault_path"]
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("web.api.knowledge").debug(
+            "kb_config_read_failed: %s", e
+        )
     return env
 
 

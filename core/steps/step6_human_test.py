@@ -8,7 +8,10 @@ Step 6: 人工执行测试（人工步骤）
 
 from pathlib import Path
 
+from core.logger import get_logger
 from core.steps.base import BaseStep, StepResult
+
+_logger = get_logger("core.steps.step6")
 
 
 class Step6HumanTest(BaseStep):
@@ -56,8 +59,9 @@ class Step6HumanTest(BaseStep):
                     import re
                     m = re.search(r"(\d+) 条用例", r.stdout)
                     return int(m.group(1)) if m else 0
-        except Exception:
-            pass
+        except Exception as e:
+            # 引导生成失败不阻塞，用户仍可手动执行测试
+            _logger.warning("step6_guide_generation_failed", xlsx_path=xlsx_path, error=str(e))
         return 0
 
     @staticmethod

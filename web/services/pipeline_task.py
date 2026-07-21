@@ -140,8 +140,13 @@ class PipelineTask:
         try:
             bus = get_event_bus()
             bus.publish_sync(self.pipeline_id, {"type": event_type, "data": data})
-        except Exception:
-            pass
+        except Exception as e:
+            # 发布失败静默忽略 — EventBus 故障不应阻塞 Pipeline 主流程，但需留痕
+            import logging
+            logging.getLogger("web.services.pipeline_task").debug(
+                "event_publish_failed: %s (pipeline_id=%s, event=%s)",
+                e, self.pipeline_id, event_type,
+            )
 
     def _run(self):
         """实际执行 — 首次运行。"""

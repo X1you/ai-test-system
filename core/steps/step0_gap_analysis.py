@@ -16,8 +16,11 @@ import re
 from pathlib import Path
 
 from core.llm_client import LLMError
+from core.logger import get_logger
 from core.prompt_loader import load_prompt, render
 from core.steps.base import BaseStep, StepResult
+
+_logger = get_logger("core.steps.step0")
 
 
 class Step0GapAnalysis(BaseStep):
@@ -39,6 +42,7 @@ class Step0GapAnalysis(BaseStep):
         try:
             return self._run_inner(**kwargs)
         except Exception as e:
+            _logger.warning("step0_degraded", error=str(e), gap_count=0)
             self.log(f"⚠️ Step 0 异常降级: {e}，gap_count 置 0，继续后续步骤", "WARN")
             # 写入降级报告（便于用户知晓扫描未完成）
             try:
@@ -48,8 +52,9 @@ class Step0GapAnalysis(BaseStep):
                     "> 扫描过程中发生异常，本次未完成。后续 Step 1 仍会正常执行。\n"
                     f"> 异常信息: {e}\n\nGAP_COUNT: 0\n",
                 )
-            except Exception:
-                pass  # 连降级报告都写不进去也别再抛
+            except Exception as write_err:
+                # 连降级报告都写不进去也别再抛
+                _logger.error("step0_fallback_report_write_failed", error=str(write_err))
             return StepResult(
                 ok=True,  # ★ 关键：降级不算失败，不阻断主流程
                 data={"gap_count": 0, "degraded": True, "error": str(e)},
@@ -154,7 +159,9 @@ class Step0GapAnalysis(BaseStep):
             if len(text) > 0 and replace_chars / len(text) > 0.30:
                 return None
             return text
-        except Exception:
+        except Exception as e:
+            # 极端情况（内存不足 / 底层错误）—— 实际几乎不可达，但必须兜底
+            _logger.warning("step0_safe_read_fallback_failed", error=str(e), size=len(raw))
             return None
 
     @staticmethod

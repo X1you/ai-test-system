@@ -10,9 +10,12 @@ LLM 调用缓存层 — 幂等 Prompt 结果缓存
 """
 
 import hashlib
+import logging
 import sqlite3
 import threading
 import time
+
+_logger = logging.getLogger("core.llm_cache")
 
 
 class LLMCache:
@@ -99,8 +102,8 @@ class LLMCache:
             row = cursor.fetchone()
             if row and now - row[1] < self._ttl:
                 return row[0]
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.debug("llm_cache_read_failed: %s", e)
         finally:
             if conn is not None:
                 conn.close()
@@ -134,8 +137,8 @@ class LLMCache:
                 (key, response, now),
             )
             conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.debug("llm_cache_read_failed: %s", e)
         finally:
             if conn is not None:
                 conn.close()
@@ -150,8 +153,8 @@ class LLMCache:
                 conn = sqlite3.connect(self._db_path)
                 conn.execute("DELETE FROM llm_cache")
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.debug("llm_cache_clear_failed: %s", e)
             finally:
                 if conn is not None:
                     conn.close()
