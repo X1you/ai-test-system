@@ -49,8 +49,13 @@ _SessionFactory: sessionmaker | None = None
 
 
 def _configure_sqlite_pragma(db_path: Path, engine: Engine):
-    """配置 SQLite PRAGMA：WAL 模式 + 外键约束"""
-    if "sqlite" not in str(db_path):
+    """配置 SQLite PRAGMA：WAL 模式 + 外键约束
+
+    仅对 SQLite 生效（db_path 以 .db 结尾或路径含 sqlite 时应用）。
+    """
+    # db_path 是文件路径（如 /data/app.db），用后缀和路径名判断是否 SQLite
+    path_str = str(db_path).lower()
+    if not (path_str.endswith(".db") or path_str.endswith(".sqlite") or "sqlite" in path_str):
         return
 
     @event.listens_for(engine, "connect")
@@ -62,6 +67,33 @@ def _configure_sqlite_pragma(db_path: Path, engine: Engine):
         cursor.close()
 
 
+def _is_sqlite(url: str) -> bool:
+    """判断是否 SQLite 数据库"""
+    return url.startswith("sqlite")
+
+
+def _build_engine_kwargs(url: str) -> dict:
+    """根据数据库类型构建 engine 参数。
+
+    SQLite: StaticPool + check_same_thread=False（单文件多线程）
+    PostgreSQL（未来切换）: QueuePool 默认 + pool_pre_ping + pool_recycle，
+        这两个参数解决长连接断线问题（数据库侧 idle_timeout / 云数据库
+        主动断连后连接池里的死连接），SQLite 不需要也不兼容 pool_recycle。
+    """
+    kwargs: dict = {"echo": False}
+    if _is_sqlite(url):
+        # SQLite 单文件：StaticPool 保证多线程共用同一原生连接
+        from sqlalchemy.pool import StaticPool
+
+        kwargs["poolclass"] = StaticPool
+        kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        # PostgreSQL / MySQL 等网络数据库：启用连接健康检查 + 定期回收
+        kwargs["pool_pre_ping"] = True  # 借出前 ping，剔除死连接
+        kwargs["pool_recycle"] = 3600  # 连接最大存活 1 小时（< 服务端 idle_timeout）
+    return kwargs
+
+
 def get_engine() -> Engine:
     """获取/创建全局同步 Engine"""
     global _engine
@@ -69,13 +101,8 @@ def get_engine() -> Engine:
         db_path = _get_db_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        url = f"sqlite:///{db_path}"
-        _engine = create_engine(
-            url,
-            echo=False,
-            # SQLite 需要使用 StaticPool 以支持多线程
-            connect_args={"check_same_thread": False},
-        )
+        url = _get_database_url()
+        _engine = create_engine(url, **_build_engine_kwargs(url))
         _configure_sqlite_pragma(db_path, _engine)
     return _engine
 
