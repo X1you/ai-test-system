@@ -13,6 +13,7 @@ Track B 完整版将增加：缓存层、成本核算、Rate Limiting。
 
 
 from core.llm_client import LLMClient, LLMError
+from core.metrics import record_fallback, record_llm_call
 
 
 class LLMGateway:
@@ -60,6 +61,8 @@ class LLMGateway:
                 )
                 if i > 0:
                     self._stats["failovers"] += 1
+                    # 记录 Prometheus fallback 指标（上一个失败的 provider → 当前成功的）
+                    record_fallback(providers[i - 1].provider, provider_name)
                 return result
             except Exception as e:
                 last_error = e
@@ -79,6 +82,8 @@ class LLMGateway:
         **kwargs,
     ) -> str:
         """调用单个 Provider — 直接使用原生异步调用"""
+        import time
+
         provider_name = provider.provider
         self._stats["provider_calls"][provider_name] = (
             self._stats["provider_calls"].get(provider_name, 0) + 1
@@ -86,7 +91,21 @@ class LLMGateway:
         self._stats["total_calls"] += 1
 
         # 直接使用 async_chat 避免 asyncio.to_thread 线程切换开销
-        result = await provider.async_chat(prompt, system=system)
+        start = time.monotonic()
+        try:
+            result = await provider.async_chat(prompt, system=system)
+            # 记录成功调用的耗时指标（异常安全，不影响返回值）
+            record_llm_call(
+                provider_name, provider.model,
+                time.monotonic() - start, success=True,
+            )
+        except Exception:
+            # 失败也记录耗时和状态，便于观测错误请求的延迟
+            record_llm_call(
+                provider_name, provider.model,
+                time.monotonic() - start, success=False,
+            )
+            raise
 
         stats = provider.stats
         self._stats["total_tokens"] += stats.get("total_tokens", 0)

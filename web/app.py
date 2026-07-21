@@ -54,10 +54,31 @@ except ImportError:
 
 # ─── FastAPI 应用 ───
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理（替代已废弃的 @app.on_event）。
+
+    startup 阶段（yield 之前）：
+      1. JWT 密钥安全校验
+      2. 管理员账户初始化
+      3. 僵尸任务检测 + interrupted 恢复
+      4. KB 缓存后台预热
+    shutdown 阶段（yield 之后）：
+      清理 TaskManager 线程池，防止 ThreadPoolExecutor 资源泄漏
+    """
+    _run_startup_tasks()
+    yield
+    _run_shutdown_tasks()
+
+
 app = FastAPI(
     title="AI 测试用例生成系统",
     description="从需求到测试报告的全流程自动化",
     version=APP_VERSION,
+    lifespan=lifespan,
 )
 
 # 静态文件
@@ -157,6 +178,26 @@ try:
 except ImportError:
     pass  # slowapi 未安装时跳过
 
+# ─── Prometheus 可观测性（/metrics 端点）───
+# instrumentator 自动暴露 GET /metrics（Prometheus exposition 格式），
+# 记录 HTTP 请求维度指标（延迟/状态码/路径）。
+# /metrics 端点豁免 JWT 认证（Prometheus 抓取不带 token，靠网络隔离保护）。
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator(
+        should_group_status_codes=True,
+        should_ignore_untemplated=True,
+        excluded_handlers=["/metrics", "/health"],  # 不采集自身和健康检查
+    ).instrument(app).expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=False,  # 不出现在 /docs OpenAPI 中
+        tags=["monitoring"],
+    )
+except ImportError:
+    pass  # prometheus-fastapi-instrumentator 未安装时跳过
+
 # ─── 结构化日志中间件（Phase 6）───
 try:
     from web.middleware.logging import LoggingMiddleware, configure_logging
@@ -166,70 +207,43 @@ try:
 except ImportError:
     pass  # structlog 未安装时跳过
 
-# ─── KB 缓存预热（后台异步，不阻塞启动）───
-# 首次 status/search 请求要构建单例 + 全量遍历 Vault（~5s），
-# 启动时后台预热，用户访问时永远是缓存命中（<1ms）。
-try:
-    import threading
-
-    def _warmup_kb_cache():
-        try:
-            from web.services.kb_cache import get_status
-            get_status()  # 触发单例构建 + status 缓存填充
-        except Exception:
-            pass  # 预热失败不影响启动，首次请求时会重试
-
-    threading.Thread(target=_warmup_kb_cache, daemon=True, name="kb-cache-warmup").start()
-except Exception:
-    pass
+# ─── 应用生命周期：startup / shutdown（lifespan 上下文管理器调用）───
 
 
-# ─── 应用关闭时清理 TaskManager 线程池（防止资源泄漏）───
-@app.on_event("shutdown")
-async def _shutdown_task_manager():
-    try:
-        get_task_manager().shutdown()
-    except Exception:
-        pass
+def _run_startup_tasks():
+    """应用启动任务（由 lifespan 调用）。
 
-# ─── 启动时恢复可续跑的 interrupted 任务（方案 B：持久化恢复）───
-@app.on_event("startup")
-async def _cleanup_and_recover_tasks():
-    """服务重启后：
     1. JWT 密钥安全校验（生产环境弱密钥拒绝启动）
     2. 确保管理员账户存在（首次启动自动创建）
-    3. running/pending/paused → interrupted（僵尸检测）
-    4. interrupted 中有已完成步骤 + requirements 存在的 → 重建到内存（paused）
-       用户刷新页面即可看到进度并点继续，无需手动处理中断
+    3. 僵尸任务检测 + interrupted 恢复
+    4. KB 缓存后台预热（不阻塞启动）
     """
-    # JWT 密钥校验（弱密钥/生产环境缺失会 SystemExit）
+    import logging
+
+    logger = logging.getLogger("web")
+
+    # 1. JWT 密钥校验（弱密钥/生产环境缺失会 SystemExit）
     from web.middleware.auth import validate_secret_on_startup
 
     validate_secret_on_startup()
 
-    # 确保管理员账户存在（幂等，仅首次创建）
+    # 2. 确保管理员账户存在（幂等，仅首次创建）
     try:
         from web.services.user_service import create_admin_if_not_exists
 
-        created = create_admin_if_not_exists()
-        if created:
-            import logging
-
-            logging.getLogger("web").info(
-                "已创建默认管理员账户 admin/admin123（请尽快修改密码）"
-            )
+        if create_admin_if_not_exists():
+            logger.info("已创建默认管理员账户 admin/admin123（请尽快修改密码）")
     except Exception as e:
-        import logging
+        logger.warning(f"管理员账户初始化失败（不影响启动）: {e}")
 
-        logging.getLogger("web").warning(f"管理员账户初始化失败（不影响启动）: {e}")
-
+    # 3. 僵尸检测 + 任务恢复
     try:
         from db.repository import get_repository
         from db.models import Pipeline
         from db.session import session_scope
 
         with session_scope() as session:
-            # 1. 僵尸检测：running/pending/paused → interrupted
+            # running/pending/paused → interrupted
             stale = (
                 session.query(Pipeline)
                 .filter(Pipeline.status.in_(["running", "pending", "paused"]))
@@ -239,12 +253,9 @@ async def _cleanup_and_recover_tasks():
                 p.status = "interrupted"
                 p.error = "服务重启，任务中断"
             if stale:
-                import logging
-                logging.getLogger("web").info(
-                    f"启动清理：{len(stale)} 个僵尸任务标记为 interrupted"
-                )
+                logger.info(f"启动清理：{len(stale)} 个僵尸任务标记为 interrupted")
 
-        # 2. 自动恢复：interrupted 中可续跑的重建到内存
+        # interrupted 中可续跑的重建到内存
         try:
             tm = get_task_manager()
             from pathlib import Path as _Path
@@ -257,7 +268,6 @@ async def _cleanup_and_recover_tasks():
                 )
             recovered = 0
             for p in recoverable:
-                # 有已完成步骤 + requirements 文件仍存在 → 重建
                 req_ok = bool(
                     p.requirements_path and _Path(p.requirements_path).exists()
                 )
@@ -265,21 +275,49 @@ async def _cleanup_and_recover_tasks():
                     continue
                 steps = get_repository().get_completed_step_ids(p.id)
                 if not steps:
-                    continue  # 无已完成步骤，无需恢复（从头跑即可重新启动）
+                    continue
                 if p.id not in tm._tasks:
                     tm.rebuild_task_from_db(p.id)
                     recovered += 1
             if recovered:
-                import logging
-                logging.getLogger("web").info(
+                logger.info(
                     f"持久化恢复：{recovered} 个 interrupted 任务已重建到内存（paused）"
                 )
         except Exception as e:
-            import logging
-            logging.getLogger("web").warning(f"任务恢复失败（不影响启动）: {e}")
+            logger.warning(f"任务恢复失败（不影响启动）: {e}")
     except Exception as e:
-        import logging
-        logging.getLogger("web").error(f"启动清理失败: {e}", exc_info=True)
+        logger.error(f"启动清理失败: {e}", exc_info=True)
+
+    # 4. KB 缓存后台预热（不阻塞启动）
+    # 首次 status/search 请求要构建单例 + 全量遍历 Vault（~5s），
+    # 启动时后台预热，用户访问时永远是缓存命中（<1ms）。
+    try:
+        import threading
+
+        def _warmup_kb_cache():
+            try:
+                from web.services.kb_cache import get_status
+
+                get_status()  # 触发单例构建 + status 缓存填充
+            except Exception:
+                pass  # 预热失败不影响启动，首次请求时会重试
+
+        threading.Thread(
+            target=_warmup_kb_cache, daemon=True, name="kb-cache-warmup"
+        ).start()
+    except Exception:
+        pass
+
+
+def _run_shutdown_tasks():
+    """应用关闭任务（由 lifespan 调用）。
+
+    清理 TaskManager 的 ThreadPoolExecutor，防止线程池资源泄漏。
+    """
+    try:
+        get_task_manager().shutdown()
+    except Exception:
+        pass
 
 # ─── 全局异常处理（Phase 6）───
 

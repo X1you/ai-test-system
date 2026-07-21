@@ -62,10 +62,11 @@ db = [
     "alembic>=1.13",
 ]
 
-# 生产加固（结构化日志 + 限流）
+# 生产加固（结构化日志 + 限流 + 可观测性）
 production = [
     "structlog>=24.1",
     "slowapi>=0.1.9",
+    "prometheus-fastapi-instrumentator>=7.0",
 ]
 
 # 开发与测试工具链
