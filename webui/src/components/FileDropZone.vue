@@ -71,19 +71,33 @@ function handleDrop(e) {
   border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: center;
-  transition: border-color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
+  background: var(--bg-surface);
+  transition: border-color var(--duration-normal) var(--ease-out),
+              background var(--duration-normal) var(--ease-out),
+              box-shadow var(--duration-normal) var(--ease-out);
 }
 
 .drop-zone:hover,
 .drop-zone:focus-visible {
   border-color: var(--accent);
   background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent-glow), var(--shadow-sm);
 }
 
 .drop-zone--dragging {
   border-color: var(--accent);
   background: var(--accent-subtle);
+  box-shadow: inset 0 0 24px var(--accent-glow), var(--shadow-md);
+  transform: scale(1.01);
+}
+[data-theme="dark"] .drop-zone--dragging {
+  box-shadow: inset 0 0 24px hsl(150 100% 50% / 0.15), var(--shadow-md), 0 0 12px hsl(150 100% 50% / 0.2);
+  border-color: var(--accent);
+}
+[data-theme="dark"] .drop-zone:hover,
+[data-theme="dark"] .drop-zone:focus-visible {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent-glow), var(--shadow-sm), 0 0 8px hsl(150 100% 50% / 0.12);
 }
 
 .drop-zone--compact {
@@ -100,11 +114,17 @@ function handleDrop(e) {
 
 .drop-zone__icon {
   color: var(--text-tertiary);
+  transition: color var(--duration-normal) var(--ease-out);
+}
+.drop-zone:hover .drop-zone__icon,
+.drop-zone--dragging .drop-zone__icon {
+  color: var(--accent);
 }
 
 .drop-zone__text {
   font-size: var(--text-base);
   color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .drop-zone__hint {

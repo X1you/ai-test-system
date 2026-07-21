@@ -198,6 +198,9 @@ onMounted(async () => {
   font-size: var(--text-lg);
   font-weight: 600;
 }
+[data-theme="dark"] .form-section__title {
+  text-shadow: var(--text-glow);
+}
 
 .file-chip {
   display: flex;
@@ -246,6 +249,12 @@ onMounted(async () => {
   flex-direction: column;
   gap: var(--space-sm);
 }
+[data-theme="dark"] .config-field {
+  border-color: hsl(150 30% 12%);
+}
+[data-theme="dark"] .config-field legend {
+  text-shadow: var(--text-glow);
+}
 .config-field legend {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -285,6 +294,12 @@ onMounted(async () => {
   transition: background var(--duration-fast) var(--ease-out);
 }
 .btn-submit:hover:not(:disabled) { background: var(--accent-hover); }
+[data-theme="dark"] .btn-submit:not(:disabled) {
+  box-shadow: var(--shadow-accent);
+}
+[data-theme="dark"] .btn-submit:hover:not(:disabled) {
+  box-shadow: var(--shadow-accent-lg);
+}
 .btn-submit:disabled {
   background: var(--border-default);
   color: var(--text-tertiary);

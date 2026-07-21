@@ -44,7 +44,7 @@ const { theme, toggleTheme } = useTheme()
 .app-main {
   flex: 1;
   min-width: 0;
-  padding: var(--space-xl);
+  padding: var(--space-xl) var(--space-2xl);
   overflow-y: auto;
 }
 
@@ -52,33 +52,43 @@ const { theme, toggleTheme } = useTheme()
 .topbar {
   display: flex;
   justify-content: flex-end;
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-xl);
 }
 
 .topbar__theme-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out),
-              border-color var(--duration-fast) var(--ease-out),
-              transform var(--duration-fast) var(--ease-out);
+  box-shadow: var(--shadow-xs);
+  transition: background var(--duration-normal) var(--ease-out),
+              color var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-spring),
+              box-shadow var(--duration-normal) var(--ease-out);
 }
 .topbar__theme-btn:hover {
   background: var(--bg-inset);
   color: var(--accent);
-  border-color: var(--border-strong);
-  transform: rotate(15deg);
+  border-color: var(--accent);
+  transform: rotate(20deg) scale(1.05);
+  box-shadow: var(--shadow-sm), 0 0 0 3px var(--accent-glow);
+}
+[data-theme="dark"] .topbar__theme-btn {
+  border-color: var(--border-default);
+}
+[data-theme="dark"] .topbar__theme-btn:hover {
+  box-shadow: var(--shadow-sm), 0 0 0 3px var(--accent-glow), var(--shadow-accent);
+  text-shadow: var(--text-glow);
 }
 .topbar__theme-btn:active {
-  transform: rotate(15deg) scale(0.92);
+  transform: rotate(20deg) scale(0.92);
 }
 .topbar__theme-btn:focus-visible {
   outline: 2px solid var(--accent);

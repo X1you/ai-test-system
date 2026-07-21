@@ -42,13 +42,13 @@ const items = computed(() => toast.items.value)
 
 .toast-container {
   position: fixed;
-  top: var(--space-lg);
-  right: var(--space-lg);
+  top: var(--space-xl);
+  right: var(--space-xl);
   z-index: 9999;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  max-width: 360px;
+  max-width: 380px;
   pointer-events: none;
 }
 
@@ -58,12 +58,20 @@ const items = computed(() => toast.items.value)
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
-  background: var(--bg-surface);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--border-default);
   box-shadow: var(--shadow-lg);
   font-size: var(--text-sm);
   line-height: 1.4;
   pointer-events: auto;
+}
+[data-theme="dark"] .toast {
+  border-color: hsl(150 40% 15%);
+}
+[data-theme="dark"] .toast--info {
+  box-shadow: var(--shadow-lg), 0 0 8px hsl(150 100% 50% / 0.1);
 }
 
 .toast__icon {
@@ -79,6 +87,9 @@ const items = computed(() => toast.items.value)
 .toast--error   { border-left: 3px solid var(--feedback-error-text); }
 .toast--warn    { border-left: 3px solid var(--feedback-warn-text); }
 .toast--info    { border-left: 3px solid var(--accent); }
+[data-theme="dark"] .toast--info    { border-left-color: var(--accent); box-shadow: var(--shadow-lg), 0 0 6px hsl(150 100% 50% / 0.15); }
+[data-theme="dark"] .toast--success { border-left-color: hsl(150 80% 55%); }
+[data-theme="dark"] .toast--error   { border-left-color: hsl(0 80% 62%); }
 
 .toast__msg {
   flex: 1;
@@ -110,15 +121,15 @@ const items = computed(() => toast.items.value)
 /* Transition */
 .toast-enter-active,
 .toast-leave-active {
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all var(--duration-normal) var(--ease-spring);
 }
 .toast-enter-from {
   opacity: 0;
-  transform: translateX(20px);
+  transform: translateX(30px) scale(0.95);
 }
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(20px);
+  transform: translateX(30px) scale(0.95);
 }
 .toast-leave-active {
   position: absolute;

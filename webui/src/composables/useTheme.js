@@ -22,7 +22,7 @@ export function useTheme() {
       meta.name = 'theme-color'
       document.head.appendChild(meta)
     }
-    meta.content = theme.value === 'dark' ? '#12121a' : '#f5f5fa'
+    meta.content = theme.value === 'dark' ? '#030a06' : '#fafafa'
   }
 
   function setTheme(value) {

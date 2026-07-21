@@ -21,11 +21,31 @@
         <span class="nav-label">{{ item.label }}</span>
       </router-link>
     </nav>
+
+    <!-- 用户信息 + 登出 -->
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <span class="user-avatar">{{ currentUser?.username?.charAt(0).toUpperCase() || 'U' }}</span>
+        <span class="user-name">{{ currentUser?.username || '未知用户' }}</span>
+      </div>
+      <button class="logout-btn" title="登出" @click="handleLogout">
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <path fill="currentColor" d="M3 3h8a1 1 0 0 1 1 1v3a1 1 0 1 1-2 0V5H4v10h6v-2a1 1 0 1 1 2 0v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm12.7 3.3a1 1 0 0 1 1.4 0l3 3a1 1 0 0 1 0 1.4l-3 3a1 1 0 0 1-1.4-1.4l1.3-1.3H9a1 1 0 1 1 0-2h8l-1.3-1.3a1 1 0 0 1 0-1.4z"/>
+        </svg>
+      </button>
+    </div>
   </aside>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { currentUser, logout } from '../composables/useAuth'
+
+function handleLogout() {
+  if (confirm('确定要登出吗？')) {
+    logout()
+  }
+}
 
 const navItems = [
   {
@@ -71,7 +91,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   top: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-surface);
+  background: var(--gradient-sidebar);
   border-right: 1px solid var(--border-default);
   padding: var(--space-lg) var(--space-md);
   overflow-y: auto;
@@ -88,6 +108,10 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 .brand-icon {
   color: var(--accent);
   flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px var(--accent-glow));
+}
+[data-theme="dark"] .brand-icon {
+  filter: drop-shadow(0 0 6px hsl(150 100% 50% / 0.4));
 }
 
 .brand-text {
@@ -95,6 +119,11 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+[data-theme="dark"] .brand-text {
+  text-shadow: var(--text-glow);
+  letter-spacing: 0;
 }
 
 .sidebar-nav {
@@ -113,25 +142,101 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   color: var(--text-secondary);
   font-size: var(--text-base);
   text-decoration: none;
-  transition: background var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out);
-  min-height: 36px;
+  transition: background var(--duration-normal) var(--ease-out),
+              color var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-out);
+  min-height: 38px;
+  position: relative;
 }
 
 .nav-item:hover {
   background: var(--bg-inset);
   color: var(--text-primary);
   text-decoration: none;
+  transform: translateX(2px);
 }
 
 .nav-item.router-link-exact-active {
   background: var(--accent-subtle);
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+[data-theme="dark"] .nav-item.router-link-exact-active {
+  box-shadow: inset 3px 0 0 var(--accent), 0 0 8px hsl(150 100% 50% / 0.15);
+  text-shadow: var(--text-glow);
 }
 
 .nav-icon {
   flex-shrink: 0;
+}
+
+/* ─── 用户信息 + 登出 ─── */
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-sm);
+  margin-top: var(--space-lg);
+  border-top: 1px solid var(--border-default);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  color: var(--accent-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .user-avatar {
+  background: var(--accent);
+  box-shadow: var(--shadow-sm), 0 0 6px hsl(150 100% 50% / 0.3);
+}
+
+.user-name {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-normal) var(--ease-out),
+              color var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.logout-btn:hover {
+  background: var(--feedback-error-bg);
+  color: var(--status-error);
+  border-color: var(--feedback-error-border);
 }
 
 /* ─── Mobile: bottom tab bar ─── */
@@ -153,7 +258,8 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
     z-index: 100;
   }
 
-  .sidebar-brand {
+  .sidebar-brand,
+  .sidebar-footer {
     display: none;
   }
 
@@ -171,6 +277,14 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
     min-height: 44px;
     min-width: 44px;
     justify-content: center;
+  }
+
+  .nav-item:hover {
+    transform: none;
+  }
+
+  .nav-item.router-link-exact-active {
+    box-shadow: none;
   }
 
   .nav-label {

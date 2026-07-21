@@ -1,0 +1,318 @@
+# AI 测试用例生成系统 — Kubernetes 部署清单
+#
+# 用法：
+#   kubectl apply -f deploy/k8s/
+#
+# 前置条件：
+#   1. 已创建命名空间 aitest
+#   2. 已创建 Secret: aitest-secrets（包含 JWT_SECRET, LLM_API_KEY, ADMIN_PASSWORD, WEBHOOK_SECRET）
+#   3. 已创建 PVC 或 StorageClass 用于数据持久化
+
+---
+# ─── Namespace ───
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aitest
+  labels:
+    app.kubernetes.io/name: ai-test-system
+
+---
+# ─── ConfigMap ───
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aitest-config
+  namespace: aitest
+data:
+  LLM_BASE_URL: "https://api.deepseek.com/v1"
+  LLM_MODEL: "deepseek-chat"
+  AI_TEST_ENV: "production"
+  ADMIN_USERNAME: "admin"
+
+---
+# ─── Secret（示例：生产中用 sealed-secrets 或外部密钥管理）───
+# 实际部署时请通过以下方式创建（不要直接 apply 明文 Secret）：
+#
+#   kubectl create secret generic aitest-secrets \
+#     --from-literal=JWT_SECRET=<your-jwt-secret-32chars> \
+#     --from-literal=LLM_API_KEY=<your-llm-api-key> \
+#     --from-literal=ADMIN_PASSWORD=<your-admin-password> \
+#     --from-literal=WEBHOOK_SECRET=<your-webhook-secret> \
+#     -n aitest
+#
+# 或使用 SealedSecret / ExternalSecret / Vault 等密钥管理方案。
+
+---
+# ─── PVC: 数据持久化 ───
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aitest-data
+  namespace: aitest
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  # storageClassName: fast-ssd  # 按需指定 StorageClass
+
+---
+# ─── Deployment ───
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aitest
+  namespace: aitest
+  labels:
+    app.kubernetes.io/name: ai-test-system
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-test-system
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-test-system
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: app
+          image: ai-test-system:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: aitest-config
+            - secretRef:
+                name: aitest-secrets
+          env:
+            - name: DATABASE_URL
+              value: "sqlite:////app/data/app.db"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+              subPath: data
+            - name: data
+              mountPath: /app/output
+              subPath: output
+            - name: data
+              mountPath: /app/uploads
+              subPath: uploads
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 10
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: aitest-data
+
+---
+# ─── Service ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: aitest
+  namespace: aitest
+  labels:
+    app.kubernetes.io/name: ai-test-system
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ai-test-system
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+# ─── Ingress ───
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aitest
+  namespace: aitest
+  labels:
+    app.kubernetes.io/name: ai-test-system
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "60"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - aitest.example.com
+      secretName: aitest-tls
+  rules:
+    - host: aitest.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: aitest
+                port:
+                  name: http
+
+---
+# ─── HPA: 水平自动扩缩 ───
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aitest
+  namespace: aitest
+  labels:
+    app.kubernetes.io/name: ai-test-system
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: aitest
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+
+---
+# ─── PDB: 中断预算 ───
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: aitest
+  namespace: aitest
+  labels:
+    app.kubernetes.io/name: ai-test-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-test-system
+
+---
+# ─── NetworkPolicy: 网络隔离（可选）───
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aitest
+  namespace: aitest
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-test-system
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP

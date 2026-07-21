@@ -325,6 +325,10 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
   font-weight: 500;
   box-shadow: inset 0 -2px 0 var(--accent);
 }
+[data-theme="dark"] .tabs__btn--active {
+  text-shadow: var(--text-glow);
+  box-shadow: inset 0 -2px 0 var(--accent), 0 2px 4px hsl(150 100% 50% / 0.15);
+}
 
 .tab-panel {
   display: flex;
@@ -348,6 +352,7 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
   gap: var(--space-md);
 }
 .card__title { font-size: var(--text-lg); font-weight: 600; }
+[data-theme="dark"] .card__title { text-shadow: var(--text-glow); }
 .card__desc { font-size: var(--text-sm); color: var(--text-secondary); }
 
 .config-info p { font-size: var(--text-sm); margin-bottom: var(--space-xs); }
@@ -363,6 +368,9 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
   color: var(--accent);
   border-radius: 999px;
   font-size: var(--text-xs);
+}
+[data-theme="dark"] .cat-badge {
+  border: 1px solid hsl(150 50% 20%);
 }
 
 /* Forms */
@@ -409,6 +417,8 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
   transition: background var(--duration-fast) var(--ease-out);
 }
 .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+[data-theme="dark"] .btn-primary { box-shadow: var(--shadow-accent); }
+[data-theme="dark"] .btn-primary:hover:not(:disabled) { box-shadow: var(--shadow-accent-lg); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .msg { font-size: var(--text-sm); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); }
@@ -438,6 +448,8 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
   border-radius: var(--radius-lg);
 }
 .search-result__title { font-size: var(--text-base); font-weight: 600; margin-bottom: var(--space-xs); }
+[data-theme="dark"] .search-result__title { text-shadow: var(--text-glow); }
+[data-theme="dark"] .search-result__cat { text-shadow: var(--text-glow); }
 .search-result__cat { font-size: var(--text-xs); color: var(--accent); margin-bottom: var(--space-xs); }
 .search-result__snippet { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.6; }
 

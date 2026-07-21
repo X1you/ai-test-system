@@ -1,7 +1,9 @@
 /**
  * API 请求封装
- * 统一 base URL / JSON 解析 / 错误处理
+ * 统一 base URL / JSON 解析 / 错误处理 / Token 自动注入 / 401 自动跳转
  */
+
+import { authToken, clearAuth } from './useAuth'
 
 const BASE = '/api/v1'
 
@@ -21,6 +23,12 @@ async function request(method, path, options = {}) {
     ...options,
   }
 
+  // 自动注入 Authorization header（跳过登录接口自身）
+  const token = authToken.value
+  if (token && !path.includes('/auth/login')) {
+    config.headers['Authorization'] = `Bearer ${token}`
+  }
+
   // JSON body（非 FormData）
   if (options.json !== undefined) {
     config.headers['Content-Type'] = 'application/json'
@@ -29,6 +37,16 @@ async function request(method, path, options = {}) {
   }
 
   const resp = await fetch(url, config)
+
+  // 401 未授权 — 清除 token 并跳转登录页
+  if (resp.status === 401) {
+    clearAuth()
+    // 避免在登录页触发重复跳转
+    if (!window.location.pathname.includes('/login')) {
+      window.location.href = '/login'
+    }
+    throw new ApiError(401, { detail: '登录已过期，请重新登录' })
+  }
 
   // Blob 响应（文件下载）
   if (options.responseType === 'blob') {

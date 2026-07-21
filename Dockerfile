@@ -6,9 +6,11 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
-# 安装构建依赖
+# 安装构建依赖（libffi-dev 是 bcrypt 编译所需，libpq-dev 是 psycopg2 编译所需）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    libffi-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制项目文件
@@ -21,12 +23,17 @@ COPY db/ db/
 COPY cli.py config_loader.py ./
 
 # 安装依赖到 /install
-RUN pip install --no-cache-dir --prefix=/install -e ".[web,xmind,excel,db,production]"
+RUN pip install --no-cache-dir --prefix=/install -e ".[web,xmind,excel,db,postgresql,production]"
 
 # ─── Runtime 阶段 ───
 FROM python:3.11-slim
 
 WORKDIR /app
+
+# 安装运行时依赖（libpq5 是 psycopg2 运行时所需）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
 
 # 从 builder 复制已安装的依赖
 COPY --from=builder /install /usr/local

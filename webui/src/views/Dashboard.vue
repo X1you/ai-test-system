@@ -307,6 +307,10 @@ onMounted(() => {
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
+[data-theme="dark"] .health-panel__title {
+  text-shadow: var(--text-glow);
+  letter-spacing: 0;
+}
 
 .health-panel__meta {
   display: flex;
@@ -421,6 +425,9 @@ onMounted(() => {
 .health-card__icon--ok {
   color: var(--accent);
   background: var(--accent-subtle);
+}
+[data-theme="dark"] .health-card__icon--ok {
+  box-shadow: 0 0 8px hsl(150 100% 50% / 0.15);
 }
 .health-card__icon--warn {
   color: var(--feedback-warn-text);
@@ -542,6 +549,9 @@ onMounted(() => {
   font-size: var(--text-lg);
   font-weight: 600;
 }
+[data-theme="dark"] .section-title {
+  text-shadow: var(--text-glow);
+}
 .section-link {
   font-size: var(--text-sm);
   color: var(--accent);
@@ -583,6 +593,11 @@ onMounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border-default);
+}
+[data-theme="dark"] .task-table th {
+  text-transform: none;
+  letter-spacing: 0;
+  color: hsl(150 40% 48%);
 }
 .task-table td {
   padding: var(--space-sm) var(--space-md);
@@ -627,5 +642,11 @@ onMounted(() => {
 .btn-primary:hover {
   background: var(--accent-hover);
   text-decoration: none;
+}
+[data-theme="dark"] .btn-primary {
+  box-shadow: var(--shadow-accent);
+}
+[data-theme="dark"] .btn-primary:hover {
+  box-shadow: var(--shadow-accent-lg);
 }
 </style>

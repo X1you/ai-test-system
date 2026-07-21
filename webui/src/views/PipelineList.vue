@@ -319,6 +319,10 @@ onUnmounted(() => {
   color: var(--accent);
   border-color: var(--accent);
 }
+[data-theme="dark"] .stats-bar__tab--active {
+  box-shadow: 0 0 6px hsl(150 100% 50% / 0.15);
+  text-shadow: var(--text-glow);
+}
 .stats-bar__count {
   font-size: var(--text-xs);
   opacity: 0.7;
@@ -434,6 +438,11 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border-default);
 }
+[data-theme="dark"] .list-table th {
+  text-transform: none;
+  letter-spacing: 0;
+  color: hsl(150 40% 48%);
+}
 .th-actions {
   text-align: right;
 }
@@ -454,6 +463,7 @@ onUnmounted(() => {
   text-decoration: none;
 }
 .file-link:hover { color: var(--accent); text-decoration: underline; }
+[data-theme="dark"] .file-link:hover { text-shadow: var(--text-glow); }
 
 .list-row__actions {
   text-align: right;

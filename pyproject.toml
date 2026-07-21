@@ -64,6 +64,11 @@ db = [
     "alembic>=1.13",
 ]
 
+# PostgreSQL 生产数据库驱动
+postgresql = [
+    "psycopg2-binary>=2.9",
+]
+
 # 生产加固（结构化日志 + 限流 + 可观测性）
 production = [
     "structlog>=24.1",
@@ -88,7 +93,7 @@ dev = [
 
 # 全量安装（除 dev 外的全部可选组）
 all = [
-    "ai-test-system[web,xmind,excel,db,production]",
+    "ai-test-system[web,xmind,excel,db,postgresql,production]",
 ]
 
 # 开发全量（all + dev）

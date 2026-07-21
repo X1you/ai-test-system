@@ -51,6 +51,29 @@ watch(() => props.logs.length, async () => {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+[data-theme="dark"] .log-panel {
+  position: relative;
+  border-color: hsl(150 40% 15%);
+  /* Phosphor afterglow: top fade simulates CRT decay as logs scroll up */
+  mask-image: linear-gradient(to bottom, transparent 0%, black 28px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 28px);
+}
+[data-theme="dark"] .log-panel::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    hsl(150 100% 50% / 0.02) 3px,
+    hsl(150 100% 50% / 0.02) 4px
+  );
+}
 
 .log-panel__empty {
   color: var(--text-tertiary);
@@ -79,6 +102,8 @@ watch(() => props.logs.length, async () => {
 .log-panel__line--err .log-panel__level { color: var(--feedback-error-text); }
 .log-panel__line--warn .log-panel__level { color: var(--feedback-warn-text); }
 .log-panel__line--step .log-panel__level { color: var(--accent); }
+[data-theme="dark"] .log-panel__line--step .log-panel__level { text-shadow: var(--text-glow); }
+[data-theme="dark"] .log-panel__msg { text-shadow: 0 0 4px hsl(150 100% 50% / 0.15); }
 .log-panel__line--human .log-panel__level { color: var(--status-paused); }
 
 .log-panel__msg {
@@ -86,5 +111,28 @@ watch(() => props.logs.length, async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ─── Matrix: Typewriter reveal for new log lines ─── */
+[data-theme="dark"] .log-panel__msg {
+  animation: matrix-type 0.25s steps(10) both;
+}
+@keyframes matrix-type {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* ─── Matrix: Phosphor flash on new log line ─── */
+[data-theme="dark"] .log-panel__line {
+  animation: phosphor-flash 0.4s ease-out;
+}
+@keyframes phosphor-flash {
+  0%   { background: hsl(150 100% 50% / 0.06); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="dark"] .log-panel__msg { animation: none; }
+  [data-theme="dark"] .log-panel__line { animation: none; }
 }
 </style>

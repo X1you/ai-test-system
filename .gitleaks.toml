@@ -1,0 +1,38 @@
+# Gitleaks 配置 — 密钥扫描规则
+# https://github.com/gitleaks/gitleaks#configuration
+
+title = "AI Test System - Secret Scanning"
+
+[allowlist]
+  # 允许的路径（测试数据、示例文件等不含真实密钥）
+  paths = [
+    '''tests/.*''',
+    '''examples/.*''',
+    '''\.env\.example''',
+    '''\.gitleaks\.toml''',
+  ]
+  # 允许的明文（模板占位符）
+  regexes = [
+    '''sk-your-new-api-key-here''',
+    '''sk-your-api-key-here''',
+    '''your-new-glm-api-key-here''',
+    '''change-me-to-a-random-string-of-at-least-32-chars''',
+  ]
+
+[[rules]]
+  id = "llm-api-key"
+  description = "LLM API Key"
+  regex = '''sk-[a-zA-Z0-9\-_.]{20,}'''
+  tags = ["key", "llm"]
+
+[[rules]]
+  id = "glm-api-key"
+  description = "GLM API Key"
+  regex = '''[a-f0-9]{32}\.[a-zA-Z0-9]{16}'''
+  tags = ["key", "glm"]
+
+[[rules]]
+  id = "jwt-secret"
+  description = "JWT Secret (non-default)"
+  regex = '''JWT_SECRET\s*=\s*(?!change-me|dev-jwt-secret)[a-zA-Z0-9\-_]{32,}'''
+  tags = ["key", "jwt"]

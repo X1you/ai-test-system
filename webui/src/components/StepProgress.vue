@@ -56,6 +56,7 @@ defineProps({
   height: 2px;
   background: var(--border-default);
   transform: translateX(50%);
+  border-radius: 1px;
 }
 .step-progress__item--done:not(:last-child)::after {
   background: var(--status-done);
@@ -65,8 +66,8 @@ defineProps({
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 2px solid var(--border-default);
   background: var(--bg-surface);
@@ -74,17 +75,29 @@ defineProps({
   color: var(--text-tertiary);
   z-index: 1;
   flex-shrink: 0;
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .step-progress__item--done .step-progress__indicator {
   border-color: var(--status-done);
   background: var(--status-done);
   color: var(--accent-text);
+  box-shadow: 0 0 0 3px var(--feedback-success-bg);
+}
+[data-theme="dark"] .step-progress__item--done .step-progress__indicator {
+  box-shadow: 0 0 0 3px var(--feedback-success-bg), 0 0 6px hsl(150 80% 45% / 0.3);
 }
 
 .step-progress__item--running .step-progress__indicator {
   border-color: var(--status-running);
   color: var(--status-running);
+  box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 12px var(--accent-glow);
+}
+[data-theme="dark"] .step-progress__item--running .step-progress__indicator {
+  box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 12px hsl(150 100% 50% / 0.4);
+}
+[data-theme="dark"] .step-progress__item--running .step-progress__name {
+  text-shadow: var(--text-glow);
 }
 
 .step-progress__spinner {
@@ -113,10 +126,11 @@ defineProps({
 
 .step-progress__item--done .step-progress__name {
   color: var(--text-primary);
+  font-weight: 600;
 }
 .step-progress__item--running .step-progress__name {
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .step-progress__detail {

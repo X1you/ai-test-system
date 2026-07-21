@@ -36,7 +36,14 @@ def _get_db_path() -> Path:
 
 
 def _get_database_url() -> str:
-    """获取数据库 URL"""
+    """获取数据库 URL
+
+    优先使用环境变量 DATABASE_URL（支持 postgresql:// / mysql:// 等网络数据库），
+    未设置时回退到 SQLite 本地文件路径。
+    """
+    env_url = os.environ.get("DATABASE_URL")
+    if env_url:
+        return env_url
     db_path = _get_db_path()
     # SQLite URL 格式
     return f"sqlite:///{db_path}"
@@ -98,12 +105,16 @@ def get_engine() -> Engine:
     """获取/创建全局同步 Engine"""
     global _engine
     if _engine is None:
-        db_path = _get_db_path()
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
         url = _get_database_url()
-        _engine = create_engine(url, **_build_engine_kwargs(url))
-        _configure_sqlite_pragma(db_path, _engine)
+
+        if _is_sqlite(url):
+            db_path = _get_db_path()
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            _engine = create_engine(url, **_build_engine_kwargs(url))
+            _configure_sqlite_pragma(db_path, _engine)
+        else:
+            # PostgreSQL / MySQL 等网络数据库
+            _engine = create_engine(url, **_build_engine_kwargs(url))
     return _engine
 
 

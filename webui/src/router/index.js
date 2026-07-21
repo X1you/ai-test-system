@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isAuthenticated } from '../composables/useAuth'
 
 const routes = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('../views/Login.vue'),
+    meta: { title: '登录', public: true },
+  },
   {
     path: '/',
     name: 'dashboard',
@@ -42,6 +49,25 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// ─── 路由守卫：未登录用户重定向到登录页 ───
+router.beforeEach((to) => {
+  // 公开路由（如登录页）不需要认证
+  if (to.meta.public) {
+    // 已登录用户访问登录页 → 重定向到首页
+    if (to.name === 'login' && isAuthenticated.value) {
+      return { name: 'dashboard' }
+    }
+    return true
+  }
+
+  // 受保护路由：未登录 → 重定向到登录页并携带 redirect
+  if (!isAuthenticated.value) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+
+  return true
 })
 
 router.afterEach((to) => {

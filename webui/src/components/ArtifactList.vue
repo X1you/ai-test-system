@@ -88,6 +88,19 @@ function formatSize(bytes) {
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out),
+              box-shadow var(--duration-normal) var(--ease-out);
+}
+.artifact-item:hover {
+  transform: translateX(2px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .artifact-item:hover {
+  border-color: hsl(150 50% 25%);
+  box-shadow: var(--shadow-sm), 0 0 6px hsl(150 100% 50% / 0.1);
 }
 
 .artifact-item__icon {
@@ -118,19 +131,25 @@ function formatSize(bytes) {
 }
 
 .artifact-item__btn {
-  padding: 2px 8px;
+  padding: 3px 10px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-xs);
+  font-weight: 500;
   transition: background var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out);
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
 }
 .artifact-item__btn:hover {
   background: var(--accent-subtle);
   color: var(--accent);
   border-color: var(--accent);
+}
+[data-theme="dark"] .artifact-item__btn:hover {
+  text-shadow: var(--text-glow);
+  box-shadow: 0 0 4px hsl(150 100% 50% / 0.15);
 }
 
 .artifact-list__export {
@@ -144,13 +163,21 @@ function formatSize(bytes) {
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  transition: background var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out),
-              border-color var(--duration-fast) var(--ease-out);
+  font-weight: 500;
+  transition: background var(--duration-normal) var(--ease-out),
+              color var(--duration-normal) var(--ease-out),
+              border-color var(--duration-normal) var(--ease-out),
+              box-shadow var(--duration-normal) var(--ease-out);
 }
 .artifact-list__export:hover {
   background: var(--accent-subtle);
   color: var(--accent);
   border-color: var(--accent);
+  border-style: solid;
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .artifact-list__export:hover {
+  box-shadow: var(--shadow-sm), 0 0 8px hsl(150 100% 50% / 0.15);
+  text-shadow: var(--text-glow);
 }
 </style>

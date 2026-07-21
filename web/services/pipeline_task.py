@@ -20,6 +20,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+# Pipeline 全局超时（秒）— 防止 LLM 半开连接等场景导致任务槽永久占用
+# 覆盖正常 Pipeline 执行（典型 3-5 分钟），留充足余量。
+# 已知限制：超时后 daemon 子线程仍在后台运行（Python 无法强杀线程），
+#   如果线程卡在 socket.recv() 上会持续占用直到进程退出。
+#   保持较低的超时值可缩小泄漏窗口；高频超时场景建议监控线程数。
+PIPELINE_GLOBAL_TIMEOUT = 600  # 10 分钟
+
 from core.pipeline import STEP_REGISTRY, TOTAL_STEPS, Pipeline
 
 # DB 持久化（Phase 2）
@@ -157,38 +164,69 @@ class PipelineTask:
         self._execute("auto")
 
     def _execute(self, run_mode: str):
-        """统一的执行主逻辑 — 合并原 _run / _run_resume 的重复代码。
+        """统一的执行主逻辑 — 带全局超时保护。
+
+        Pipeline.run() 在子线程中执行，主线程（daemon）通过 join(timeout)
+        监控。超时后设置取消标志，标记任务为 error。
+        daemon 子线程在进程退出时会被杀死，当前进程不退出但任务槽会释放
+        （通过 status != running 判断）。
 
         Args:
             run_mode: 传入 Pipeline.run() 的 mode 参数
         """
-        try:
-            pipeline = Pipeline(self.config, self.output_dir)
-            pipeline.on_log = self._on_log
-            pipeline.on_step_done = self._on_step_done
-            pipeline.interactive = False  # WebUI 非交互式，暂停由状态机管理
+        result_holder: dict = {}
 
-            state = pipeline.run(
-                requirements_file=self.requirements_path,
-                mode=run_mode,
-                dimensions=self.dimensions,
-                formats=self.formats,
+        def _inner():
+            try:
+                pipeline = Pipeline(self.config, self.output_dir)
+                pipeline.on_log = self._on_log
+                pipeline.on_step_done = self._on_step_done
+                pipeline.interactive = False  # WebUI 非交互式，暂停由状态机管理
+
+                state = pipeline.run(
+                    requirements_file=self.requirements_path,
+                    mode=run_mode,
+                    dimensions=self.dimensions,
+                    formats=self.formats,
+                )
+                result_holder["state"] = state
+                result_holder["pipeline"] = pipeline
+            except _PipelineCancelled:
+                result_holder["cancelled"] = True
+            except Exception as e:
+                result_holder["error"] = e
+
+        inner_thread = threading.Thread(target=_inner, daemon=True)
+        inner_thread.start()
+        inner_thread.join(timeout=PIPELINE_GLOBAL_TIMEOUT)
+
+        if inner_thread.is_alive():
+            # 超时 — 设置取消标志（协作式，子线程可能在下一个步骤间隙退出）
+            self._cancel_flag = True
+            self.status = "error"
+            self.error = f"Pipeline 执行超时（>{PIPELINE_GLOBAL_TIMEOUT}s），已被强制终止"
+            self._on_log("ERR", self.error)
+            self._persist_pipeline("error")
+            self._publish_event(
+                "error", {"pipeline_id": self.pipeline_id, "error": self.error}
             )
+            return
 
-            self._finalize(state, pipeline, run_mode)
-        except _PipelineCancelled:
+        if result_holder.get("cancelled"):
             self.status = "cancelled"
             self._on_log("WARN", "Pipeline 已取消（中断执行）")
             self._persist_pipeline("cancelled")
             self._publish_event("cancelled", {"pipeline_id": self.pipeline_id})
-        except Exception as e:
+        elif result_holder.get("error"):
             self.status = "error"
-            self.error = str(e)
-            self._on_log("ERR", f"Pipeline 执行失败: {e}")
+            self.error = str(result_holder["error"])
+            self._on_log("ERR", f"Pipeline 执行失败: {self.error}")
             self._persist_pipeline("error")
             self._publish_event(
-                "error", {"pipeline_id": self.pipeline_id, "error": str(e)}
+                "error", {"pipeline_id": self.pipeline_id, "error": self.error}
             )
+        else:
+            self._finalize(result_holder["state"], result_holder.get("pipeline"), run_mode)
 
     def _finalize(self, state: dict, pipeline: Pipeline | None = None, run_mode: str = "semi"):
         """根据最终状态设置任务状态、持久化、发布终态事件。"""

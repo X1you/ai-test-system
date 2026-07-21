@@ -262,6 +262,11 @@ onUnmounted(() => sseClose())
   color: var(--feedback-success-text);
   font-weight: 500;
 }
+[data-theme="dark"] .sse-badge {
+  background: hsl(150 50% 10%);
+  color: hsl(150 80% 55%);
+  box-shadow: 0 0 4px hsl(150 100% 50% / 0.2);
+}
 .sse-badge--fallback {
   background: var(--feedback-warn-bg);
   color: var(--feedback-warn-text);
@@ -285,6 +290,12 @@ onUnmounted(() => sseClose())
   background: var(--accent);
   border-radius: 3px;
   transition: width var(--duration-slow) var(--ease-out);
+}
+[data-theme="dark"] .progress-bar__fill {
+  box-shadow: 0 0 6px hsl(150 100% 50% / 0.5);
+}
+[data-theme="dark"] .progress-pct {
+  text-shadow: var(--text-glow);
 }
 .progress-pct {
   font-size: var(--text-sm);
@@ -347,7 +358,13 @@ onUnmounted(() => sseClose())
   color: var(--accent-text);
   border-color: var(--accent);
 }
+[data-theme="dark"] .btn-action--accent {
+  box-shadow: var(--shadow-accent);
+}
 .btn-action--accent:hover {
   background: var(--accent-hover);
+}
+[data-theme="dark"] .btn-action--accent:hover {
+  box-shadow: var(--shadow-accent-lg);
 }
 </style>

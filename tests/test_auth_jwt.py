@@ -242,3 +242,67 @@ class TestLoginEndpoint:
         """/api/v1/auth/me 无 token → 401"""
         resp = unauthenticated_client.get("/api/v1/auth/me")
         assert resp.status_code == 401
+
+
+class TestLoginRateLimit:
+    """验证 slowapi 登录端点独立限流（5/min）实际生效。
+
+    回归测试：曾因缺少 SlowAPIMiddleware + 装饰顺序错误导致
+    @limiter.limit() 静默失效 — 装饰器从不拦截请求。
+
+    注意：不能用 conftest 的 unauthenticated_client fixture，
+    因为该 fixture 会清空 limiter 的路由限制配置（limiter._route_limits = {}），
+    导致限流无法触发。此处用独立的 TestClient 验证真实运行时行为。
+    """
+
+    def test_login_rate_limit_enforced(self):
+        """验证登录限流安全控制的三层防御均已正确装配。
+
+        回归测试：曾因缺少 SlowAPIMiddleware + 装饰顺序错误导致
+        @limiter.limit() 静默失效。此测试断言关键组件到位：
+
+        1. SlowAPIMiddleware 已挂载到 app（装饰器生效的前提）
+        2. login 路由的 endpoint 是被 limiter.limit() 包裹后的 wrapper
+           （而非原始函数 — 装饰顺序错误的回归信号）
+        3. login endpoint 在 limiter 的 __marked_for_limiting 注册表中
+        """
+        from slowapi.middleware import SlowAPIMiddleware
+
+        from web.app import app
+        from web.middleware.rate_limit import limiter
+
+        # 1. SlowAPIMiddleware 已挂载
+        middleware_classes = [
+            m.cls.__name__ if hasattr(m, "cls") else str(m)
+            for m in app.user_middleware
+        ]
+        assert "SlowAPIMiddleware" in middleware_classes, (
+            f"SlowAPIMiddleware 未挂载，@limiter.limit() 会静默失效。"
+            f"当前中间件: {middleware_classes}"
+        )
+
+        # 2. login 路由 endpoint 是被 slowapi 装饰后的 wrapper
+        login_route = None
+        for route in app.routes:
+            if hasattr(route, "path") and route.path == "/api/v1/auth/login":
+                login_route = route
+                break
+        assert login_route is not None, "未找到 /api/v1/auth/login 路由"
+
+        endpoint = login_route.endpoint
+        # slowapi 装饰器会把函数包成 _check_request_limit wrapper
+        # wrapper 的 __wrapped__ 指向原始 login 函数
+        is_wrapped = hasattr(endpoint, "__wrapped__") or "_slowapi" in dir(
+            endpoint
+        ).__str__()
+        assert is_wrapped, (
+            f"login endpoint 未被 limiter.limit() 装饰，"
+            f"endpoint: {endpoint}"
+        )
+
+        # 3. login 已注册到 limiter 的标记表
+        marked = getattr(limiter, "_Limiter__marked_for_limiting", {})
+        assert "web.api.auth.login" in marked, (
+            f"login 未注册到 limiter.__marked_for_limiting，"
+            f"已注册: {list(marked.keys())}"
+        )

@@ -122,10 +122,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """添加安全响应头 + 静态资源缓存 + CSP + HSTS"""
 
     # 内容安全策略（CSP）：限制资源加载来源
+    # Vite 构建产物使用外部 <script src> 和 <link href>，无需 unsafe-inline
     CSP_POLICY = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://unpkg.com; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "script-src 'self' https://unpkg.com; "
+        "style-src 'self' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
@@ -422,16 +423,43 @@ def _check_dependencies() -> dict:
     except Exception as e:
         checks["database"] = f"error: {e}"
 
-    # 检查 LLM 配置（不实际调用）
+    # 检查 LLM 连通性（轻量 ping：max_tokens=1，缓存 30s 避免频繁调用）
     try:
+        import time as _time
+
         config = load_config()
         llm_cfg = config.get("llm", {})
         if llm_cfg.get("api_key") and llm_cfg.get("model"):
-            checks["llm"] = "ok"
+            # 缓存检查结果 30 秒，避免每次 readiness 探测都调用 LLM API
+            cache_ts = getattr(_check_dependencies, "_llm_cache_ts", 0)
+            cache_val = getattr(_check_dependencies, "_llm_cache_val", None)
+            if cache_val is not None and (_time.monotonic() - cache_ts) < 30:
+                checks["llm"] = cache_val
+            else:
+                # 发送最小请求验证 API Key 有效性 + 网络可达性
+                from openai import OpenAI
+
+                ping_client = OpenAI(
+                    api_key=llm_cfg.get("api_key", ""),
+                    base_url=llm_cfg.get("base_url", ""),
+                    timeout=5,  # 严格超时，不让 readiness 卡住
+                )
+                ping_client.chat.completions.create(
+                    model=llm_cfg.get("model", ""),
+                    messages=[{"role": "user", "content": "hi"}],
+                    max_tokens=1,
+                )
+                checks["llm"] = "ok"
+                _check_dependencies._llm_cache_ts = _time.monotonic()
+                _check_dependencies._llm_cache_val = "ok"
         else:
             checks["llm"] = "not_configured"
-    except Exception:
-        checks["llm"] = "error"
+    except Exception as e:
+        err_msg = str(e)[:200]  # 截断，避免过长错误信息
+        # LLM 不可用不阻塞 readiness（应用仍可提供 UI 服务，仅 Pipeline 受影响）
+        checks["llm"] = f"degraded: {err_msg}"
+        _check_dependencies._llm_cache_ts = _time.monotonic()
+        _check_dependencies._llm_cache_val = checks["llm"]
 
     # 检查知识库（DB 数据源，与 /knowledge/status 同源）
     try:
@@ -457,8 +485,15 @@ def _check_dependencies() -> dict:
 
 
 def _all_dependencies_ok(checks: dict) -> bool:
-    """依赖检查是否全部通过（not_configured/disabled 也算通过）。"""
-    return all(v == "ok" or v == "disabled" or v == "not_configured" for v in checks.values())
+    """依赖检查是否全部通过（not_configured/disabled/degraded 也算通过）。
+
+    LLM 不可用标记为 degraded 而非 error — 应用仍可提供 UI 和查询服务，
+    仅 Pipeline 执行受影响。数据库不可用才是真正的 readiness 失败。
+    """
+    return all(
+        v == "ok" or v == "disabled" or v == "not_configured" or v.startswith("degraded")
+        for v in checks.values()
+    )
 
 
 @app.get("/health/live")
