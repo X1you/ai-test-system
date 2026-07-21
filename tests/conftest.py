@@ -67,12 +67,16 @@ def client():
     """创建测试客户端 — 自动注入有效 JWT（现有测试零改动）。
 
     所有现有测试无需逐个加 token：此 fixture 在 TestClient 上设置默认
-    Authorization: Bearer header，让请求自动通过 verify_token。
+    Authorization: Bearer *** verify_token。
     token 用测试专用密钥签名，保证通过 verify_token 校验。
     """
     from fastapi.testclient import TestClient
 
+    from db.session import init_db
     from web.app import app
+
+    # CI 干净环境无 data/app.db，需显式建表（本地有残留 DB 所以能过）
+    init_db()
 
     # 测试专用 JWT（用固定 secret 签名，与 verify_token 配合）
     token = _make_test_token()
@@ -90,8 +94,10 @@ def unauthenticated_client():
     """
     from fastapi.testclient import TestClient
 
+    from db.session import init_db
     from web.app import app
 
+    init_db()
     return TestClient(app)
 
 
