@@ -74,9 +74,14 @@ def client():
 
     from db.session import init_db
     from web.app import app
+    from web.middleware.rate_limit import limiter
 
     # CI 干净环境无 data/app.db，需显式建表（本地有残留 DB 所以能过）
     init_db()
+
+    # 测试环境禁用限流（避免批量测试累计计数触发 429）
+    limiter._default_limits = []
+    limiter._route_limits = {}
 
     # 测试专用 JWT（用固定 secret 签名，与 verify_token 配合）
     token = _make_test_token()
@@ -96,8 +101,14 @@ def unauthenticated_client():
 
     from db.session import init_db
     from web.app import app
+    from web.middleware.rate_limit import limiter
 
     init_db()
+
+    # 测试环境禁用限流
+    limiter._default_limits = []
+    limiter._route_limits = {}
+
     return TestClient(app)
 
 

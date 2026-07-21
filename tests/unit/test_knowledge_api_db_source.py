@@ -89,17 +89,27 @@ class TestKBDataSourceConsistency:
                 is_active=True,
             ))
 
-        mgr = _make_mock_manager(configured=True, vault_path="/data/vault_A", total=42)
-        with patch("core.kb.dynamic_kb_manager.get_dynamic_kb_manager", return_value=mgr):
-            # current_config 走 DB
-            cfg = client.get("/api/v1/knowledge/current_config").json()
-            # status 走 DynamicKBManager（同源）
-            st = client.get("/api/v1/knowledge/status").json()
+        try:
+            mgr = _make_mock_manager(configured=True, vault_path="/data/vault_A", total=42)
+            with patch("core.kb.dynamic_kb_manager.get_dynamic_kb_manager", return_value=mgr):
+                # current_config 走 DB
+                cfg = client.get("/api/v1/knowledge/current_config").json()
+                # status 走 DynamicKBManager（同源）
+                st = client.get("/api/v1/knowledge/status").json()
 
-        assert cfg["configured"] is True
-        assert st["total"] == 42
-        # 两者都基于同一个 manager（同源）— manager.get_client().status() 被调用
-        mgr.get_client.return_value.status.assert_called()
+            assert cfg["configured"] is True
+            assert st["total"] == 42
+            # 两者都基于同一个 manager（同源）— manager.get_client().status() 被调用
+            mgr.get_client.return_value.status.assert_called()
+        finally:
+            # 清理：删除测试插入的 KBConfig，避免污染 /health 检查
+            with session_scope() as db:
+                db.query(KBConfig).filter(
+                    KBConfig.vault_path == "/data/vault_A"
+                ).delete()
+            # 重置单例缓存，避免坏配置影响后续测试的 /health 检查
+            from core.kb.dynamic_kb_manager import DynamicKBManager
+            DynamicKBManager._instance = None
 
     def test_status_returns_enabled_field(self, client):
         """/status 必须含 enabled 字段（修复前端误报「知识库未启用」）。"""

@@ -198,6 +198,16 @@ try:
 except ImportError:
     pass  # prometheus-fastapi-instrumentator 未安装时跳过
 
+# ─── OpenTelemetry 分布式追踪（可选）───
+# 需设置 OTEL_EXPORTER_OTLP_ENDPOINT 环境变量才启用。
+# 未配置时完全静默，零开销。
+try:
+    from web.middleware.tracing import setup_tracing
+
+    setup_tracing(app)
+except ImportError:
+    pass  # opentelemetry 未安装时跳过
+
 # ─── 结构化日志中间件（Phase 6）───
 try:
     from web.middleware.logging import LoggingMiddleware, configure_logging

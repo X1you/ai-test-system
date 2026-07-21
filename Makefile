@@ -44,3 +44,6 @@ run: ## 启动开发服务器
 
 build-static: ## 压缩前端静态资源（CSS/JS）
 	$(PYTHON) scripts/build_static.py
+
+db-backup: ## SQLite 数据库备份（保留最近 5 份）
+	$(PYTHON) scripts/db_backup.py --keep 5

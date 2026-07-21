@@ -2,7 +2,10 @@
 """
 速率限制中间件 — slowapi 集成
 
-防止 API 被滥用。默认限制：每分钟 60 次请求。
+防止 API 被滥用。
+- 全局默认：每分钟 60 次请求（按 IP）
+- Pipeline 重操作（start/resume/cancel）：每分钟 5 次（按 IP）
+  这些接口触发 LLM 调用链，资源消耗远高于普通查询。
 """
 
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -11,6 +14,10 @@ from slowapi.util import get_remote_address
 
 # 全局限速器：每分钟 60 次（按 IP）
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
+# Pipeline 重操作限流：每分钟 5 次
+# start/resume/cancel 触发完整 LLM 调用链，需更严格限制
+PIPELINE_HEAVY_LIMIT = "5/minute"
 
 
 def get_limiter() -> Limiter:

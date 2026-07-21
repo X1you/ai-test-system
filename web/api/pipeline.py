@@ -18,11 +18,12 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from core.config_loader import load_config
 from core.utils import safe_join_path
+from web.middleware.rate_limit import PIPELINE_HEAVY_LIMIT, limiter
 from web.services.task_manager import get_task_manager
 
 # ─── 常量 ───
@@ -85,7 +86,9 @@ def _detect_file_type(name: str) -> str:
 
 
 @router.post("/start")
+@limiter.limit(PIPELINE_HEAVY_LIMIT)
 async def start_pipeline(
+    request: Request,
     file: UploadFile = File(...),
     mode: str = Form("semi"),
     dimensions: str = Form("basic"),
@@ -285,7 +288,9 @@ async def list_pipelines(
 
 
 @router.post("/{pipeline_id}/cancel")
+@limiter.limit(PIPELINE_HEAVY_LIMIT)
 async def cancel_pipeline(
+    request: Request,
     pipeline_id: str,
 ):
     """取消 Pipeline。"""
@@ -299,7 +304,9 @@ async def cancel_pipeline(
 
 
 @router.post("/{pipeline_id}/resume")
+@limiter.limit(PIPELINE_HEAVY_LIMIT)
 async def resume_pipeline(
+    request: Request,
     pipeline_id: str,
     file: UploadFile = None,
 ):
