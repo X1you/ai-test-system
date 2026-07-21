@@ -77,7 +77,18 @@ class TestKBDataSourceConsistency:
     """验证 /status /search 与 /current_config 同源（DB）。"""
 
     def test_status_and_config_same_source(self, client):
-        """/status 与 /current_config 都走 DynamicKBManager（DB）。"""
+        """/status 与 /current_config 都走 DB 数据源。"""
+        # /current_config 直接查 KBConfig 表，需插入记录
+        from db.models import KBConfig
+        from db.session import session_scope
+
+        with session_scope() as db:
+            db.add(KBConfig(
+                provider_type="mcp_filesystem",
+                vault_path="/data/vault_A",
+                is_active=True,
+            ))
+
         mgr = _make_mock_manager(configured=True, vault_path="/data/vault_A", total=42)
         with patch("core.kb.dynamic_kb_manager.get_dynamic_kb_manager", return_value=mgr):
             # current_config 走 DB

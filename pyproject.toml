@@ -43,6 +43,7 @@ web = [
     "rcssmin>=1.1",       # CSS 压缩
     "rjsmin>=1.2",        # JS 压缩
     "python-jose>=3.3",   # JWT 认证（jose）
+    "bcrypt>=4.0",        # 密码哈希（user_service）
 ]
 
 # XMind 格式输出
