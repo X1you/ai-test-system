@@ -14,7 +14,7 @@ SSE 端点 — Server-Sent Events 实时推送
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
 
 from web.services.event_bus import get_event_bus

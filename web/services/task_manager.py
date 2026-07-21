@@ -158,9 +158,9 @@ class TaskManager:
         # 2. 从 DB 补充历史任务（内存中没有的）
         #    ★ 自愈：DB 中 running/pending/paused 但不在内存 → 僵尸任务，标记 interrupted
         try:
+            from db.models import Pipeline
             from db.repository import get_repository
             from db.session import session_scope
-            from db.models import Pipeline
             repo = get_repository()
             db_pipelines = repo.list_pipelines(limit=50)
             zombie_ids = []

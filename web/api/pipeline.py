@@ -18,7 +18,7 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from core.config_loader import load_config
@@ -140,8 +140,8 @@ async def start_pipeline(
 
 def _db_progress(pipeline_id: str) -> dict:
     """从 DB 构建历史任务的只读进度视图（重启后内存无 task 时回退）。"""
-    from db.repository import get_repository
     from core.pipeline import STEP_REGISTRY, TOTAL_STEPS
+    from db.repository import get_repository
 
     repo = get_repository()
     p = repo.get_pipeline(pipeline_id)
@@ -496,7 +496,6 @@ async def export_pytest_project_zip(
       4. StreamingResponse 返回二进制流
     """
     import io
-    import shutil
     import tempfile
     import zipfile
 

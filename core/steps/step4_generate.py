@@ -131,7 +131,7 @@ class Step4Generate(BaseStep):
         if "excel" in formats:
             xlsx_path = self._out("testcases.xlsx")
             if xlsx_path.exists() and self._has_results(str(xlsx_path)):
-                self.log(f"Excel 已存在（含执行结果），跳过覆盖", "OK")
+                self.log("Excel 已存在（含执行结果），跳过覆盖", "OK")
             else:
                 self._write_structured_excel(test_cases, str(xlsx_path))
                 self.log(f"✅ Excel 用例生成完成 — {len(test_cases)} 条（含 case_type/duration/traceability）", "OK")
@@ -222,7 +222,7 @@ class Step4Generate(BaseStep):
 
         # 兜底 2.5：去除所有 ``` 行后尝试
         lines = text.split("\n")
-        cleaned_lines = [l for l in lines if not l.strip().startswith("```")]
+        cleaned_lines = [ln for ln in lines if not ln.strip().startswith("```")]
         cleaned_text = "\n".join(cleaned_lines).strip()
         if cleaned_text != text:
             try:

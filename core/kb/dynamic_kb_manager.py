@@ -17,7 +17,6 @@ DynamicKBManager — 动态知识库管理器（Sprint 6.0）
 
 import logging
 import threading
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("ai-test-system")

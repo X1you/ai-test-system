@@ -1,57 +1,51 @@
-name: Tests
+name: Test
+
+# CI 测试流水线 — 质量门禁
+# 触发：push 到 main / 任意 PR
+# 覆盖率门槛：50%（当前基线 64%，留有下降缓冲）
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'core/**'
-      - 'web/**'
-      - 'db/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - '.github/workflows/test.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'core/**'
-      - 'web/**'
-      - 'db/**'
-      - 'tests/**'
-      - 'scripts/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - '.github/workflows/test.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v3
         with:
           version: 'latest'
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.11
 
       - name: Install dependencies
-        # 安装运行时 + 测试所需的全部可选依赖组（与本地 uv sync 一致）
-        run: uv sync --frozen --extra web --extra db --extra excel --extra xmind --extra production --extra dev
+        run: |
+          uv sync --frozen --extra web --extra db --extra excel --extra production --extra dev
 
       - name: Run tests with coverage
-        # --cov-fail-under=50: 覆盖率低于 50% 流水线 fail（基线拦截）
-        # pytest 任何用例失败也会以非零退出码 fail 整条流水线
-        run: uv run pytest --cov=core --cov=web --cov-report=term --cov-report=xml --cov-fail-under=50
+        run: |
+          uv run pytest \
+            --cov=core --cov=web \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=50 \
+            --cov-branch \
+            -q --tb=short
 
       - name: Upload coverage report
-        if: always()  # 即使测试失败也上传，便于排查
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
-          retention-days: 14
+          retention-days: 7

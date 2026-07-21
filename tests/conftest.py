@@ -14,14 +14,14 @@ marker 约定：
   - 类/函数级标记：在 TestClass 或 test_func 上加 `@pytest.mark.slow`
 """
 
-import pytest
-
 # ─── 测试环境 JWT 密钥（必须在 web.app 导入前设置）───
 # app.py 在模块导入时通过 _load_dotenv 加载 .env 的 JWT_SECRET，
 # 但测试用的 token 必须用固定的测试密钥签名才能通过 verify_token。
 # 因此在 conftest 导入阶段（早于任何 web.app 引用）强制覆盖为测试密钥。
 # 注意：这是测试环境的唯一例外，生产环境绝不这样做。
 import os as _os
+
+import pytest
 
 _TEST_JWT_SECRET = "test-only-secret-for-pytest-fixture-32chars"
 _os.environ["JWT_SECRET"] = _TEST_JWT_SECRET

@@ -15,7 +15,7 @@ Step 0: 需求漏洞扫描（PRD Gap Analysis）（AI 步骤）
 import re
 from pathlib import Path
 
-from core.llm_client import LLMClient, LLMError
+from core.llm_client import LLMError
 from core.prompt_loader import load_prompt, render
 from core.steps.base import BaseStep, StepResult
 

@@ -14,7 +14,7 @@ JWT 认证中间件 — FastAPI Depends 模式
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -101,7 +101,7 @@ def create_token(
         iat: 签发时间（UTC）
     """
     expire_delta = timedelta(minutes=expires_minutes or DEFAULT_TOKEN_EXPIRE_MINUTES)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "username": username,

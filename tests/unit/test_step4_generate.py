@@ -6,10 +6,9 @@ core/steps/step4_generate.py 单元测试（不修改业务代码）。
 用 unittest.mock 模拟 LLM API 与 subprocess，tmp_path 隔离文件 IO。
 """
 
-import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -533,7 +532,6 @@ class TestGenerateWithScript:
 
     def test_reuse_excel_with_results(self, tmp_path, monkeypatch):
         """Excel 已存在且含执行结果 → 复用"""
-        from core.steps import step4_generate
 
         step = _make_step(tmp_path, None)
         (tmp_path / "testcases.xlsx").write_bytes(b"fake")
@@ -593,7 +591,6 @@ class TestChatWithTemp:
     """测试 _chat_with_temp 重试逻辑"""
 
     def test_success_first_try(self, tmp_path):
-        from core.steps.step4_generate import Step4Generate
 
         llm = _make_mock_llm("response")
         step = _make_step(tmp_path, llm)
@@ -603,7 +600,6 @@ class TestChatWithTemp:
     def test_no_llm_raises(self, tmp_path):
         """llm=None → 抛 LLMError"""
         from core.llm_client import LLMError
-        from core.steps.step4_generate import Step4Generate
 
         step = _make_step(tmp_path, None)
         with pytest.raises(LLMError):

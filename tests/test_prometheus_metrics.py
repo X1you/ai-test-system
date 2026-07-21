@@ -19,8 +19,6 @@ import os
 import sys
 from pathlib import Path
 
-import pytest
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -103,7 +101,7 @@ class TestCustomLLMMetrics:
 
     def test_metrics_increment_correctly(self, unauthenticated_client):
         """连续多次 record_llm_call，llm_request_total 计数应递增"""
-        from core.metrics import record_llm_call, LLM_REQUEST_TOTAL
+        from core.metrics import record_llm_call
 
         # 用唯一 provider 名避免与其他测试累加值混淆
         provider = "increment_unique_test_pv"
@@ -129,9 +127,8 @@ class TestGatewayMetricsIntegration:
 
     def test_call_provider_records_duration(self):
         """LLMGateway._call_provider 调用后记录耗时指标"""
-        from unittest.mock import AsyncMock, MagicMock
-
         import asyncio
+        from unittest.mock import AsyncMock, MagicMock
 
         from core.llm_gateway import LLMGateway
 
@@ -153,6 +150,7 @@ class TestGatewayMetricsIntegration:
 
         # 验证 /metrics 现在有 test_pv 的指标
         from fastapi.testclient import TestClient
+
         from web.app import app
 
         resp = TestClient(app).get("/metrics")
@@ -161,11 +159,10 @@ class TestGatewayMetricsIntegration:
     def test_fallback_recorded_on_failover(self):
         """主 Provider 失败切换备选时，fallback 指标被记录"""
         import asyncio
-
         from unittest.mock import AsyncMock, MagicMock
 
-        from core.llm_gateway import LLMGateway
         from core.llm_client import LLMError
+        from core.llm_gateway import LLMGateway
 
         # 构造真实 gateway 实例
         gateway = LLMGateway.__new__(LLMGateway)
@@ -173,6 +170,7 @@ class TestGatewayMetricsIntegration:
             "provider_calls": {}, "total_calls": 0, "total_tokens": 0,
             "provider_errors": {}, "failovers": 0,
         }
+        gateway._circuits = {}  # 断路器状态
 
         # 主 provider 失败，备选成功
         primary = MagicMock()
@@ -195,6 +193,7 @@ class TestGatewayMetricsIntegration:
 
         # 验证 fallback 指标
         from fastapi.testclient import TestClient
+
         from web.app import app
 
         resp = TestClient(app).get("/metrics")
@@ -210,7 +209,7 @@ class TestMetricsGracefulDegrade:
 
     def test_record_functions_never_raise(self):
         """record_llm_call / record_fallback 永不抛异常"""
-        from core.metrics import record_llm_call, record_fallback
+        from core.metrics import record_fallback, record_llm_call
 
         # 正常调用不应抛
         record_llm_call("p", "m", 0.5)

@@ -12,6 +12,7 @@ Endpoints（前缀由 app.py 统一挂载为 /api/v1/knowledge）:
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -197,9 +198,10 @@ async def update_kb_config(req: KBConfigRequest):
             import requests  # 延迟导入：仅 obsidian_api 连通性测试需要
 
             headers = {"Authorization": f"Bearer {req.auth_token}"} if req.auth_token else {}
+            _ssl_verify = os.environ.get("OBSIDIAN_SSL_VERIFY", "").lower() == "true"
             resp = requests.get(
                 req.connection_url.rstrip("/") + "/health",
-                headers=headers, timeout=5, verify=False,
+                headers=headers, timeout=5, verify=_ssl_verify,
             )
             # 只要能连上就算通过（401 也算）
             connectivity_msg = f"连通性测试通过（HTTP {resp.status_code}）"
@@ -219,6 +221,7 @@ async def update_kb_config(req: KBConfigRequest):
     # 3. 写入 DB
     try:
         from datetime import datetime
+
         from db.models import KBConfig
         from db.session import session_scope
 

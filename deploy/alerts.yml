@@ -1,0 +1,104 @@
+# Prometheus 告警规则 — ai-test-system
+#
+# 基于 /metrics 端点暴露的真实指标定义。
+# 告警分组：HTTP 可用性 / LLM 网关 / 系统 / 业务
+#
+# 部署：将本文件放到 Prometheus 的 rules_dir，scrape_configs 抓取 http://<host>:8080/metrics
+# 详见 docs/ALERTING.md
+
+groups:
+  # ─── HTTP 可用性告警 ───
+  - name: http_availability
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5XX 错误率超过 1%（过去 5 分钟）"
+          description: "5XX 错误率 {{ $value | humanizePercentage }}，阈值 1%。检查应用日志和 /health/ready。"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P99 响应延迟超过 5 秒"
+          description: "HTTP P99 延迟 {{ $value }}s，可能 LLM 上游慢或 DB 锁冲突。"
+
+  # ─── LLM 网关告警 ───
+  - name: llm_gateway
+    rules:
+      - alert: LLMErrorsSpike
+        expr: |
+          (
+            sum(rate(llm_request_total{status="error"}[5m]))
+            /
+            sum(rate(llm_request_total[5m]))
+          ) > 0.3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM 调用错误率超过 30%"
+          description: "LLM Provider 错误率 {{ $value | humanizePercentage }}。检查 API Key 额度、上游限流、网络连通。"
+
+      - alert: LLMSlowResponse
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(llm_request_duration_seconds_bucket[5m])) by (le)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM P99 响应超过 30 秒"
+          description: "LLM P99 延迟 {{ $value }}s。Provider 可能限流或过载。"
+
+      - alert: LLMFallbackRate
+        expr: |
+          (
+            sum(rate(llm_provider_fallback_total[10m]))
+            /
+            sum(rate(llm_request_total{status="success"}[10m]))
+          ) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM 故障转移率超过 20%"
+          description: "主 Provider 频繁故障转移。检查主 Provider 健康（API 状态页、额度、网络）。"
+
+  # ─── 系统可用性告警 ───
+  - name: system
+    rules:
+      - alert: ServiceDown
+        expr: up{job="ai-test-system"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ai-test-system 服务不可达"
+          description: "Prometheus 抓取 /metrics 失败超过 1 分钟。进程可能崩溃或网络隔离。"
+
+      - alert: HealthDegraded
+        # /health/ready 返回 503 时，Prometheus 的 blackbox 或 http 探测会捕获
+        # 这里用 up 指标的变体：如果 scrape 成功但应用报 degraded
+        # 需要配合 blackbox_exporter 或自定义指标（当前用 ServiceDown 兜底）
+        expr: up{job="ai-test-system"} == 0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "健康检查异常"
+          description: "检查 /health/ready 返回的 checks 详情，定位 DB/LLM/KB 哪个依赖挂了。"

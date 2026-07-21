@@ -18,7 +18,7 @@ Pipeline interrupted-resume 回归测试（方案 A）。
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -40,6 +40,7 @@ def tmp_pipeline_record(tmp_path):
 
     # 重新导入让 session 模块拾取新的 DATABASE_PATH
     import importlib
+
     import db.session as session_mod
     importlib.reload(session_mod)
     import db.models as models_mod
@@ -112,9 +113,10 @@ class TestRebuildTaskFromDB:
     def test_rebuild_restores_completed_steps(self, tmp_pipeline_record):
         """重建时从 DB 恢复已完成的步骤（断点续跑依据）。"""
         pipeline_id, _ = tmp_pipeline_record
-        from db.session import session_scope
-        from db.models import PipelineStep
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        from db.models import PipelineStep
+        from db.session import session_scope
 
         # 写入两条已完成的 step 记录
         with session_scope() as s:
@@ -159,8 +161,8 @@ class TestResumeEndpointStates:
         pipeline_id, _ = tmp_pipeline_record
 
         # 先把 DB 记录改成 cancelled
-        from db.session import session_scope
         from db.models import Pipeline
+        from db.session import session_scope
         with session_scope() as s:
             s.query(Pipeline).filter(Pipeline.id == pipeline_id).update({"status": "cancelled"})
 

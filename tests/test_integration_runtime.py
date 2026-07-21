@@ -117,7 +117,9 @@ class TestStep2KBIntegration:
 
     def test_missing_vault_graceful_skip(self, tmp_path):
         """vault 不存在时应优雅跳过，不崩溃（DB 数据源）"""
-        from unittest.mock import patch as _patch, MagicMock
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
         from core.steps.step2_kb_search import Step2KBSearch
 
         mock_mgr = MagicMock()
@@ -135,7 +137,9 @@ class TestStep2KBIntegration:
 
     def test_disabled_kb_skips(self, tmp_path):
         """知识库未配置时应跳过（DB 数据源）"""
-        from unittest.mock import patch as _patch, MagicMock
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
         from core.steps.step2_kb_search import Step2KBSearch
 
         mock_mgr = MagicMock()

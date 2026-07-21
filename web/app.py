@@ -238,8 +238,8 @@ def _run_startup_tasks():
 
     # 3. 僵尸检测 + 任务恢复
     try:
-        from db.repository import get_repository
         from db.models import Pipeline
+        from db.repository import get_repository
         from db.session import session_scope
 
         with session_scope() as session:
@@ -376,17 +376,13 @@ async def index():
     }
 
 
-@app.get("/health")
-async def health():
-    """健康检查 — 返回各组件连通性状态
+def _check_dependencies() -> dict:
+    """依赖连通性检查（供 readiness 复用）。
 
-    检查项：
-      - api: FastAPI 应用本身（始终 ok）
-      - database: SQLite 连通性
-      - llm: LLM 配置是否就绪（不实际调用）
-      - knowledge_base: 知识库路径是否存在
+    返回各依赖组件的状态字典。所有检查异常安全，不抛出。
     """
-    checks = {"api": "ok"}
+    # api 组件：能响应本端点即 ok（始终 ok，保留向后兼容）
+    checks: dict = {"api": "ok"}
 
     # 检查数据库
     try:
@@ -432,9 +428,54 @@ async def health():
     except Exception:
         checks["knowledge_base"] = "error"
 
-    # 综合状态
-    all_ok = all(v == "ok" or v == "disabled" or v == "not_configured" for v in checks.values())
+    return checks
 
+
+def _all_dependencies_ok(checks: dict) -> bool:
+    """依赖检查是否全部通过（not_configured/disabled 也算通过）。"""
+    return all(v == "ok" or v == "disabled" or v == "not_configured" for v in checks.values())
+
+
+@app.get("/health/live")
+async def liveness():
+    """Liveness 探针 — 进程是否存活。
+
+    只要进程能响应即为存活，不检查任何外部依赖。
+    K8s/Docker 配置：liveness 失败 → 重启进程。
+    """
+    return JSONResponse(
+        status_code=200,
+        content={"status": "alive"},
+    )
+
+
+@app.get("/health/ready")
+async def readiness():
+    """Readiness 探针 — 是否准备好接收流量。
+
+    检查 DB / LLM / KB 依赖连通性。任一关键依赖不可用返回 503。
+    K8s/Docker 配置：readiness 失败 → 摘除流量（不重启进程）。
+    """
+    checks = _check_dependencies()
+    all_ok = _all_dependencies_ok(checks)
+    return JSONResponse(
+        status_code=200 if all_ok else 503,
+        content={
+            "status": "ok" if all_ok else "degraded",
+            "version": APP_VERSION,
+            "checks": checks,
+        },
+    )
+
+
+@app.get("/health")
+async def health():
+    """健康检查（向后兼容）— 等价于 /health/ready。
+
+    新部署建议直接用 /health/live + /health/ready 分离探针。
+    """
+    checks = _check_dependencies()
+    all_ok = _all_dependencies_ok(checks)
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content={

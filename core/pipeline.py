@@ -422,7 +422,7 @@ class Pipeline:
             self.mark_done(state, 0, r0)
             degraded = bool(r0.data.get("degraded")) if r0.data else False
             if degraded:
-                print(f"⏭️  Step 0 已降级跳过（gap_count=0），继续 Step 1\n")
+                print("⏭️  Step 0 已降级跳过（gap_count=0），继续 Step 1\n")
             else:
                 print(f"🔍 Step 0 识别 {gap} 项待澄清问题（详见 requirement_gap_analysis.md）\n")
             # Step 0 不设检查点（needs_pause=False），无论 semi/step 都直接推进

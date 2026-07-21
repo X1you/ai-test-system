@@ -14,9 +14,9 @@ from pathlib import Path
 
 import yaml
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from core.config_loader import load_config, validate_config, PROJECT_ROOT
+from core.config_loader import PROJECT_ROOT, load_config, validate_config
 
 router = APIRouter(tags=["config"])
 
