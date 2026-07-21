@@ -137,14 +137,9 @@ class TestRebuildTaskFromDB:
 class TestResumeEndpointStates:
     """resume 端点的状态校验（mock 执行层，只测状态流转）。"""
 
-    def test_resume_interrupted_triggers_rebuild(self, tmp_pipeline_record):
+    def test_resume_interrupted_triggers_rebuild(self, client, tmp_pipeline_record):
         """interrupted 任务不在内存 → 触发 rebuild_task_from_db。"""
         pipeline_id, _ = tmp_pipeline_record
-        from fastapi.testclient import TestClient
-        from web.app import app
-
-        client = TestClient(app)
-        tm = app.dependency_overrides  # noqa — 仅用于文档说明
 
         # mock rebuild 返回一个 task，mock resume_background 不真跑
         mock_task = MagicMock()
@@ -159,11 +154,9 @@ class TestResumeEndpointStates:
         assert resp.status_code == 200
         mock_task.resume_background.assert_called_once()
 
-    def test_resume_cancelled_rejected_400(self, tmp_pipeline_record):
+    def test_resume_cancelled_rejected_400(self, client, tmp_pipeline_record):
         """cancelled 状态即使 requirements 存在也被 400 拒绝。"""
         pipeline_id, _ = tmp_pipeline_record
-        from fastapi.testclient import TestClient
-        from web.app import app
 
         # 先把 DB 记录改成 cancelled
         from db.session import session_scope
@@ -171,16 +164,11 @@ class TestResumeEndpointStates:
         with session_scope() as s:
             s.query(Pipeline).filter(Pipeline.id == pipeline_id).update({"status": "cancelled"})
 
-        client = TestClient(app)
         resp = client.post(f"/api/v1/pipeline/{pipeline_id}/resume")
         assert resp.status_code == 400
         assert "不允许" in resp.json()["detail"]
 
-    def test_resume_nonexistent_returns_404(self, tmp_pipeline_record):
+    def test_resume_nonexistent_returns_404(self, client, tmp_pipeline_record):
         """不存在的 pipeline_id → 404。"""
-        from fastapi.testclient import TestClient
-        from web.app import app
-
-        client = TestClient(app)
         resp = client.post("/api/v1/pipeline/nonexistent_xyz/resume")
         assert resp.status_code == 404

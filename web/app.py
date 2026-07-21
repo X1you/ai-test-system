@@ -33,6 +33,8 @@ from core.config_loader import load_config
 from core.errors import AppError, app_error_handler
 from web.api import config as config_api
 from web.api import knowledge, pipeline, webhooks
+from web.api.auth import router as auth_router
+from web.middleware.auth import verify_token
 from web.services.task_manager import get_task_manager
 
 # SSE 路由（Phase 3，可能尚未创建）
@@ -64,15 +66,31 @@ static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # 注册路由（Sprint 6.1：统一 /api/v1 前缀，避免重叠）
-app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
-app.include_router(knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"])
-app.include_router(config_api.router, prefix="/api/v1/config", tags=["config"])
+# JWT 认证：除 auth/login（自身用于获取 token）和 webhooks（外部系统回调）外，
+# 所有 API 路由强制 require verify_token 依赖。
+from fastapi import Depends  # noqa: E402
+
+_auth_dep = [Depends(verify_token)]
+
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(
+    pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"], dependencies=_auth_dep
+)
+app.include_router(
+    knowledge.router, prefix="/api/v1/knowledge", tags=["knowledge"], dependencies=_auth_dep
+)
+app.include_router(
+    config_api.router, prefix="/api/v1/config", tags=["config"], dependencies=_auth_dep
+)
+# webhooks 豁免认证：外部系统（CI/CD 等）回调无法携带 JWT
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 
 # 注册 AppError 异常处理器
 app.add_exception_handler(AppError, app_error_handler)
 if sse_api is not None:
-    app.include_router(sse_api.router, prefix="/api/v1/pipeline", tags=["sse"])
+    app.include_router(
+        sse_api.router, prefix="/api/v1/pipeline", tags=["sse"], dependencies=_auth_dep
+    )
 if integrations_router is not None:
     app.include_router(integrations_router)  # integrations 自带 prefix，保留
 
@@ -178,10 +196,33 @@ async def _shutdown_task_manager():
 @app.on_event("startup")
 async def _cleanup_and_recover_tasks():
     """服务重启后：
-    1. running/pending/paused → interrupted（僵尸检测）
-    2. interrupted 中有已完成步骤 + requirements 存在的 → 重建到内存（paused）
+    1. JWT 密钥安全校验（生产环境弱密钥拒绝启动）
+    2. 确保管理员账户存在（首次启动自动创建）
+    3. running/pending/paused → interrupted（僵尸检测）
+    4. interrupted 中有已完成步骤 + requirements 存在的 → 重建到内存（paused）
        用户刷新页面即可看到进度并点继续，无需手动处理中断
     """
+    # JWT 密钥校验（弱密钥/生产环境缺失会 SystemExit）
+    from web.middleware.auth import validate_secret_on_startup
+
+    validate_secret_on_startup()
+
+    # 确保管理员账户存在（幂等，仅首次创建）
+    try:
+        from web.services.user_service import create_admin_if_not_exists
+
+        created = create_admin_if_not_exists()
+        if created:
+            import logging
+
+            logging.getLogger("web").info(
+                "已创建默认管理员账户 admin/admin123（请尽快修改密码）"
+            )
+    except Exception as e:
+        import logging
+
+        logging.getLogger("web").warning(f"管理员账户初始化失败（不影响启动）: {e}")
+
     try:
         from db.repository import get_repository
         from db.models import Pipeline

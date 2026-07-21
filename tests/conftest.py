@@ -16,6 +16,16 @@ marker 约定：
 
 import pytest
 
+# ─── 测试环境 JWT 密钥（必须在 web.app 导入前设置）───
+# app.py 在模块导入时通过 _load_dotenv 加载 .env 的 JWT_SECRET，
+# 但测试用的 token 必须用固定的测试密钥签名才能通过 verify_token。
+# 因此在 conftest 导入阶段（早于任何 web.app 引用）强制覆盖为测试密钥。
+# 注意：这是测试环境的唯一例外，生产环境绝不这样做。
+import os as _os
+
+_TEST_JWT_SECRET = "test-only-secret-for-pytest-fixture-32chars"
+_os.environ["JWT_SECRET"] = _TEST_JWT_SECRET
+
 # 这些目录下的测试属于端到端套件，整体打 slow 标记
 # （真实调用 LLM/Pipeline/Web/KB，执行时间长，日常默认跳过）
 _SLOW_DIRS = {
@@ -54,9 +64,46 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="function")
 def client():
-    """创建测试客户端"""
+    """创建测试客户端 — 自动注入有效 JWT（现有测试零改动）。
+
+    所有现有测试无需逐个加 token：此 fixture 在 TestClient 上设置默认
+    Authorization: Bearer header，让请求自动通过 verify_token。
+    token 用测试专用密钥签名，保证通过 verify_token 校验。
+    """
+    from fastapi.testclient import TestClient
+
+    from web.app import app
+
+    # 测试专用 JWT（用固定 secret 签名，与 verify_token 配合）
+    token = _make_test_token()
+    tc = TestClient(app)
+    tc.headers.update({"Authorization": f"Bearer {token}"})
+    return tc
+
+
+@pytest.fixture(scope="function")
+def unauthenticated_client():
+    """创建不带认证的测试客户端（用于安全测试：验证 401/403）。
+
+    安全测试（test_security.py）用这个 fixture 访问受保护端点，
+    断言返回 401 Unauthorized。
+    """
     from fastapi.testclient import TestClient
 
     from web.app import app
 
     return TestClient(app)
+
+
+# ─── 测试用 JWT 生成 ───
+
+
+def _make_test_token() -> str:
+    """签发测试用 JWT（用模块级设置的 _TEST_JWT_SECRET 签名，admin 角色）。
+
+    JWT_SECRET 已在 conftest 导入时设为 _TEST_JWT_SECRET，
+    因此 web.middleware.auth.get_jwt_secret() 返回同一密钥。
+    """
+    from web.middleware.auth import create_token
+
+    return create_token(user_id=0, username="test-admin", role="admin")

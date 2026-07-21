@@ -35,13 +35,20 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # 对不安全的方法进行 CSRF 校验
-        # 豁免条件：
-        #   1. API 路径（/api/*）— 使用 JWT Authorization Header 认证，不受 CSRF 影响
-        #   2. 携带 Authorization Header 的请求 — JWT 认证，跨站无法伪造
-        #   3. 没有 CSRF Cookie — 不存在可被伪造的浏览器会话
+        # 豁免条件（双重提交 Cookie 模型下，CSRF 只对浏览器 Cookie 会话有意义）：
+        #   1. API 路径（/api/*）— 纯 JSON API，前端用 fetch 携带 Authorization
+        #      Bearer 头认证，不依赖浏览器自动发送的 Cookie，CSRF 攻击模型不适用。
+        #      （JWT 认证由 FastAPI Depends(verify_token) 独立强制，与 CSRF 无关。）
+        #   2. 携带 Authorization Header 的请求 — 即使是页面路由，带 Bearer token
+        #      说明是程序化请求，跨站脚本无法伪造自定义 Header。
+        #   3. 没有 CSRF Cookie — 不存在可被伪造的浏览器会话（首次访问）。
         has_api_path = request.url.path.startswith("/api/")
         has_auth_header = bool(request.headers.get("authorization"))
-        needs_csrf = request.method in UNSAFE_METHODS and not has_api_path and not has_auth_header
+        needs_csrf = (
+            request.method in UNSAFE_METHODS
+            and not has_api_path
+            and not has_auth_header
+        )
 
         if needs_csrf:
             cookie_token = request.cookies.get(self.cookie_name, "")
