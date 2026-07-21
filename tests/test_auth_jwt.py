@@ -281,26 +281,32 @@ class TestLoginRateLimit:
             f"当前中间件: {middleware_classes}"
         )
 
-        # 2. login 路由 endpoint 是被 slowapi 装饰后的 wrapper
-        login_route = None
-        for route in app.routes:
-            if hasattr(route, "path") and route.path == "/api/v1/auth/login":
-                login_route = route
-                break
-        assert login_route is not None, "未找到 /api/v1/auth/login 路由"
+        # 2. login 路由已注册 — FastAPI 0.115+ 用 _IncludedRouter 延迟展开路由，
+        # app.routes 不再直接暴露合并后的 Route 对象。改用 openapi schema 验证。
+        schema = app.openapi()
+        paths = schema.get("paths", {})
+        assert "/api/v1/auth/login" in paths, (
+            f"未找到 /api/v1/auth/login 路由，"
+            f"现有 auth 相关路径: {[p for p in paths if 'auth' in p]}"
+        )
+        assert "post" in paths["/api/v1/auth/login"], "login 路由缺少 POST 方法"
 
-        endpoint = login_route.endpoint
+        # 3. login endpoint 已被 slowapi 装饰
+        # 直接检查 auth 模块的 login 函数是否被 limiter.limit() 包裹
+        import web.api.auth as auth_mod
+
+        login_fn = getattr(auth_mod, "login", None)
+        assert login_fn is not None, "web.api.auth.login 函数不存在"
         # slowapi 装饰器会把函数包成 _check_request_limit wrapper
         # wrapper 的 __wrapped__ 指向原始 login 函数
-        is_wrapped = hasattr(endpoint, "__wrapped__") or "_slowapi" in dir(
-            endpoint
+        is_wrapped = hasattr(login_fn, "__wrapped__") or "_slowapi" in dir(
+            login_fn
         ).__str__()
         assert is_wrapped, (
-            f"login endpoint 未被 limiter.limit() 装饰，"
-            f"endpoint: {endpoint}"
+            f"login 函数未被 limiter.limit() 装饰，endpoint: {login_fn}"
         )
 
-        # 3. login 已注册到 limiter 的标记表
+        # 4. login 已注册到 limiter 的标记表
         marked = getattr(limiter, "_Limiter__marked_for_limiting", {})
         assert "web.api.auth.login" in marked, (
             f"login 未注册到 limiter.__marked_for_limiting，"
