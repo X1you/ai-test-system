@@ -155,10 +155,11 @@ class TestTaskManagerBasic:
             assert tm.get_running_count() == 1
 
     def test_max_workers(self):
-        """最大并发数"""
+        """最大并发数（从 config.yaml 读取，默认 2）"""
         from web.services.task_manager import TaskManager
 
-        assert TaskManager.MAX_WORKERS == 2
+        tm = TaskManager()
+        assert tm.MAX_WORKERS == 2
 
     def test_shutdown_releases_executor(self):
         """shutdown() 释放线程池，幂等可重复调用"""

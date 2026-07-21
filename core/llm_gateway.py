@@ -13,7 +13,7 @@ Track B 完整版将增加：缓存层、成本核算、Rate Limiting。
 
 
 from core.llm_client import LLMClient, LLMError
-from core.metrics import record_fallback, record_llm_call
+from core.metrics import record_circuit_breaker_state, record_fallback, record_llm_call
 
 # ─── 断路器配置 ───
 # 连续失败达到阈值 → 熔断该 Provider，熔断窗口内直接跳过（不等超时）
@@ -106,6 +106,7 @@ class LLMGateway:
             if circuit.should_try(now):
                 # 进入半开状态，本次调用即探测
                 circuit.half_open_probing = True
+                record_circuit_breaker_state(provider_name, "half_open")
 
             try:
                 result = await self._call_provider(
@@ -113,6 +114,7 @@ class LLMGateway:
                 )
                 # 成功：重置该 Provider 的断路器
                 self._reset_circuit(circuit)
+                record_circuit_breaker_state(provider_name, "closed")
                 if i > 0:
                     self._stats["failovers"] += 1
                     # 记录 Prometheus fallback 指标（上一个失败的 provider → 当前成功的）
@@ -140,6 +142,7 @@ class LLMGateway:
             self._stats["circuit_breaks"][provider_name] = (
                 self._stats["circuit_breaks"].get(provider_name, 0) + 1
             )
+            record_circuit_breaker_state(provider_name, "open")
 
     def _reset_circuit(self, circuit: _CircuitState) -> None:
         """调用成功后重置断路器（从半开恢复到闭合）。"""

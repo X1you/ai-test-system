@@ -24,6 +24,9 @@ router = APIRouter(tags=["sse"])
 # 心跳间隔（秒）
 HEARTBEAT_INTERVAL = 15.0
 
+# SSE 连接最大存活时间（秒）— 防止半开 TCP 连接泄漏
+SSE_MAX_LIFETIME = 1800.0  # 30 分钟
+
 # 终止事件类型 — 收到后关闭流
 TERMINAL_EVENTS = ("done", "error", "cancelled")
 
@@ -43,10 +46,16 @@ async def stream_progress(
     queue = await bus.subscribe(pipeline_id)
 
     async def event_generator():
+        start_time = asyncio.get_running_loop().time()
         try:
             while True:
                 # 客户端断开连接时退出
                 if await request.is_disconnected():
+                    break
+
+                # 连接超时保护 — 防止半开 TCP 连接泄漏
+                if asyncio.get_running_loop().time() - start_time > SSE_MAX_LIFETIME:
+                    yield {"event": "timeout", "data": json.dumps({"reason": "max_lifetime"})}
                     break
 
                 try:

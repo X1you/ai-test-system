@@ -166,12 +166,28 @@ class TestExemptedEndpoints:
         assert resp.status_code == 401
 
     def test_webhooks_no_token_needed(self, unauthenticated_client):
-        """/api/v1/webhooks/* 无需认证（外部系统回调）"""
-        # webhook 端点存在但可能返回 404（平台不支持），关键是不是 401
+        """/api/v1/webhooks/* 无需 JWT 认证（外部系统回调）。
+
+        P0-5 后需要 HMAC 签名，但不需要 JWT Bearer token。
+        带合法 HMAC 签名 → 通过签名验证 → 到适配器层才可能 404，
+        关键是不会因为缺少 JWT 而返回 401。
+        """
+        import hashlib
+        import hmac
+
+        from tests.conftest import TEST_WEBHOOK_SECRET
+
+        body = b'{"action": "opened"}'
+        signature = hmac.new(
+            TEST_WEBHOOK_SECRET.encode(), body, hashlib.sha256
+        ).hexdigest()
+
         resp = unauthenticated_client.post(
             "/api/v1/webhooks/github",
-            json={"action": "opened"},
+            content=body,
+            headers={"X-Webhook-Signature": signature},
         )
+        # 关键：不因缺少 JWT 返回 401（HMAC 签名通过即可）
         assert resp.status_code != 401
 
 
@@ -197,9 +213,10 @@ class TestLoginEndpoint:
     def test_login_success_returns_token(self, unauthenticated_client):
         """正确凭据 → 返回 JWT（需要 DB 有 admin 账户）"""
         # 先确保 admin 账户存在（startup 会创建，但测试环境可能未触发）
+        # 显式传入测试用凭证（不再依赖已移除的硬编码默认密码 admin123）
         from web.services.user_service import create_admin_if_not_exists
 
-        create_admin_if_not_exists()
+        create_admin_if_not_exists(username="admin", password="admin123")
         resp = unauthenticated_client.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin123"},

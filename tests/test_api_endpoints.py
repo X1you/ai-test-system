@@ -146,21 +146,42 @@ class TestKnowledgeAPI:
 class TestWebhooksAPI:
     """Webhooks API"""
 
+    @staticmethod
+    def _sign(body: bytes) -> str:
+        """用测试密钥计算 HMAC-SHA256 签名（与 conftest TEST_WEBHOOK_SECRET 一致）。"""
+        import hashlib
+        import hmac
+
+        from tests.conftest import TEST_WEBHOOK_SECRET
+
+        return hmac.new(
+            TEST_WEBHOOK_SECRET.encode(), body, hashlib.sha256
+        ).hexdigest()
+
     def test_webhook_unknown_platform(self, client):
-        """未知平台返回 404"""
-        resp = client.post("/api/v1/webhooks/unknown_platform")
+        """未知平台返回 404（带合法签名，通过 HMAC 层后到适配器查找才 404）"""
+        body = b"{}"
+        resp = client.post(
+            "/api/v1/webhooks/unknown_platform",
+            content=body,
+            headers={"X-Webhook-Signature": self._sign(body)},
+        )
         assert resp.status_code == 404
 
     def test_webhook_missing_signature(self, client):
-        """缺少签名 — 可能被接受或拒绝"""
+        """缺少签名头 → 401"""
         resp = client.post("/api/v1/webhooks/testrail", json={"event": "test"})
-        # webhook 端点可能返回 200（接受）、401（签名验证失败）、404（平台未配置）
-        assert resp.status_code in (200, 401, 404, 422, 500)
+        assert resp.status_code == 401
 
     def test_webhook_no_body(self, client):
-        """空请求体"""
-        resp = client.post("/api/v1/webhooks/testrail")
-        # 缺少 JSON body
+        """空请求体（带签名通过 HMAC 层，到 JSON 解析才 400）"""
+        body = b""
+        resp = client.post(
+            "/api/v1/webhooks/testrail",
+            content=body,
+            headers={"X-Webhook-Signature": self._sign(body)},
+        )
+        # 空 body → json.loads("") → 400
         assert resp.status_code in (400, 404, 422)
 
 

@@ -21,7 +21,7 @@ COPY db/ db/
 COPY cli.py config_loader.py ./
 
 # 安装依赖到 /install
-RUN pip install --no-cache-dir --prefix=/install -e ".[web,xmind,excel,db]"
+RUN pip install --no-cache-dir --prefix=/install -e ".[web,xmind,excel,db,production]"
 
 # ─── Runtime 阶段 ───
 FROM python:3.11-slim
@@ -37,17 +37,23 @@ COPY --from=builder /build/ /app/
 # 创建数据目录
 RUN mkdir -p /app/data /app/output /app/uploads
 
+# 创建非 root 用户并设置目录权限
+RUN useradd -r -s /bin/false appuser && chown -R appuser:appuser /app
+
 # 环境变量
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DATABASE_PATH=/app/data/app.db
 
+# 切换到非 root 用户
+USER appuser
+
 # 暴露端口
 EXPOSE 8080
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
+# 健康检查（start_period 给冷启动宽限期）
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=30s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/live')" || exit 1
 
 # 启动命令
 CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8080"]

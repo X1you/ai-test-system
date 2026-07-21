@@ -1,0 +1,23 @@
+# AI 测试用例生成系统 — 数据库自动备份 crontab 示例
+#
+# 使用方法：
+#   1. 编辑 crontab：crontab -e
+#   2. 将下面的内容复制进去（根据实际部署路径修改）
+#   3. 保存退出即生效
+#
+# 备份策略：
+#   - 每 6 小时备份一次（每天 4 份）
+#   - 保留最近 7 份备份（db_backup.py --keep 7）
+#   - 备份日志记录到 /var/log/ai-test-backup.log
+#
+# ⚠️ 生产环境建议同时配置异地备份（如上传到 OSS/S3），不仅仅依赖本地备份。
+
+# ─── Docker 部署的备份任务 ───
+# 每 6 小时在容器内执行一次 SQLite 在线备份
+0 */6 * * * cd /path/to/ai-test-system && docker compose exec -T app python scripts/db_backup.py --keep 7 >> /var/log/ai-test-backup.log 2>&1
+
+# ─── 裸机部署的备份任务（注释状态，按需启用）───
+# 0 */6 * * * cd /path/to/ai-test-system && /path/to/python scripts/db_backup.py --keep 7 >> /var/log/ai-test-backup.log 2>&1
+
+# ─── 每周日凌晨做一次完整备份（保留 4 份周备份）───
+# 0 3 * * 0 cd /path/to/ai-test-system && docker compose exec -T app python scripts/db_backup.py --keep 4 >> /var/log/ai-test-backup-weekly.log 2>&1

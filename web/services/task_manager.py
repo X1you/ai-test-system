@@ -16,9 +16,14 @@ from web.services.pipeline_task import PipelineTask
 class TaskManager:
     """Pipeline 异步任务管理器"""
 
-    MAX_WORKERS = 2
-
     def __init__(self, output_base: str = "./output"):
+        # 从 config.yaml 读取 max_concurrent，使配置真正生效（原先硬编码为 2）
+        try:
+            from core.config_loader import load_config
+            cfg = load_config()
+            self.MAX_WORKERS = cfg.get("pipeline", {}).get("max_concurrent", 2)
+        except Exception:
+            self.MAX_WORKERS = 2
         self.output_base = Path(output_base)
         self.output_base.mkdir(parents=True, exist_ok=True)
         self._executor = ThreadPoolExecutor(max_workers=self.MAX_WORKERS)

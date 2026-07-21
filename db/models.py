@@ -11,7 +11,7 @@ SQLAlchemy 数据模型 — Track A 基线
 所有表预留 tenant_id 字段用于 Track B 多租户演进。
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import (
     BigInteger,
@@ -46,7 +46,7 @@ class Pipeline(Base):
     formats: Mapped[str] = mapped_column(String(64), default="excel")
     status: Mapped[str] = mapped_column(String(16), default="pending")
     started_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC)
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
@@ -157,7 +157,7 @@ class User(Base):
         String(64), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC)
     )
     last_login: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
@@ -192,9 +192,9 @@ class KBConfig(Base):
     # 本地 Vault 路径（mcp_filesystem provider 必填）
     vault_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(default=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     def __repr__(self) -> str:

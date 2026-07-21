@@ -26,6 +26,10 @@ import pytest
 _TEST_JWT_SECRET = "test-only-secret-for-pytest-fixture-32chars"
 _os.environ["JWT_SECRET"] = _TEST_JWT_SECRET
 
+# 测试环境 Webhook HMAC 签名密钥（P0-5 后所有 webhook 请求必须带签名）
+TEST_WEBHOOK_SECRET = "test-webhook-secret"
+_os.environ["WEBHOOK_SECRET"] = TEST_WEBHOOK_SECRET
+
 # 这些目录下的测试属于端到端套件，整体打 slow 标记
 # （真实调用 LLM/Pipeline/Web/KB，执行时间长，日常默认跳过）
 _SLOW_DIRS = {

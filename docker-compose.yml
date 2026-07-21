@@ -13,6 +13,11 @@ services:
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
       - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+      - AI_TEST_ENV=production
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
     volumes:
       - ./data:/app/data
       - ./output:/app/output
@@ -21,7 +26,25 @@ services:
       # - ~/Documents/test-interview-kb:/vault:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/live')"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
+    # 资源限制（docker compose up --compatibility 或 Docker Swarm 模式生效）
+    # 非 Swarm 普通模式下 deploy.resources 被忽略，如需限制请取消下方注释
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+    # 非 Swarm 模式备用（取消注释生效）：
+    # mem_limit: 2g
+    # cpus: 2.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"

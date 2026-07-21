@@ -170,8 +170,8 @@ class TestTaskManagerBoundary:
         from web.services.task_manager import TaskManager
 
         tm = TaskManager(output_base=str(tmp_path))
-        # 创建任务直到达到并发上限（MAX_WORKERS=2）
-        for i in range(TaskManager.MAX_WORKERS):
+        # 创建任务直到达到并发上限（MAX_WORKERS 从 config 读取，默认 2）
+        for i in range(tm.MAX_WORKERS):
             tm.create_task(
                 config={"llm": {"provider": "test", "api_key": "sk-test", "model": "m"}},
                 requirements_path=f"/tmp/req{i}.md",
@@ -189,8 +189,7 @@ class TestTaskManagerBoundary:
 
         tm = TaskManager(output_base=str(tmp_path))
 
-        # MAX_WORKERS 是类属性，默认值为 2
-        assert TaskManager.MAX_WORKERS == 2
+        # MAX_WORKERS 是实例属性，从 config.yaml 的 pipeline.max_concurrent 读取（默认 2）
         assert tm.MAX_WORKERS == 2
 
         # 未满时 is_full 返回 False

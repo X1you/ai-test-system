@@ -223,7 +223,7 @@ async def update_kb_config(req: KBConfigRequest):
 
     # 3. 写入 DB
     try:
-        from datetime import datetime
+        from datetime import UTC, datetime
 
         from db.models import KBConfig
         from db.session import session_scope
@@ -238,8 +238,8 @@ async def update_kb_config(req: KBConfigRequest):
                 auth_token=req.auth_token or None,
                 vault_path=req.vault_path or None,
                 is_active=True,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add(new_cfg)
             db.commit()

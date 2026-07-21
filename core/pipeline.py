@@ -27,7 +27,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from core.llm_client import LLMClient, LLMError
@@ -127,7 +127,7 @@ class Pipeline:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
         return {
-            "started": datetime.now().isoformat(),
+            "started": datetime.now(UTC).isoformat(),
             "completed_steps": [],
             "step_results": {},
             "mode": "semi",
@@ -135,12 +135,21 @@ class Pipeline:
         }
 
     def save_state(self, state: dict):
-        """持久化断点状态（幂等写入）。"""
-        state["updated"] = datetime.now().isoformat()
+        """持久化断点状态（原子写入）。
+
+        使用 os.replace 实现原子写入：先写到 .tmp 临时文件，
+        再通过 rename 系统调用原子替换目标文件。
+        保证进程崩溃时文件要么是完整的旧内容，要么是完整的新内容，
+        绝不会出现半截 JSON。
+        """
+        state["updated"] = datetime.now(UTC).isoformat()
         path = self.output_dir / STATE_FILE
-        path.write_text(
+        tmp_path = path.with_suffix(".json.tmp")
+        tmp_path.write_text(
             json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        # os.replace 在 POSIX 上是原子 rename 系统调用
+        os.replace(tmp_path, path)
 
     def mark_done(self, state: dict, step_id: int, result: StepResult):
         """标记步骤完成并持久化，同时通知 WebUI 回调。

@@ -11,6 +11,7 @@ EventBus — 进程内 pub/sub 事件总线
 """
 
 import asyncio
+import logging
 import threading
 
 
@@ -61,6 +62,9 @@ class EventBus:
                         queue.get_nowait()
                     except asyncio.QueueEmpty:
                         pass
+                    logging.getLogger("web.services.event_bus").warning(
+                        "event_queue_full topic=%s, dropped oldest event to make room", topic
+                    )
                 queue.put_nowait(event)
             except RuntimeError:
                 # 事件循环已关闭，忽略
@@ -92,6 +96,9 @@ class EventBus:
                             queue.get_nowait()
                         except asyncio.QueueEmpty:
                             pass
+                        logging.getLogger("web.services.event_bus").warning(
+                            "event_queue_full_sync topic=%s, dropped oldest event", topic
+                        )
                     queue.put_nowait(event)
                 except RuntimeError:
                     pass

@@ -2,7 +2,7 @@ name: Test
 
 # CI 测试流水线 — 质量门禁
 # 触发：push 到 main / 任意 PR
-# 覆盖率门槛：50%（当前基线 64%，留有下降缓冲）
+# 覆盖率门槛：60%（当前基线 63%，留有下降缓冲；目标 75%，逐步提升）
 
 on:
   push:
@@ -38,7 +38,7 @@ jobs:
             --cov=core --cov=web \
             --cov-report=term-missing \
             --cov-report=xml \
-            --cov-fail-under=50 \
+            --cov-fail-under=60 \
             --cov-branch \
             -q --tb=short
 

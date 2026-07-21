@@ -20,3 +20,12 @@ pipeline:
 
 output:
   dir: ./output
+
+# 安全配置（CORS 白名单 — 前后端分离部署时必需）
+# 空列表 = 不启用 CORS（默认安全）
+# 配置具体域名后才允许跨域请求
+security:
+  cors_origins: []
+  # cors_origins:
+  #   - "http://localhost:3000"
+  #   - "https://qa.example.com"

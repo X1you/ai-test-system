@@ -163,6 +163,19 @@ from web.middleware.csrf import CSRFMiddleware
 
 app.add_middleware(CSRFMiddleware)
 
+# ─── CORS 中间件（前后端分离部署时必需）───
+from starlette.middleware.cors import CORSMiddleware  # noqa: E402
+
+_cors_origins = load_config().get("security", {}).get("cors_origins", [])
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
+    )
+
 # ─── Gzip 压缩中间件 ───
 try:
     from starlette.middleware.gzip import GZipMiddleware

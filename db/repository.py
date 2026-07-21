@@ -6,7 +6,7 @@ Pipeline Repository — 数据访问层
 提供面向业务逻辑的高级接口。
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -102,7 +102,7 @@ class PipelineRepository:
             if pipeline:
                 pipeline.status = status
                 if status in ("done", "paused", "error", "cancelled", "failed", "completed"):
-                    pipeline.finished_at = datetime.utcnow()
+                    pipeline.finished_at = datetime.now(UTC)
                 if error:
                     pipeline.error = error
 
@@ -120,7 +120,7 @@ class PipelineRepository:
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
         with session_scope() as session:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             stmt = sqlite_insert(PipelineStep).values(
                 pipeline_id=pipeline_id,
                 step_id=step_id,

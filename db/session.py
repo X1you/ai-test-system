@@ -63,7 +63,7 @@ def _configure_sqlite_pragma(db_path: Path, engine: Engine):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA busy_timeout=15000")
         cursor.close()
 
 

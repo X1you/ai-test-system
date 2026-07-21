@@ -5,6 +5,7 @@
 密码使用 bcrypt（成本因子 12），JWT 由 web.middleware.auth 负责。
 """
 
+import os
 import secrets
 
 from db.repository import get_repository
@@ -45,13 +46,13 @@ def authenticate(username: str, password: str):
         return None
     # 更新最后登录时间
     try:
-        from datetime import datetime
+        from datetime import UTC, datetime
 
         with session_scope() as session:
             from db.models import User
 
             session.query(User).filter(User.id == user.id).update(
-                {"last_login": datetime.utcnow()}
+                {"last_login": datetime.now(UTC)}
             )
     except Exception:
         pass  # last_login 更新失败不影响登录
@@ -63,14 +64,31 @@ def generate_api_key() -> str:
     return secrets.token_hex(32)
 
 
-def create_admin_if_not_exists(username: str = "admin", password: str = "admin123"):
+def create_admin_if_not_exists(username: str | None = None, password: str | None = None):
     """启动时确保管理员账户存在（幂等）。
 
-    仅当 users 表中无该用户时创建。默认密码首次启动后应立即修改。
+    凭证来源优先级：
+      1. 函数参数（测试场景传入）
+      2. 环境变量 ADMIN_USERNAME / ADMIN_PASSWORD
+      3. 环境变量未设置 → 生成随机密码并打印一次（绝不使用硬编码默认密码）
+
+    生产环境建议通过环境变量注入 ADMIN_PASSWORD，避免随机密码需查日志获取。
     """
+    username = username or os.environ.get("ADMIN_USERNAME", "admin")
+    password = password or os.environ.get("ADMIN_PASSWORD")
+
     repo = get_repository()
     if repo.get_user_by_username(username):
         return None
+
+    if not password:
+        # 环境变量未配置 → 生成随机密码，打印一次供运维获取
+        password = secrets.token_urlsafe(16)
+        import logging
+        logging.getLogger("web").warning(
+            "ADMIN_PASSWORD 未配置，已生成随机管理员密码（请立即登录修改）: %s", password
+        )
+
     return repo.create_user(
         username=username,
         password_hash=hash_password(password),

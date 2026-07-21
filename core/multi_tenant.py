@@ -14,7 +14,7 @@
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 
 # ─── 租户上下文 ───
@@ -64,7 +64,7 @@ class Tenant:
     status: str = "active"  # active / suspended / deleted
     max_concurrent: int = 3
     max_storage_mb: int = 1024
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     settings: dict = field(default_factory=dict)
 
 

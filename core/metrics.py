@@ -15,7 +15,7 @@ Prometheus 指标注册中心 — 集中管理所有自定义业务指标。
 """
 
 try:
-    from prometheus_client import Counter, Histogram
+    from prometheus_client import Counter, Gauge, Histogram
 
     _PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -49,6 +49,13 @@ if _PROMETHEUS_AVAILABLE:
         "LLM 调用总次数",
         labelnames=("provider", "status"),
     )
+
+    # LLM 断路器状态 Gauge（0=closed 正常, 1=open 熔断中, 2=half_open 半开探测）
+    LLM_CIRCUIT_BREAKER_STATE = Gauge(
+        "llm_circuit_breaker_state",
+        "LLM Provider 断路器状态 (0=closed, 1=open, 2=half_open)",
+        labelnames=("provider",),
+    )
 else:
     # 降级：no-op 桩对象，所有方法静默忽略
     class _NoopMetric:
@@ -63,9 +70,13 @@ else:
         def inc(self, *args, **kwargs):
             pass
 
+        def set(self, *args, **kwargs):
+            pass
+
     LLM_REQUEST_DURATION = _NoopMetric()
     LLM_PROVIDER_FALLBACK = _NoopMetric()
     LLM_REQUEST_TOTAL = _NoopMetric()
+    LLM_CIRCUIT_BREAKER_STATE = _NoopMetric()
 
 
 def record_llm_call(provider: str, model: str, duration_seconds: float, success: bool = True):
@@ -105,3 +116,22 @@ def record_fallback(from_provider: str, to_provider: str):
 def is_metrics_enabled() -> bool:
     """prometheus_client 是否可用（用于条件判断）。"""
     return _PROMETHEUS_AVAILABLE
+
+
+def record_circuit_breaker_state(provider: str, state: str):
+    """记录断路器状态变更。
+
+    Args:
+        provider: Provider 名称
+        state: "closed" | "open" | "half_open"
+    """
+    try:
+        state_map = {"closed": 0, "open": 1, "half_open": 2}
+        LLM_CIRCUIT_BREAKER_STATE.labels(provider=provider).set(
+            state_map.get(state, 0)
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger("core.metrics").debug(
+            "metrics_record_circuit_breaker_failed: %s", e
+        )
