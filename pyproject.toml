@@ -42,6 +42,7 @@ web = [
     "sse-starlette>=1.6",        # SSE 端点
     "rcssmin>=1.1",       # CSS 压缩
     "rjsmin>=1.2",        # JS 压缩
+    "python-jose>=3.3",   # JWT 认证（jose）
 ]
 
 # XMind 格式输出
