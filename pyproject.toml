@@ -33,15 +33,12 @@ dependencies = [
 
 [project.optional-dependencies]
 
-# WebUI（FastAPI + Jinja2 + SSE）
+# WebUI（FastAPI + SSE）
 web = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
-    "jinja2>=3.1",
     "python-multipart>=0.0.6",   # 文件上传
     "sse-starlette>=1.6",        # SSE 端点
-    "rcssmin>=1.1",       # CSS 压缩
-    "rjsmin>=1.2",        # JS 压缩
     "python-jose>=3.3",   # JWT 认证（jose）
     "bcrypt>=4.0",        # 密码哈希（user_service）
 ]

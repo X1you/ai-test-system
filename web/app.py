@@ -81,7 +81,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 静态文件
+# 静态文件（SPA 构建产物 + favicon 等）
+# /static 挂载保留用于非 hash 资源（如 favicon.svg）；
+# /assets 在下方 SPA Fallback 中独立挂载（Vite hash 文件，可长期缓存）
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -138,13 +140,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
 
-        # 静态资源缓存：CSS/JS 缓存 24 小时，图片/字体缓存 7 天
+        # 静态资源缓存：Vite 构建产物（/assets/）有 hash 文件名，可长期缓存；
+        # /static/ 下的非 hash 资源（favicon 等）缓存 1 小时
         path = request.url.path
-        if path.startswith("/static/"):
+        if path.startswith("/assets/"):
+            # Vite hash 文件 — 永久缓存
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.startswith("/static/"):
             if path.endswith((".css", ".js")):
-                response.headers["Cache-Control"] = "public, max-age=3600, immutable"
+                response.headers["Cache-Control"] = "public, max-age=3600"
             elif any(path.endswith(ext) for ext in (".png", ".jpg", ".svg", ".ico", ".woff2")):
-                response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+                response.headers["Cache-Control"] = "public, max-age=604800"
 
         # 安全头
         response.headers["X-Content-Type-Options"] = "nosniff"

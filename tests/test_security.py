@@ -224,21 +224,28 @@ class TestGlobalExceptionHandler:
 
 
 class TestStaticCacheHeaders:
-    """静态资源缓存头"""
+    """静态资源缓存头（SPA 模式：/assets 下的 Vite 构建产物）"""
 
-    def test_css_cache_control(self, client):
-        """CSS 文件缓存 1 小时"""
-        resp = client.get("/static/custom.css")
+    def test_assets_dir_served(self, client):
+        """前端构建产物目录可访问（如果已构建）"""
+        # 检查 /assets 目录是否有 Vite 构建产物
+        import os
+        from pathlib import Path
+
+        assets_dir = Path(__file__).resolve().parents[1] / "web" / "static" / "dist" / "assets"
+        if not assets_dir.exists():
+            pytest.skip("前端未构建（web/static/dist/assets 不存在）")
+
+        # 找一个实际存在的 JS 文件测试缓存头
+        js_files = list(assets_dir.glob("*.js"))
+        if not js_files:
+            pytest.skip("assets 目录无 JS 文件")
+
+        resp = client.get(f"/assets/{js_files[0].name}")
         if resp.status_code == 200:
             cc = resp.headers.get("Cache-Control", "")
-            assert "max-age=3600" in cc
-
-    def test_js_cache_control(self, client):
-        """JS 文件缓存 1 小时"""
-        resp = client.get("/static/app.js")
-        if resp.status_code == 200:
-            cc = resp.headers.get("Cache-Control", "")
-            assert "max-age=3600" in cc
+            # Vite 构建产物有 hash 文件名，可安全长期缓存
+            assert "max-age" in cc
 
 
 if __name__ == "__main__":

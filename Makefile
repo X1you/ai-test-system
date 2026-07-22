@@ -3,7 +3,7 @@
 
 PYTHON ?= python
 
-.PHONY: help install dev-install test test-cov lint format type-check security-audit clean run build-static
+.PHONY: help install dev-install test test-cov lint format type-check security-audit clean run build-frontend
 
 help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -42,8 +42,8 @@ clean: ## 清理临时文件
 run: ## 启动开发服务器
 	$(PYTHON) -m web.app
 
-build-static: ## 压缩前端静态资源（CSS/JS）
-	$(PYTHON) scripts/build_static.py
+build-frontend: ## 构建 Vue SPA 前端（输出到 web/static/dist/）
+	cd webui && npm run build
 
 db-backup: ## SQLite 数据库备份（保留最近 5 份）
 	$(PYTHON) scripts/db_backup.py --keep 5
