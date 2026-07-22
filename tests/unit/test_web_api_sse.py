@@ -2,12 +2,11 @@
 """
 web/api/sse.py 单元测试。
 
-目标：将 SSE stream_progress 端点的覆盖率提升到 90%+。
 覆盖：正常事件推送、终止事件（done/error/cancelled）关闭流、
 客户端断开连接退出、心跳保活（TimeoutError 分支）、未知事件类型。
 
-SSE 是异步流式端点，直接通过 HTTP client 测试较复杂，
-因此提取 event_generator 内部逻辑直接测试生成器函数。
+所有测试使用 async def（pytest-asyncio auto 模式原生支持），
+每个测试都有确定性的终止路径，不会无限等待。
 """
 
 import asyncio
@@ -34,11 +33,9 @@ async def _run_event_generator(queue, request_mock, heartbeat=15.0, max_lifetime
     results = []
 
     while True:
-        # 客户端断开检测
         if await request_mock.is_disconnected():
             break
 
-        # 超时保护
         if asyncio.get_running_loop().time() - start_time > max_lifetime:
             results.append({"event": "timeout", "data": json.dumps({"reason": "max_lifetime"})})
             break
@@ -67,65 +64,49 @@ def _make_request_mock(disconnected=False):
 class TestSSEStream:
     """测试 SSE 实时推送端点的核心生成器逻辑。"""
 
-    def test_stream_terminal_event_done(self):
-        """done 终止事件后关闭流（测试 break 分支）。"""
+    async def test_stream_terminal_event_done(self):
+        """done 终止事件后关闭流。"""
         queue = asyncio.Queue()
         queue.put_nowait({"type": "done", "data": {"pipeline_id": "p1"}})
 
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock())
-        )
+        result = await _run_event_generator(queue, _make_request_mock())
         types = [r["event"] for r in result]
         assert "done" in types
-        assert len(result) == 1  # done 后立即终止，无额外事件
+        assert len(result) == 1
 
-    def test_stream_terminal_event_error(self):
+    async def test_stream_terminal_event_error(self):
         """error 终止事件后关闭流。"""
         queue = asyncio.Queue()
         queue.put_nowait({"type": "error", "data": {"msg": "fail"}})
 
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock())
-        )
+        result = await _run_event_generator(queue, _make_request_mock())
         assert result[0]["event"] == "error"
 
-    def test_stream_terminal_event_cancelled(self):
+    async def test_stream_terminal_event_cancelled(self):
         """cancelled 终止事件后关闭流。"""
         queue = asyncio.Queue()
         queue.put_nowait({"type": "cancelled", "data": {}})
 
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock())
-        )
+        result = await _run_event_generator(queue, _make_request_mock())
         assert result[0]["event"] == "cancelled"
 
-    def test_stream_client_disconnected(self):
-        """客户端断开连接后生成器退出（测试 is_disconnected 分支）。"""
+    async def test_stream_client_disconnected(self):
+        """客户端断开连接后生成器退出。"""
         queue = asyncio.Queue()
-        # 不放任何事件，但 is_disconnected=True → 立即退出
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock(disconnected=True))
-        )
-        assert result == []  # 断开后无事件 yield
+        result = await _run_event_generator(queue, _make_request_mock(disconnected=True))
+        assert result == []
 
-    def test_stream_heartbeat_on_timeout(self):
-        """队列为空超过 heartbeat → 发送 ping 心跳（测试 TimeoutError 分支）。"""
+    async def test_stream_heartbeat_on_timeout(self):
+        """队列为空超过 heartbeat → 发送 ping 心跳。"""
         queue = asyncio.Queue()
+
         # 用极短 heartbeat 触发超时，然后放终止事件结束
-        async def _run():
-            req = _make_request_mock()
+        async def _runner():
             results = []
-            start = asyncio.get_running_loop().time()
-
-            # 手动实现以精确控制超时
-            from web.api.sse import TERMINAL_EVENTS
-            ping_sent = False
-            # 先等一个超时
             try:
                 await asyncio.wait_for(queue.get(), timeout=0.05)
             except TimeoutError:
                 results.append({"event": "ping", "data": "{}"})
-                ping_sent = True
             # 放入终止事件
             queue.put_nowait({"type": "done", "data": {}})
             event = await asyncio.wait_for(queue.get(), timeout=1.0)
@@ -135,41 +116,48 @@ class TestSSEStream:
             })
             return results
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = await _runner()
         types = [r["event"] for r in result]
         assert "ping" in types
         assert "done" in types
 
-    def test_stream_unknown_event_type(self):
-        """未知事件类型 → 使用默认 'message'。"""
+    async def test_stream_unknown_event_type(self):
+        """未知事件类型（type 缺失）→ 使用默认 'message'。"""
         queue = asyncio.Queue()
-        queue.put_nowait({"type": "", "data": {"x": 1}})
+        # type 字段缺失（不是空字符串）→ event.get("type", "message") 返回 "message"
+        queue.put_nowait({"data": {"x": 1}})
 
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock())
-        )
+        # 第二轮循环 is_disconnected=True 退出
+        req = _make_request_mock()
+        call_count = [0]
+
+        async def _disconnect_after_first_call():
+            call_count[0] += 1
+            return call_count[0] > 1
+
+        req.is_disconnected = _disconnect_after_first_call
+
+        result = await _run_event_generator(queue, req)
         assert result[0]["event"] == "message"
 
-    def test_stream_normal_then_terminal(self):
+    async def test_stream_normal_then_terminal(self):
         """正常事件 + 终止事件的组合流。"""
         queue = asyncio.Queue()
         queue.put_nowait({"type": "step_done", "data": {"step_id": 1}})
         queue.put_nowait({"type": "step_done", "data": {"step_id": 2}})
         queue.put_nowait({"type": "done", "data": {}})
 
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock())
-        )
+        result = await _run_event_generator(queue, _make_request_mock())
         assert len(result) == 3
         assert result[0]["event"] == "step_done"
         assert result[2]["event"] == "done"
 
-    def test_stream_timeout_lifetime(self):
+    async def test_stream_timeout_lifetime(self):
         """连接超过最大存活时间 → timeout 事件 + 退出。"""
         queue = asyncio.Queue()
         # max_lifetime=0 → 第一次循环就触发超时
-        result = asyncio.get_event_loop().run_until_complete(
-            _run_event_generator(queue, _make_request_mock(), max_lifetime=0.0)
+        result = await _run_event_generator(
+            queue, _make_request_mock(), max_lifetime=0.0
         )
         assert result[0]["event"] == "timeout"
 
@@ -177,7 +165,7 @@ class TestSSEStream:
 class TestSSEEndpointIntegration:
     """测试 SSE 端点的 subscribe/unsubscribe 调用。"""
 
-    def test_stream_calls_subscribe_and_unsubscribe(self):
+    async def test_stream_calls_subscribe_and_unsubscribe(self):
         """stream_progress 调用 bus.subscribe 和 bus.unsubscribe。"""
         from web.api.sse import stream_progress
 
@@ -188,13 +176,11 @@ class TestSSEEndpointIntegration:
         bus.subscribe = AsyncMock(return_value=queue)
         bus.unsubscribe = AsyncMock()
 
-        async def _run():
-            with patch("web.api.sse.get_event_bus", return_value=bus):
-                response = await stream_progress("pid-x", _make_request_mock())
-                # 消费 body_iterator 触发生成器执行
-                async for _ in response.body_iterator:
-                    pass
+        with patch("web.api.sse.get_event_bus", return_value=bus):
+            response = await stream_progress("pid-x", _make_request_mock())
+            # 消费 body_iterator 触发生成器执行
+            async for _ in response.body_iterator:
+                pass
 
-        asyncio.get_event_loop().run_until_complete(_run())
         bus.subscribe.assert_awaited_once_with("pid-x")
         bus.unsubscribe.assert_awaited_once_with("pid-x", queue)
