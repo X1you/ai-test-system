@@ -26,7 +26,9 @@ def upgrade() -> None:
         sa.Column('connection_url', sa.String(512), nullable=True),
         sa.Column('auth_token', sa.String(512), nullable=True),
         sa.Column('vault_path', sa.String(512), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        # sa.Boolean server_default 跨方言：sa.text('0') 在 SQLite 工作，
+        # PostgreSQL 需要 false。用 sa.false() 让 SQLAlchemy 自动翻译。
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.current_timestamp()),
         sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.current_timestamp()),
     )

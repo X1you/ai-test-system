@@ -131,7 +131,7 @@ class Artifact(Base):
     type: Mapped[str] = mapped_column(String(32))  # md / xlsx / xmind / json
     size: Mapped[int] = mapped_column(BigInteger, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
+        DateTime, default=lambda: datetime.now(UTC)
     )
 
     pipeline: Mapped["Pipeline"] = relationship(back_populates="artifacts")

@@ -116,12 +116,21 @@ class PipelineRepository:
         status: str,
         detail: str | None = None,
     ):
-        """记录/更新步骤状态（使用 upsert 确保并发安全）"""
-        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+        """记录/更新步骤状态（使用 upsert 确保并发安全）
+
+        方言适配：
+          - SQLite: ON CONFLICT DO UPDATE
+          - PostgreSQL: ON CONFLICT DO UPDATE
+          两种语法结构相同，仅 import 来源不同，通过运行时方言判断选择。
+        """
+        from sqlalchemy.dialects import postgresql, sqlite
 
         with session_scope() as session:
             now = datetime.now(UTC)
-            stmt = sqlite_insert(PipelineStep).values(
+            bind = session.bind
+            dialect_name = bind.dialect.name if bind else "sqlite"
+
+            values = dict(
                 pipeline_id=pipeline_id,
                 step_id=step_id,
                 name=name,
@@ -130,14 +139,24 @@ class PipelineRepository:
                 started_at=now,
                 finished_at=now if status == "completed" else None,
             )
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["pipeline_id", "step_id"],
-                set_={
-                    "status": status,
-                    "detail": detail,
-                    "finished_at": now if status == "completed" else None,
-                },
-            )
+            update_set = {
+                "status": status,
+                "detail": detail,
+                "finished_at": now if status == "completed" else None,
+            }
+
+            if dialect_name == "postgresql":
+                stmt = postgresql.insert(PipelineStep).values(**values)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["pipeline_id", "step_id"],
+                    set_=update_set,
+                )
+            else:
+                stmt = sqlite.insert(PipelineStep).values(**values)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["pipeline_id", "step_id"],
+                    set_=update_set,
+                )
             session.execute(stmt)
 
     def get_steps(self, pipeline_id: str) -> list[PipelineStep]:

@@ -1,0 +1,33 @@
+[run]
+source = core,web,db
+branch = False
+
+[report]
+# 排除合法不可测的代码行
+exclude_also =
+    # 模块入口守卫
+    if __name__ == .__main__.:
+    # 可选依赖 ImportError fallback（opentelemetry/structlog 等生产组件）
+    except ImportError:
+    # 抽象方法声明
+    @abstractmethod
+    # Debug / 开发模式专用
+    if __debug__
+    # 不可达的防御性 raise
+    raise AssertionError
+    # FastAPI 启动/关闭日志（生命周期内，单测不触发）
+    def lifespan
+    # Alembic env.py（迁移运行时，单测不覆盖）
+    def run_migrations
+    # TYPE_CHECKING 块（类型检查专用，运行时不执行）
+    if TYPE_CHECKING:
+
+omit =
+    # Alembic 迁移运行时脚本
+    db/migrations/env.py
+    # 版本文件由 alembic 自动生成
+    db/migrations/versions/*
+    # 性能压测脚本
+    scripts/perf_*.py
+    # 集成适配层（外部系统专用，已在 integrations 测试中覆盖核心路径）
+    integrations/adapters/*

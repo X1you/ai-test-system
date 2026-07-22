@@ -1,50 +1,36 @@
-# AI 测试用例生成系统 — Docker Compose
-# 一键启动：docker-compose up -d
-
-version: "3.9"
+# docker-compose.yml — PostgreSQL 开发/测试环境
+#
+# 启动：  docker compose up -d
+# 停止：  docker compose down
+# 清空：  docker compose down -v  （删除数据卷）
+#
+# 连接字符串：
+#   postgresql+psycopg://aitest:aitest@localhost:5432/aitest
+#
+# 切换步骤：
+#   1. 安装驱动：pip install -e ".[postgresql]"
+#   2. 设环境变量：export DATABASE_URL="postgresql+psycopg://aitest:aitest@localhost:5432/aitest"
+#   3. 运行迁移：alembic upgrade head
+#   4. 启动应用：正常启动，自动连接 PostgreSQL
 
 services:
-  app:
-    build: .
-    ports:
-      - "8080:8080"
+  postgres:
+    image: postgres:16-alpine
+    container_name: aitest-postgres
     environment:
-      - DATABASE_URL=sqlite:////data/app.db
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.deepseek.com/v1}
-      - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
-      - AI_TEST_ENV=production
-      - JWT_SECRET=${JWT_SECRET}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      POSTGRES_USER: aitest
+      POSTGRES_PASSWORD: aitest
+      POSTGRES_DB: aitest
+    ports:
+      - "5432:5432"
     volumes:
-      - ./data:/app/data
-      - ./output:/app/output
-      - ./uploads:/app/uploads
-      # 知识库 Vault（只读挂载）
-      # - ~/Documents/test-interview-kb:/vault:ro
-    restart: unless-stopped
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/live')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    # 资源限制（docker compose up --compatibility 或 Docker Swarm 模式生效）
-    # 非 Swarm 普通模式下 deploy.resources 被忽略，如需限制请取消下方注释
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: "2.0"
-        reservations:
-          memory: 512M
-    # 非 Swarm 模式备用（取消注释生效）：
-    # mem_limit: 2g
-    # cpus: 2.0
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "5"
+      test: ["CMD-SHELL", "pg_isready -U aitest"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+    driver: local

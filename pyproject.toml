@@ -64,9 +64,9 @@ db = [
     "alembic>=1.13",
 ]
 
-# PostgreSQL 生产数据库驱动
+# PostgreSQL 生产数据库驱动（psycopg3 — SQLAlchemy 2.0 原生支持）
 postgresql = [
-    "psycopg2-binary>=2.9",
+    "psycopg[binary]>=3.1",
 ]
 
 # 生产加固（结构化日志 + 限流 + 可观测性）
