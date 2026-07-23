@@ -59,6 +59,15 @@ web/uploads/*
 !examples/**
 !**/demo_*
 
+# Vue 前端本地构建产物（webui/dist，与 web/static/dist 同理）
+webui/dist/
+
+# IDE / Trae 内部目录
+.trae/
+
+# 散落在根目录的临时测试文件
+/test_requirement.md
+
 # CodeGraph index cache
 .codegraph/
 

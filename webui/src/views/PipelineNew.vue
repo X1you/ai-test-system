@@ -250,7 +250,7 @@ onMounted(async () => {
   gap: var(--space-sm);
 }
 [data-theme="dark"] .config-field {
-  border-color: hsl(150 30% 12%);
+  border-color: hsl(0 0% 12%);
 }
 [data-theme="dark"] .config-field legend {
   text-shadow: var(--text-glow);

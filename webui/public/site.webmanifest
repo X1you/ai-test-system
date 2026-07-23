@@ -1,0 +1,14 @@
+{
+  "name": "AI Test System",
+  "short_name": "Bard",
+  "description": "AI 测试用例生成系统 — 从需求到测试报告的全流程自动化",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    { "src": "/bard-flute-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/bard-flute-256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/bard-flute-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

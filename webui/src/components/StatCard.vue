@@ -57,7 +57,7 @@ defineProps({
 }
 [data-theme="dark"] .stat-card::before {
   background: var(--accent);
-  box-shadow: 0 0 8px hsl(150 100% 50% / 0.4);
+  box-shadow: 0 0 8px hsl(0 0% 50% / 0.4);
 }
 [data-theme="dark"] .stat-card__value {
   text-shadow: var(--text-glow);

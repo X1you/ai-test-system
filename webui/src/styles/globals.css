@@ -1,0 +1,113 @@
+/**
+ * ════════════════════════════════════════════════════════════════
+ *  globals.css — Tailwind v4 入口 + 主题原语 (Bard v7)
+ * ════════════════════════════════════════════════════════════════
+ *  分层职责：
+ *    1. @import "tailwindcss"        — 启用 Tailwind v4 原子层
+ *    2. @theme { ... }               — 设计原语（字体/色板），生成原子类
+ *    3. 全局 base                    — body 背景/字体/横向滚动修复
+ *    4. 滚动条                       — 冷金主题
+ *
+ *  与 tokens.css 的关系：
+ *    - globals 提供 Tailwind 原子类（bg-bard-surface 等）
+ *    - tokens  提供语义变量（--bg-app 等），供非 Tailwind 场景使用
+ *    - 二者通过 @theme 中的 --color-bard-* 桥接
+ *
+ *  导入顺序（main.js）：globals.css → tokens.css
+ *
+ *  注：原 @layer components 中的 .bard-card / .bard-btn-primary 等组件类
+ *  因阶段 5 视图改用语义 token 体系而无人引用，已移除（死代码清理）。
+ *  视觉等价效果由 tokens.css 的 --bg-surface / --accent 等变量提供。
+ * ════════════════════════════════════════════════════════════════
+ */
+
+@import "tailwindcss";
+
+/* ────────────────────────────────────────────────────────────────
+ *  @theme — 设计原语
+ *  注意：v4 中 @theme 内的 --color-XXX 会自动生成背景/文字/边框原子类，
+ *       且支持透明度修饰符（如 bg-bard-surface/60），通过 color-mix() 实现
+ *  注意：rgba() 作 @theme 值会导致 color-mix 透明度修饰符失效，
+ *       需用透明度修饰符表达（如 border-bard-gold/15）
+ * ──────────────────────────────────────────────────────────────── */
+@theme {
+  /* ---- 字体（Google Fonts 失败时由回退栈兜底，杜绝白屏） ----
+   * index.html 加载 Playfair Display（衬线诗意），--font-serif 首位与其对齐，
+   * 确保 font-serif 原子类与 var(--font-serif) 都能命中已加载字体。 */
+  --font-sans: "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+  --font-serif: "Playfair Display", "Georgia", "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+
+  /* ---- 冷冽星空后台色板（纯 hex，确保透明度修饰符可用） ---- */
+  --color-bard-bg:            #0b0e14;   /* 应用底层（深夜星空） */
+  --color-bard-surface:       #131a24;   /* 卡片/面板表面 */
+  --color-bard-elevated:      #1a2332;   /* 抬升层（悬浮卡片/dropdown） */
+  --color-bard-text:          #eaf0f5;   /* 主文字（月光白） */
+  --color-bard-text-secondary:#8a9bb5;   /* 次要文字（雾蓝灰） */
+  --color-bard-gold:          #c9a96e;   /* 冷金（强调/品牌色） */
+  --color-bard-gold-light:    #e8d5a3;   /* 冷金亮（渐变终点/悬停） */
+  --color-bard-blue:          #6bb5e8;   /* 运行态蓝 */
+  --color-bard-green:         #6bc9a8;   /* 成功态绿 */
+  --color-bard-red:           #e8747c;   /* 错误态红 */
+
+  /* ---- 登录页"纯白叙事诗"专用色（与后台深色对立） ---- */
+  --color-bard-paper:         #ffffff;   /* 纯白纸张 */
+  --color-bard-ink:           #1a1a1a;   /* 墨黑文字 */
+  --color-bard-ink-soft:      #8a8a8a;   /* 灰墨次要文字 */
+  --color-bard-line:          #d0d0d0;   /* 分割线/边框 */
+  --color-bard-gold-deep:     #b8860b;   /* 深金（hover/聚焦） */
+}
+
+/* ────────────────────────────────────────────────────────────────
+ *  全局 base
+ * ──────────────────────────────────────────────────────────────── */
+html,
+body {
+  /* 修复横向滚动（动画/遮罩溢出常见根因） */
+  overflow-x: hidden;
+}
+
+body {
+  /* 默认后台深色；登录页通过 .login-page 类覆盖为纯白 */
+  background: var(--color-bard-bg);
+  color: var(--color-bard-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ *  滚动条 — 冷金主题
+ * ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bard-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(201, 169, 110, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(201, 169, 110, 0.4);
+}
+
+/* ────────────────────────────────────────────────────────────────
+ *  减少动画偏好 — 无障碍降级（仅覆盖 CSS 动画/过渡；
+ *  JS 驱动的 motion.animate 需在各组件内 matchMedia 判断）
+ * ──────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -99,8 +99,8 @@ function formatSize(bytes) {
   box-shadow: var(--shadow-sm);
 }
 [data-theme="dark"] .artifact-item:hover {
-  border-color: hsl(150 50% 25%);
-  box-shadow: var(--shadow-sm), 0 0 6px hsl(150 100% 50% / 0.1);
+  border-color: hsl(0 0% 25%);
+  box-shadow: var(--shadow-sm), 0 0 6px hsl(0 0% 50% / 0.1);
 }
 
 .artifact-item__icon {
@@ -149,7 +149,7 @@ function formatSize(bytes) {
 }
 [data-theme="dark"] .artifact-item__btn:hover {
   text-shadow: var(--text-glow);
-  box-shadow: 0 0 4px hsl(150 100% 50% / 0.15);
+  box-shadow: 0 0 4px hsl(0 0% 50% / 0.15);
 }
 
 .artifact-list__export {
@@ -177,7 +177,7 @@ function formatSize(bytes) {
   box-shadow: var(--shadow-sm);
 }
 [data-theme="dark"] .artifact-list__export:hover {
-  box-shadow: var(--shadow-sm), 0 0 8px hsl(150 100% 50% / 0.15);
+  box-shadow: var(--shadow-sm), 0 0 8px hsl(0 0% 50% / 0.15);
   text-shadow: var(--text-glow);
 }
 </style>

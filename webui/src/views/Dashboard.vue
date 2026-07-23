@@ -427,7 +427,7 @@ onMounted(() => {
   background: var(--accent-subtle);
 }
 [data-theme="dark"] .health-card__icon--ok {
-  box-shadow: 0 0 8px hsl(150 100% 50% / 0.15);
+  box-shadow: 0 0 8px hsl(0 0% 50% / 0.15);
 }
 .health-card__icon--warn {
   color: var(--feedback-warn-text);
@@ -597,7 +597,7 @@ onMounted(() => {
 [data-theme="dark"] .task-table th {
   text-transform: none;
   letter-spacing: 0;
-  color: hsl(150 40% 48%);
+  color: hsl(0 0% 48%);
 }
 .task-table td {
   padding: var(--space-sm) var(--space-md);

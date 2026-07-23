@@ -6,6 +6,180 @@
 
 ---
 
+## [2.2.2] — 2026-07-22
+
+### 🩹 靶向热修复模式 [Hot-Fix] — 暗色主题系统级失效修复
+
+> **触发场景**：生产级审计发现暗色模式样式大面积静默丢失  
+> **根因**：旧版 glow 主题变量残留 + 单色主题 token 值非法，3 类问题叠加
+
+#### 🐛 关键 Bug 修复
+
+1. **`--glow-h` 未定义变量致 44+ 处样式失效** — 根因
+   - 16 个文件（Login/Dashboard/Settings/Knowledge/PipelineList/PipelineNew/PipelineDetail + FileDropZone/ArtifactPreview/EmptyState/StepProgress/LogPanel/StatCard/ToastContainer/StatusBadge/ArtifactList）引用了 `hsl(var(--glow-h) S% L%)`
+   - `--glow-h` 在当前 Bard v6 单色 tokens.css 中从未定义 → 表达式求值为非法 CSS → 整条 `border-color`/`box-shadow`/`color`/`text-shadow` 声明被浏览器静默丢弃
+   - **修复**：批量将 `hsl(var(--glow-h|mono-hue) S% L%)` 强制饱和度归零为 `hsl(0 0% L%)`（纯灰，保留亮度与 alpha），与单色设计系统对齐
+
+2. **`--mono-hue: 0` 配非零饱和度产生红色调** — 根因
+   - `StatusBadge`/`EmptyState` 使用 `hsl(var(--mono-hue) 60% 85%)` → `hsl(0 60% 85%)` = 粉白，破坏纯灰度
+   - **修复**：同上，饱和度归零为 `hsl(0 0% 85%)`
+
+3. **`--accent-subtle` 非法 hex/alpha 语法致聚焦环失效** — 根因
+   - `--accent-subtle: #000000 / 0.04` 非合法 CSS（hex 不能接 `/ alpha`）
+   - 用于 `.form-input:focus { box-shadow: 0 0 0 3px var(--accent-subtle) }` → 声明失效 → 输入框聚焦无光环
+   - **修复**：改为合法 `rgba(0,0,0,0.04)`（亮）/ `rgba(255,255,255,0.08)`（暗）
+
+4. **`--accent-glow: none` / `--shadow-accent: none` 在 box-shadow 列表中非法** — 根因
+   - `none` 作为阴影图层颜色非法（如 `box-shadow: var(--shadow-md), var(--shadow-accent)`），导致整条声明被丢弃
+   - **修复**：`--accent-glow: transparent`（合法颜色）；`--shadow-accent: 0 0 0 0 transparent`（合法零尺寸阴影，逗号列表安全）
+
+#### ✅ 验证
+- 生产构建 `npm run build` 1.10s 通过，零 CSS 错误
+- 浏览器实测：暗色模式登录卡片边框/阴影恢复，炭黑背景，纯灰度无彩色，控制台零警告
+
+---
+
+## [2.2.1] — 2026-07-22
+
+### 🩹 靶向热修复模式 [Hot-Fix] — 渲染失真、SVG 解析、遗留清理
+
+> **触发场景**：用户报告新打开的页面样式严重失真  
+> **根因**：3 个独立问题叠加 — emoji 残留、引用缺失、组件解析失败
+
+#### 🐛 关键 Bug 修复
+
+1. **Login 页面严重失真** — 根因
+   - `Login.vue` 第 5 行残留 emoji `<span class="login-icon">🧪</span>`
+   - 旧 emoji 与 V4 极简黑白灰主题严重冲突
+   - **修复**：替换为 `<BardIcon :size="56" variant="emoji" />`，配 80×80 圆角容器
+   - **顺带**：CSS `.login-icon` 升级（居中布局 + 悬停 1.04x 脉动 + `prefers-reduced-motion` 兜底）
+
+2. **router-view 全站空白** — 根因
+   - `src/main.js` 把 `app.use(router)` 放到了 `app.mount('#app')` 之后
+   - 违反 Vue 3 plugin 注册顺序原则 → `<router-view>` 无法解析 → 整站空白
+   - **修复**：重排顺序为 `createApp → use(router) → mount`，并加详细注释防止再犯
+
+3. **BardIcon size=56 校验失败** — 根因
+   - `BardIcon.vue` size validator 限定为 `[12,16,24,32,48,64,96,128]` 预设档位
+   - Login 使用 `size=56`（与 80 容器匹配）→ 触发 `[Vue warn] Invalid prop`
+   - **修复**：validator 改为接受 1-1024 任意正整数，CSS 预设类保留作为参考
+
+4. **BardIcon.vue SFC 解析失败** — 根因
+   - 在 `<style scoped>` 块里写了 HTML 注释 `<!-- ... -->`
+   - Vue SFC 编译器要求 `<style>` 块必须是纯 CSS
+   - **修复**：HTML 注释改为 CSS 注释 `/* ... */`
+
+#### 🗑️ 遗留文件清理
+
+| 路径 | 类别 | 替代 |
+|------|------|------|
+| `legacy/templates_sprint60/` 7 个文件 | 旧 sprint 60 Django 模板 | Vue 3 SPA 全套 view |
+| `src/components/GlobalIcons.vue` | 旧 SVG provide/inject 组件 | `<BardIcon>` |
+| `src/components/PageLoader.vue` | 旧全屏加载器（含旧实心圆+SMIL） | `<FlowSpinner>` |
+| `webui/dist/` | 旧构建产物 | `npm run build` 重新生成 |
+
+**清理文档**：[`REMOVED_FILES.md`](REMOVED_FILES.md) — 含回退方法、验证脚本、待确认清单
+
+#### 🎨 代码质量增强
+
+1. **vite.config.js 升级**
+   - `manualChunks: { 'vendor-vue': ['vue', 'vue-router'] }` → 93.52KB 单独 chunk，缓存友好
+   - `target: 'es2020'` → 现代浏览器（覆盖 96%+）
+   - `cssCodeSplit: true` → 每个 view 一份 CSS
+   - `chunkSizeWarningLimit: 600` → 减少误报警告
+   - `reportCompressedSize: false` → CI 提速 ~30%
+   - `strictPort: false` → 端口被占自动换号
+
+2. **main.js 健壮性**
+   - `app.config.errorHandler` → 全局错误捕获（生产可接 Sentry）
+   - `router.onError` → 懒加载失败兜底（提示用户强制刷新）
+   - 性能埋点：`requestAnimationFrame` 测 mount 时长，仅 dev 模式输出（生产被 terser 剥离）
+
+3. **index.html 优化**
+   - `<noscript>` 兜底（SEO + 关 JS 仍可见）
+   - `<link rel="preconnect" href="http://127.0.0.1:8000" crossorigin>` → 提前建连
+   - 关键 CSS 内联（背景 + color-scheme）→ 避免 FOUC
+   - PWA `site.webmanifest` 占位说明更新
+
+4. **BardIcon 自适应**
+   - size validator 改为 1-1024 范围
+   - strokeWidth / dotRadius 在 12/16/24/32/48/64/128 + 1-1024 全段位校准
+
+#### ✅ 端到端验证
+
+| 验证项 | 结果 |
+|--------|------|
+| `npm run icons:build` | ✓ 32 个资源文件 |
+| `npm run build` | ✓ 1.02s，无错误 |
+| dev server 启动 | ✓ Vite 6.2.0 122ms |
+| Login 页面 BardIcon 渲染 | ✓ DOM 含 `<svg>` + 8 `<path>` + `<circle>` |
+| Login 页面无 Vue 警告 | ✓ 0 个 [Vue warn] |
+| 生产 bundle vendor 分包 | ✓ vendor-vue 93.52KB 单独缓存 |
+| dist 总大小 | ✓ 400KB |
+
+#### 📚 文档
+
+- 新增 [`REMOVED_FILES.md`](REMOVED_FILES.md) — 清理清单 + 回退方法
+- 更新 [`CHANGELOG.md`](CHANGELOG.md) — 本节
+- 更新 [`webui/VERSION_4_DEPLOYMENT.md`](webui/VERSION_4_DEPLOYMENT.md) — 同步 v2.2.1
+
+---
+
+## [2.2.0] — 2026-07-22
+
+### 🎼 图标系统全面升级（Version Four：Bard 吟游诗人）
+
+> **品牌主线确立**：吟游诗人吹笛子 — 动态、连续线条、单色流线型
+> **设计哲学**：流畅的故事讲述者 — 每一次交互都是艺术旅程
+
+#### ✨ 新增
+- **SVG 三件套**：
+  - `bard-flute.svg` — 主品牌图标（currentColor 自适应主题）
+  - `bard-flute-continuous.svg` — 极简线稿版（FlowSpinner 动画源）
+  - `bard-flute-emoji.svg` — 白底黑线版（Favicon / 文档 / 外部场景）
+- **多尺寸 PNG（30 张，9 尺寸 × 3 变体 + 6 张同步到 public/）**：
+  - 规格 512/256/192/128/64/48/32/24/16/12 px
+  - 变体：主品牌（白底黑线）/ 透明 / 反色（黑底白线）
+  - `favicon.ico` 多尺寸打包（16+32+48，Vista+ 全平台）
+  - `site.webmanifest` PWA 元数据
+- **BardIcon 组件**（`src/components/BardIcon.vue`）：
+  - 统一接口：`<BardIcon :size="32" :variant="brand" :animated="true" />`
+  - 自适应描线粗细（12-128px 全段位校准）
+  - 内置飞线动画（与 FlowSpinner 同源关键帧）
+  - 严格遵循 `prefers-reduced-motion`
+- **图标资源管理脚本**（`webui/scripts/generate-icons.mjs`）：
+  - `npm run icons:build` 一键重建全部 PNG / ICO / manifest
+  - 自写 PNG-in-ICO 编码器（零依赖）
+  - 4x 过采样确保 12/16px 锐利
+  - 自动同步 HTML 引用尺寸到 public/
+- **图标资源管理文档**（`webui/src/assets/icons/README.md`）：
+  - 目录结构 / 规格对照表 / 命名规范 / 故障排查
+  - 36 个资源文件全覆盖说明
+
+#### 🎨 UI 主题深化（任务书 §2）
+- **设计 token 体系重构**（`webui/src/styles/tokens.css`）：
+  - 时长 token：`--duration-instant/-fast/-normal/-slow/-slower/-flow/-breath/-page`（8 级）
+  - 缓动 token：`--ease-out/-in/-inout/-flow/-breath/-spring`（6 种）
+  - Stagger 延迟：`--stagger-1..8`（40ms 递增）
+  - Dark 模式动画节奏独立校准（呼吸略快 2200ms）
+- **FlowSpinner 重写**：8 条 path 模仿吟游诗人吹笛子，stroke-dasharray + pathLength=100 归一化，staggered 120ms 延迟形成"一笔绘出又抹去"的飞线效果。
+- **AppSidebar Logo 修复**：原实心圆遮盖描线（白底看不见白线）的视觉 Bug 已修复，替换为 `<BardIcon animated>`，描线在 light/dark 双模式下均清晰可见，悬停时 1.05x 脉动。
+- **index.html 升级**：完整 favicon 链路（SVG → 32px PNG → 16px PNG → ICO → apple-touch-icon → OG image → msapplication-TileImage）。
+
+#### 🛡️ 质量与生产标准
+- **依赖锁定绝对版本号**（SOUL.md §A-3）：`sharp 0.33.5` 精确版本，无 `^` `~` `latest`。
+- **零依赖 ICO 编码**：自写 ~30 行代码替代 to-ico CJS 包，规避 ESM 互操作风险。
+- **可访问性**：全部动画支持 `prefers-reduced-motion`；BardIcon 强制 `role="img"` + `aria-label`。
+- **单命令闭环**：`npm run icons:build` 幂等可重入，二次运行零差异。
+- **构建验证**：`npm run build` 951ms 通过，全部 HTML 引用命中。
+
+#### 📚 文档闭环
+- `webui/VERSION_4_DEPLOYMENT.md` — 升级指南
+- `webui/src/assets/icons/README.md` — 资源管理规范
+- `CHANGELOG.md` — 本节
+
+---
+
 ## [2.1.0] — 2026-07-20
 
 ### 🐛 修复

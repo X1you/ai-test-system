@@ -28,11 +28,11 @@ defineProps({
   color: var(--text-tertiary);
   margin-bottom: var(--space-lg);
   opacity: 0.5;
-  filter: drop-shadow(0 2px 8px hsl(var(--mono-hue) 25% 15% / 0.06));
+  filter: drop-shadow(0 2px 8px hsl(0 0% 15% / 0.06));
 }
 [data-theme="dark"] .empty-state__icon {
-  color: hsl(150 50% 35%);
-  filter: drop-shadow(0 0 8px hsl(150 100% 50% / 0.15));
+  color: hsl(0 0% 35%);
+  filter: drop-shadow(0 0 8px hsl(0 0% 50% / 0.15));
 }
 
 .empty-state__text {

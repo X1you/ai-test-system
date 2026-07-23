@@ -44,6 +44,11 @@ const routes = [
     component: () => import('../views/Settings.vue'),
     meta: { title: '设置' },
   },
+  {
+    // catch-all：未匹配路由重定向到首页（防止 SPA 深链 404 白屏）
+    path: '/:pathMatch(.*)*',
+    redirect: '/',
+  },
 ]
 
 const router = createRouter({

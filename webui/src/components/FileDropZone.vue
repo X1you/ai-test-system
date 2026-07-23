@@ -91,13 +91,13 @@ function handleDrop(e) {
   transform: scale(1.01);
 }
 [data-theme="dark"] .drop-zone--dragging {
-  box-shadow: inset 0 0 24px hsl(150 100% 50% / 0.15), var(--shadow-md), 0 0 12px hsl(150 100% 50% / 0.2);
+  box-shadow: inset 0 0 24px hsl(0 0% 50% / 0.15), var(--shadow-md), 0 0 12px hsl(0 0% 50% / 0.2);
   border-color: var(--accent);
 }
 [data-theme="dark"] .drop-zone:hover,
 [data-theme="dark"] .drop-zone:focus-visible {
   border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent-glow), var(--shadow-sm), 0 0 8px hsl(150 100% 50% / 0.12);
+  box-shadow: inset 0 0 0 1px var(--accent-glow), var(--shadow-sm), 0 0 8px hsl(0 0% 50% / 0.12);
 }
 
 .drop-zone--compact {

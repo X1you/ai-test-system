@@ -49,10 +49,10 @@ const label = computed(() => labelMap[props.status] || props.status)
 .status-badge--running {
   background: var(--accent-subtle);
   color: var(--accent);
-  border: 1px solid hsl(var(--mono-hue) 60% 85%);
+  border: 1px solid hsl(0 0% 85%);
 }
 [data-theme="dark"] .status-badge--running {
-  border-color: hsl(150 60% 25%);
+  border-color: hsl(0 0% 25%);
   text-shadow: var(--text-glow);
 }
 .status-badge--running .status-badge__dot {
@@ -61,7 +61,7 @@ const label = computed(() => labelMap[props.status] || props.status)
   box-shadow: 0 0 0 2px var(--accent-subtle), 0 0 6px var(--status-running);
 }
 [data-theme="dark"] .status-badge--running .status-badge__dot {
-  box-shadow: 0 0 0 2px var(--accent-subtle), 0 0 8px hsl(150 100% 50% / 0.6);
+  box-shadow: 0 0 0 2px var(--accent-subtle), 0 0 8px hsl(0 0% 50% / 0.6);
 }
 
 .status-badge--done {

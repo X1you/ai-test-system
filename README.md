@@ -4,6 +4,51 @@
 
 以 AI 串联 8 个核心环节，知识库 RAG 横切增强，人工校验节点保留，把测试用例生产的重复劳动自动化，把需求评审、用例质量判断的决策权留给工程师。
 
+## 🎼 品牌视觉（Version Four：Bard 吟游诗人）
+
+> **流畅的故事讲述者** —— 动态、连续线条、单色流线型
+
+吟游诗人吹笛子是我们唯一主品牌资产，所有图标资源统一派生自 `webui/src/assets/icons/bard-flute.svg`。
+
+```
+         .___
+         {  `---._  {Bard} - v4.0.0
+        {     ____)         AI Test System
+         `---'  )
+              .-|--
+             _|  |_
+            /  ()  \
+           |   __   |_
+           |  (__)  | )
+           \________/
+         流畅的故事讲述者
+```
+
+**资源规模**（v2.2.0）：
+
+| 类型 | 数量 | 规格 |
+|------|------|------|
+| SVG 源文件 | 3 | 主品牌 + 连续线稿 + 白底黑线（emoji） |
+| PNG 资源 | 30 | 10 尺寸 × 3 变体（主品牌/透明/反色） |
+| Favicon | 1 | 多尺寸 ICO（16+32+48） |
+| Manifest | 1 | PWA `site.webmanifest` |
+| 终端 ASCII | 1 | `bard-terminal.txt` |
+| 文档 | 1 | `webui/src/assets/icons/README.md` |
+
+**单命令重建**：
+
+```bash
+cd webui && npm run icons:build
+```
+
+**在前端组件中调用**：
+
+```vue
+<BardIcon :size="32" variant="brand" :animated="true" />
+```
+
+详见 [`webui/src/assets/icons/README.md`](webui/src/assets/icons/README.md) 与 [`webui/VERSION_4_DEPLOYMENT.md`](webui/VERSION_4_DEPLOYMENT.md)。
+
 ## 核心亮点
 
 - **🔍 需求漏洞扫描（Step 0，左移拦截）**：在正式分析前，以红队思维识别需求文档中的歧义、缺失、矛盾和隐性假设，生成《需求漏洞扫描报告》。每个漏洞若漏到线上平均返工 4 小时，左移拦截直接量化为研发效能节省。

@@ -1,0 +1,157 @@
+/* ═══════════════════════════════════════════════════════════
+   Button Styles — Pulse & Flow Effects
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── 基础按钮 ─── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--accent);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 脉动背景效果 */
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: var(--accent-subtle);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width var(--duration-slow) var(--ease-out), height var(--duration-slow) var(--ease-out);
+  z-index: -1;
+}
+
+.btn:hover::before {
+  width: 200%;
+  height: 200%;
+}
+
+.btn:hover {
+  background: var(--bg-inset);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:active {
+  transform: translateY(0);
+  transform: scale(0.98);
+}
+
+/* ─── 按钮尺寸 ─── */
+
+.btn-sm {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--text-sm);
+}
+
+.btn-lg {
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--text-lg);
+}
+
+.btn-xl {
+  padding: var(--space-lg) var(--space-2xl);
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+/* ─── 按钮变体 ─── */
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-primary::before {
+  background: var(--accent) / 0.15;
+}
+
+.btn-primary:hover::before {
+  background: var(--accent) / 0.25;
+}
+
+/* ─── 按钮状态 ─── */
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-loading {
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.btn-loading::before {
+  display: none;
+}
+
+/* ─── 流线型加载条按钮 ─── */
+.btn-loading-bar {
+  padding-left: var(--space-xl);
+  position: relative;
+}
+
+.btn-loading-bar::after {
+  content: '';
+  position: absolute;
+  left: var(--space-lg);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 2px;
+  background: var(--accent);
+  animation: flow-line-slide 1.5s ease-in-out infinite;
+}
+
+/* ─── 按钮图标 ─── */
+.btn__icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* ─── 脉动文字按钮 ─── */
+.btn-pulse-text {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* ─── 无边框按钮 ─── */
+.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-inset);
+  color: var(--accent);
+  border-color: var(--border-default);
+}

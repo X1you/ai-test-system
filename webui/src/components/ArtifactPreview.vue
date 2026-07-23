@@ -9,8 +9,8 @@
     <div class="preview-modal__body">
       <div v-if="loading" class="preview-modal__loading" role="status">加载中…</div>
       <div v-else-if="error" class="preview-modal__error" role="alert">{{ error }}</div>
-      <!-- Markdown -->
-      <div v-else-if="data?.type === 'markdown'" class="preview-md" v-html="data.html"></div>
+      <!-- Markdown（safeHtml 已净化，防御 XSS） -->
+      <div v-else-if="data?.type === 'markdown'" class="preview-md" v-html="safeHtml"></div>
       <!-- Excel -->
       <div v-else-if="data?.type === 'excel'" class="preview-excel">
         <table>
@@ -30,7 +30,8 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
+import { api } from '../composables/useApi'
 
 const props = defineProps({
   title: { type: String, default: '预览' },
@@ -45,6 +46,52 @@ const dialogRef = ref(null)
 const data = ref(null)
 const loading = ref(false)
 const error = ref('')
+
+// ─── XSS 防护：对后端返回的 Markdown HTML 做客户端净化 ───
+// 使用 DOMParser（浏览器原生，零依赖）剥离危险节点和属性：
+//   <script> / <iframe> / <object> / <embed> → 整体删除
+//   on* 事件属性（onclick, onerror...）→ 删除
+//   href/src 中的 javascript: 协议 → 重写为 #
+//   style 属性中的 expression()/url(javascript:..) → 删除整个 style
+// 注意：v-html 渲染的 data.html 来自后端 markdown→html，无法假设后端已净化，
+//       客户端必须做防御性净化（纵深防御原则）。
+const SANITIZE_TAGS = ['script', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select']
+const SANITIZE_ATTR_RE = /^on/i
+const DANGER_URL_RE = /^\s*javascript:/i
+const DANGER_CSS_RE = /expression\s*\(|url\s*\(\s*['"]?\s*javascript:/i
+
+function sanitizeHtml(html) {
+  if (!html || typeof html !== 'string') return ''
+  if (typeof window === 'undefined' || typeof DOMParser === 'undefined') return html
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  // 删除危险标签（含子节点）
+  doc.querySelectorAll(SANITIZE_TAGS.join(',')).forEach((el) => el.remove())
+  // 清理危险属性
+  doc.querySelectorAll('*').forEach((el) => {
+    const attrs = [...el.attributes]
+    for (const attr of attrs) {
+      const name = attr.name
+      const val = attr.value
+      // on* 事件属性
+      if (SANITIZE_ATTR_RE.test(name)) { el.removeAttribute(name); continue }
+      // javascript: 协议
+      if ((name === 'href' || name === 'src') && DANGER_URL_RE.test(val)) {
+        el.setAttribute(name, '#'); continue
+      }
+      // style 中的 expression / url(javascript:)
+      if (name === 'style' && DANGER_CSS_RE.test(val)) { el.removeAttribute(name); continue }
+    }
+  })
+  return doc.body ? doc.body.innerHTML : ''
+}
+
+// 净化后的 HTML（computed，data 变化时自动重算）
+const safeHtml = computed(() => {
+  if (data.value?.type === 'markdown' && data.value.html) {
+    return sanitizeHtml(data.value.html)
+  }
+  return ''
+})
 
 watch(() => props.open, async (val) => {
   if (val) {
@@ -61,9 +108,9 @@ async function loadPreview() {
   error.value = ''
   data.value = null
   try {
-    const resp = await fetch(`/api/v1/pipeline/${props.pipelineId}/preview/${props.artifactName}`)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    data.value = await resp.json()
+    // 使用 api 封装（自动注入 JWT Authorization header + 401 处理），
+    // 原裸 fetch 不带认证头，会导致预览接口 401。
+    data.value = await api.get(`/pipeline/${props.pipelineId}/preview/${props.artifactName}`)
   } catch (e) {
     error.value = `预览加载失败: ${e.message}`
   } finally {
@@ -85,8 +132,8 @@ async function loadPreview() {
   box-shadow: var(--shadow-xl);
 }
 [data-theme="dark"] .preview-modal {
-  border-color: hsl(150 40% 18%);
-  box-shadow: var(--shadow-xl), 0 0 16px hsl(150 100% 50% / 0.1);
+  border-color: hsl(0 0% 18%);
+  box-shadow: var(--shadow-xl), 0 0 16px hsl(0 0% 50% / 0.1);
 }
 [data-theme="dark"] .preview-modal__title {
   text-shadow: var(--text-glow);
@@ -191,11 +238,11 @@ async function loadPreview() {
   overflow-x: auto;
 }
 [data-theme="dark"] .preview-md :deep(pre) {
-  border: 1px solid hsl(150 30% 12%);
+  border: 1px solid hsl(0 0% 12%);
 }
 [data-theme="dark"] .preview-md :deep(code) {
-  color: hsl(150 80% 65%);
-  text-shadow: 0 0 4px hsl(150 100% 50% / 0.2);
+  color: hsl(0 0% 65%);
+  text-shadow: 0 0 4px hsl(0 0% 50% / 0.2);
 }
 
 /* Excel table */

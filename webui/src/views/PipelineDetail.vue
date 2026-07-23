@@ -263,9 +263,9 @@ onUnmounted(() => sseClose())
   font-weight: 500;
 }
 [data-theme="dark"] .sse-badge {
-  background: hsl(150 50% 10%);
-  color: hsl(150 80% 55%);
-  box-shadow: 0 0 4px hsl(150 100% 50% / 0.2);
+  background: hsl(0 0% 10%);
+  color: hsl(0 0% 55%);
+  box-shadow: 0 0 4px hsl(0 0% 50% / 0.2);
 }
 .sse-badge--fallback {
   background: var(--feedback-warn-bg);
@@ -292,7 +292,7 @@ onUnmounted(() => sseClose())
   transition: width var(--duration-slow) var(--ease-out);
 }
 [data-theme="dark"] .progress-bar__fill {
-  box-shadow: 0 0 6px hsl(150 100% 50% / 0.5);
+  box-shadow: 0 0 6px hsl(0 0% 50% / 0.5);
 }
 [data-theme="dark"] .progress-pct {
   text-shadow: var(--text-glow);

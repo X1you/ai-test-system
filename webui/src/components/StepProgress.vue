@@ -85,7 +85,7 @@ defineProps({
   box-shadow: 0 0 0 3px var(--feedback-success-bg);
 }
 [data-theme="dark"] .step-progress__item--done .step-progress__indicator {
-  box-shadow: 0 0 0 3px var(--feedback-success-bg), 0 0 6px hsl(150 80% 45% / 0.3);
+  box-shadow: 0 0 0 3px var(--feedback-success-bg), 0 0 6px hsl(0 0% 45% / 0.3);
 }
 
 .step-progress__item--running .step-progress__indicator {
@@ -94,7 +94,7 @@ defineProps({
   box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 12px var(--accent-glow);
 }
 [data-theme="dark"] .step-progress__item--running .step-progress__indicator {
-  box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 12px hsl(150 100% 50% / 0.4);
+  box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 12px hsl(0 0% 50% / 0.4);
 }
 [data-theme="dark"] .step-progress__item--running .step-progress__name {
   text-shadow: var(--text-glow);

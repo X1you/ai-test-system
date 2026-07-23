@@ -68,10 +68,10 @@ const items = computed(() => toast.items.value)
   pointer-events: auto;
 }
 [data-theme="dark"] .toast {
-  border-color: hsl(150 40% 15%);
+  border-color: hsl(0 0% 15%);
 }
 [data-theme="dark"] .toast--info {
-  box-shadow: var(--shadow-lg), 0 0 8px hsl(150 100% 50% / 0.1);
+  box-shadow: var(--shadow-lg), 0 0 8px hsl(0 0% 50% / 0.1);
 }
 
 .toast__icon {
@@ -87,8 +87,8 @@ const items = computed(() => toast.items.value)
 .toast--error   { border-left: 3px solid var(--feedback-error-text); }
 .toast--warn    { border-left: 3px solid var(--feedback-warn-text); }
 .toast--info    { border-left: 3px solid var(--accent); }
-[data-theme="dark"] .toast--info    { border-left-color: var(--accent); box-shadow: var(--shadow-lg), 0 0 6px hsl(150 100% 50% / 0.15); }
-[data-theme="dark"] .toast--success { border-left-color: hsl(150 80% 55%); }
+[data-theme="dark"] .toast--info    { border-left-color: var(--accent); box-shadow: var(--shadow-lg), 0 0 6px hsl(0 0% 50% / 0.15); }
+[data-theme="dark"] .toast--success { border-left-color: hsl(0 0% 55%); }
 [data-theme="dark"] .toast--error   { border-left-color: hsl(0 80% 62%); }
 
 .toast__msg {

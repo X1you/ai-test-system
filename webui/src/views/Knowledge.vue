@@ -224,21 +224,31 @@ const searchPage = ref(1)
 const searchPages = ref(1)
 const searchTotal = ref(0)
 
+// 竞态保护：快速搜索/翻页时丢弃旧请求结果
+let searchReqId = 0
+
 async function doSearch(page = 1) {
   if (!searchQuery.value.trim()) return
   searchLoading.value = true
   searchDone.value = false
+  const myReqId = ++searchReqId
   try {
     const data = await api.get(
       `/knowledge/search?q=${encodeURIComponent(searchQuery.value)}&page=${page}&page_size=20`
     )
+    if (myReqId !== searchReqId) return  // 竞态丢弃
     searchResults.value = data.results || []
     searchPage.value = data.page || 1
     searchPages.value = data.pages || 1
     searchTotal.value = data.total || 0
-  } catch { searchResults.value = [] }
-  searchLoading.value = false
-  searchDone.value = true
+  } catch {
+    if (myReqId !== searchReqId) return  // 竞态丢弃
+    searchResults.value = []
+  }
+  if (myReqId === searchReqId) {
+    searchLoading.value = false
+    searchDone.value = true
+  }
 }
 
 // Import
@@ -327,7 +337,7 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
 }
 [data-theme="dark"] .tabs__btn--active {
   text-shadow: var(--text-glow);
-  box-shadow: inset 0 -2px 0 var(--accent), 0 2px 4px hsl(150 100% 50% / 0.15);
+  box-shadow: inset 0 -2px 0 var(--accent), 0 2px 4px hsl(0 0% 50% / 0.15);
 }
 
 .tab-panel {
@@ -370,7 +380,7 @@ onMounted(() => { loadCurrentConfig(); loadStatus() })
   font-size: var(--text-xs);
 }
 [data-theme="dark"] .cat-badge {
-  border: 1px solid hsl(150 50% 20%);
+  border: 1px solid hsl(0 0% 20%);
 }
 
 /* Forms */

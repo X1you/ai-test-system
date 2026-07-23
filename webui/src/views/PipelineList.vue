@@ -42,7 +42,7 @@
     <!-- Last updated hint -->
     <div v-if="lastUpdated" class="last-updated">
       <span class="last-updated__dot" :class="lastUpdated > 0 ? '' : 'last-updated__dot--muted'" aria-hidden="true"></span>
-      <span>最后刷新：{{ formatRelative(lastUpdated) }}</span>
+      <span>最后刷新：{{ relTime }}</span>
       <button v-if="hasRunningTasks" class="last-updated__auto" @click="toggleAutoRefresh">
         {{ autoRefresh ? '暂停自动刷新' : '开启自动刷新' }}
       </button>
@@ -136,11 +136,19 @@ const pages = ref(1)
 const allStats = ref({ total: 0, running: 0, done: 0, other: 0 })
 const lastUpdated = ref(0)         // timestamp ms
 const autoRefresh = ref(false)     // 默认不自动刷新
+const relTick = ref(0)             // 相对时间刷新计数器：每 10s 自增，触发 formatRelative 重算
+                                  // （Vue 3 中对 ref 赋相同值不触发更新，需用独立计数器驱动）
 
 let debounceTimer = null
 let autoTimer = null
 
 const hasRunningTasks = computed(() => allStats.value.running > 0)
+
+// 相对时间显示：依赖 relTick 驱动每 10s 重算（formatRelative 内部用 Date.now()）
+const relTime = computed(() => {
+  void relTick.value  // 建立响应式依赖
+  return formatRelative(lastUpdated.value)
+})
 
 const statTabs = computed(() => [
   { label: '全部', value: '', count: allStats.value.total },
@@ -185,8 +193,13 @@ function syncUrl() {
   router.replace({ query: q })
 }
 
+// 竞态保护：每次 loadList 递增 reqId，请求返回时校验是否为最新请求，
+// 非最新则丢弃（避免快速搜索/翻页时旧请求覆盖新数据）
+let loadReqId = 0
+
 async function loadList() {
   if (items.value.length > 0) loading.value = false  // 已有数据时静默刷新
+  const myReqId = ++loadReqId
   try {
     const params = new URLSearchParams()
     params.set('page', page.value)
@@ -194,6 +207,8 @@ async function loadList() {
     if (keyword.value) params.set('keyword', keyword.value)
     if (statusFilter.value && statusFilter.value !== 'other') params.set('status', statusFilter.value)
     const data = await api.get(`/pipeline/list?${params}`)
+    // 竞态丢弃：如果期间又发了新请求，本次结果作废
+    if (myReqId !== loadReqId) return
     items.value = data.items || data.pipelines || []
     pages.value = data.pages || 1
     allStats.value = data.all_stats || allStats.value
@@ -205,9 +220,10 @@ async function loadList() {
     }
     loadError.value = ''
   } catch (e) {
+    if (myReqId !== loadReqId) return  // 竞态丢弃
     loadError.value = '任务列表加载失败'
   }
-  loading.value = false
+  if (myReqId === loadReqId) loading.value = false
 }
 
 function debouncedLoad() {
@@ -274,8 +290,8 @@ let relTimer = null
 onMounted(async () => {
   await loadList()
   relTimer = setInterval(() => {
-    // 触发响应式更新（lastUpdated 值不变，但 formatRelative 计算依赖 Date.now()）
-    if (lastUpdated.value) lastUpdated.value = lastUpdated.value // eslint-disable-line no-self-assign
+    // relTick 自增触发 formatRelative 重算（依赖 Date.now() 的相对时间需要响应式驱动）
+    relTick.value++
   }, 10000)
 })
 
@@ -320,7 +336,7 @@ onUnmounted(() => {
   border-color: var(--accent);
 }
 [data-theme="dark"] .stats-bar__tab--active {
-  box-shadow: 0 0 6px hsl(150 100% 50% / 0.15);
+  box-shadow: 0 0 6px hsl(0 0% 50% / 0.15);
   text-shadow: var(--text-glow);
 }
 .stats-bar__count {
@@ -441,7 +457,7 @@ onUnmounted(() => {
 [data-theme="dark"] .list-table th {
   text-transform: none;
   letter-spacing: 0;
-  color: hsl(150 40% 48%);
+  color: hsl(0 0% 48%);
 }
 .th-actions {
   text-align: right;
