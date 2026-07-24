@@ -36,22 +36,6 @@ class TestPageLoadPerformance:
         assert resp.status_code == 200
         assert elapsed < 0.5, f"首页加载时间 {elapsed:.3f}s > 0.5s"
 
-    def test_login_page_load_time(self, client):
-        """登录页加载时间 < 500ms"""
-        start = time.time()
-        resp = client.get("/login")
-        elapsed = time.time() - start
-        assert resp.status_code == 200
-        assert elapsed < 0.5, f"登录页加载时间 {elapsed:.3f}s > 0.5s"
-
-    def test_pipelines_page_load_time(self, client):
-        """Pipeline 列表页加载时间 < 500ms"""
-        start = time.time()
-        resp = client.get("/pipelines")
-        elapsed = time.time() - start
-        assert resp.status_code == 200
-        assert elapsed < 0.5, f"Pipeline 列表页加载时间 {elapsed:.3f}s > 0.5s"
-
 
 class TestAPIResponseTime:
     """API 响应时间"""

@@ -112,7 +112,7 @@ class TestXSSProtection:
     """XSS 防护"""
 
     def test_xss_in_page_content(self, client):
-        """页面内容不被 XSS 注入（SPA HTML 或 JSON 均不含未转义脚本）"""
+        """根路径 JSON 响应不含未转义脚本"""
         resp = client.get("/")
         assert resp.status_code == 200
         text = resp.text
@@ -122,7 +122,7 @@ class TestXSSProtection:
         """API 响应中的用户输入不应导致 XSS"""
         resp = client.get("/api/v1/pipeline/<script>alert(1)</script>/progress")
         data = resp.json()
-        # 404 响应中不应包含原始脚本标签（Sprint 6.1: SPA fallback 返回 error 字段）
+        # 404 响应中不应包含原始脚本标签（Catch-all 返回 error 字段）
         assert "error" in data or "detail" in data
 
 
@@ -217,35 +217,11 @@ class TestGlobalExceptionHandler:
         assert "detail" in data
 
     def test_404_returns_json(self, client):
-        """404 返回 JSON 格式（Sprint 6.1: SPA fallback 返回 error 字段）"""
+        """404 返回 JSON 格式（Catch-all 返回 error 字段）"""
         resp = client.get("/api/nonexistent-route-xyz")
         data = resp.json()
         assert "error" in data or "detail" in data
 
-
-class TestStaticCacheHeaders:
-    """静态资源缓存头（SPA 模式：/assets 下的 Vite 构建产物）"""
-
-    def test_assets_dir_served(self, client):
-        """前端构建产物目录可访问（如果已构建）"""
-        # 检查 /assets 目录是否有 Vite 构建产物
-        import os
-        from pathlib import Path
-
-        assets_dir = Path(__file__).resolve().parents[1] / "web" / "static" / "dist" / "assets"
-        if not assets_dir.exists():
-            pytest.skip("前端未构建（web/static/dist/assets 不存在）")
-
-        # 找一个实际存在的 JS 文件测试缓存头
-        js_files = list(assets_dir.glob("*.js"))
-        if not js_files:
-            pytest.skip("assets 目录无 JS 文件")
-
-        resp = client.get(f"/assets/{js_files[0].name}")
-        if resp.status_code == 200:
-            cc = resp.headers.get("Cache-Control", "")
-            # Vite 构建产物有 hash 文件名，可安全长期缓存
-            assert "max-age" in cc
 
 
 if __name__ == "__main__":

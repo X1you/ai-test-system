@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""web/app.py 单元测试 — 启动任务、健康检查、全局异常处理、SPA 回退。"""
+"""web/app.py 单元测试 — 启动任务、健康检查、全局异常处理、Catch-all 404。"""
 
 import os
 import sys
@@ -112,15 +112,17 @@ class TestHealthEndpoints:
         assert "checks" in resp.json()
 
     def test_index_returns_system_info(self, client):
-        """根路径返回系统元信息或 SPA"""
+        """根路径返回系统元信息 JSON"""
         resp = client.get("/")
         assert resp.status_code == 200
 
     def test_check_dependencies_returns_dict(self):
-        """_check_dependencies 返回各组件状态字典"""
+        """_check_dependencies 返回各组件状态字典（async）"""
+        import asyncio
+
         from web.app import _check_dependencies
 
-        checks = _check_dependencies()
+        checks = asyncio.run(_check_dependencies())
         assert isinstance(checks, dict)
         assert "api" in checks
         assert "database" in checks
@@ -136,23 +138,22 @@ class TestHealthEndpoints:
         assert _all_dependencies_ok({"api": "error: boom"}) is False
 
 
-class TestSPAFallback:
-    """SPA 回退路由测试"""
+class TestCatchAll404:
+    """Catch-all 404 路由测试"""
 
-    def test_api_404_not_spa(self, client):
-        """API 路径 404 不走 SPA 回退"""
+    def test_api_404(self, client):
+        """API 路径 404 返回 JSON error"""
         resp = client.get("/api/v1/nonexistent")
         assert resp.status_code == 404
+        data = resp.json()
+        assert "error" in data
 
-    def test_static_404(self, client):
-        """static 路径 404 不走 SPA"""
-        resp = client.get("/static/nonexistent.js")
-        assert resp.status_code == 404
-
-    def test_unknown_path_returns_info_or_spa(self, client):
-        """未知路径返回系统提示（前端未构建时）或 SPA"""
+    def test_non_api_404(self, client):
+        """非 API 未知路径返回 JSON 404"""
         resp = client.get("/some-random-page")
-        assert resp.status_code in (200, 404)
+        assert resp.status_code == 404
+        data = resp.json()
+        assert "error" in data
 
 
 class TestTracingMiddleware:

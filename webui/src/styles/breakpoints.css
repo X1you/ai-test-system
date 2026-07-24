@@ -1,0 +1,11 @@
+/* ─── 响应式断点（统一真相源，参考 Tailwind v4 / shadcn） ─── */
+/* 与 Tailwind v4 默认断点对齐：sm 640 / md 768 / lg 1024 / xl 1280 / 2xl 1536 */
+/* CSS 变量供 JS / 非 Tailwind 场景读取；@theme 映射供 Tailwind utility 使用 */
+
+:root {
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+  --bp-2xl: 1536px;
+}

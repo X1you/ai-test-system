@@ -3,7 +3,7 @@
 
 PYTHON ?= python
 
-.PHONY: help install dev-install test test-cov lint format type-check security-audit clean run build-frontend
+.PHONY: help install dev-install test test-cov test-e2e test-e2e-backend test-e2e-frontend lint format type-check security-audit clean run
 
 help: ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -19,6 +19,15 @@ test: ## 运行测试
 
 test-cov: ## 运行测试并生成覆盖率报告
 	$(PYTHON) -m pytest tests/ --cov=core --cov=web --cov=db --cov-report=term
+
+test-e2e: test-e2e-backend test-e2e-frontend ## 运行全部 e2e 测试（后端 + 前端）
+
+test-e2e-backend: ## 后端 e2e 测试（auth/config/health/usage 全链路）
+	AUTH_ENABLED=true JWT_SECRET="test-only-secret-for-pytest-fixture-32chars" \
+	$(PYTHON) -m pytest tests/e2e/ -q --tb=short
+
+test-e2e-frontend: ## 前端 Playwright e2e 测试（chromium + mobile）
+	cd webui && npx playwright test --reporter=list
 
 lint: ## 代码规范检查（ruff）
 	ruff check core/ db/ web/ tests/
@@ -41,9 +50,6 @@ clean: ## 清理临时文件
 
 run: ## 启动开发服务器
 	$(PYTHON) -m web.app
-
-build-frontend: ## 构建 Vue SPA 前端（输出到 web/static/dist/）
-	cd webui && npm run build
 
 db-backup: ## SQLite 数据库备份（保留最近 5 份）
 	$(PYTHON) scripts/db_backup.py --keep 5

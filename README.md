@@ -4,51 +4,6 @@
 
 以 AI 串联 8 个核心环节，知识库 RAG 横切增强，人工校验节点保留，把测试用例生产的重复劳动自动化，把需求评审、用例质量判断的决策权留给工程师。
 
-## 🎼 品牌视觉（Version Four：Bard 吟游诗人）
-
-> **流畅的故事讲述者** —— 动态、连续线条、单色流线型
-
-吟游诗人吹笛子是我们唯一主品牌资产，所有图标资源统一派生自 `webui/src/assets/icons/bard-flute.svg`。
-
-```
-         .___
-         {  `---._  {Bard} - v4.0.0
-        {     ____)         AI Test System
-         `---'  )
-              .-|--
-             _|  |_
-            /  ()  \
-           |   __   |_
-           |  (__)  | )
-           \________/
-         流畅的故事讲述者
-```
-
-**资源规模**（v2.2.0）：
-
-| 类型 | 数量 | 规格 |
-|------|------|------|
-| SVG 源文件 | 3 | 主品牌 + 连续线稿 + 白底黑线（emoji） |
-| PNG 资源 | 30 | 10 尺寸 × 3 变体（主品牌/透明/反色） |
-| Favicon | 1 | 多尺寸 ICO（16+32+48） |
-| Manifest | 1 | PWA `site.webmanifest` |
-| 终端 ASCII | 1 | `bard-terminal.txt` |
-| 文档 | 1 | `webui/src/assets/icons/README.md` |
-
-**单命令重建**：
-
-```bash
-cd webui && npm run icons:build
-```
-
-**在前端组件中调用**：
-
-```vue
-<BardIcon :size="32" variant="brand" :animated="true" />
-```
-
-详见 [`webui/src/assets/icons/README.md`](webui/src/assets/icons/README.md) 与 [`webui/VERSION_4_DEPLOYMENT.md`](webui/VERSION_4_DEPLOYMENT.md)。
-
 ## 核心亮点
 
 - **🔍 需求漏洞扫描（Step 0，左移拦截）**：在正式分析前，以红队思维识别需求文档中的歧义、缺失、矛盾和隐性假设，生成《需求漏洞扫描报告》。每个漏洞若漏到线上平均返工 4 小时，左移拦截直接量化为研发效能节省。
@@ -279,29 +234,70 @@ cp .env.example .env
 # 编辑 .env，填入 LLM_API_KEY=sk-xxx
 ```
 
-支持所有 OpenAI 兼容协议的模型，在 `config.yaml` 或 `.env` 中配置：
+支持多 LLM Provider + 多协议（OpenAI 兼容 / Anthropic / 自定义 HTTP）高自由度配置，在 `config.yaml` 中管理：
 
-| Provider | 默认 Base URL | 推荐模型 |
-|----------|--------------|---------|
-| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-flash` |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| Moonshot | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
-| 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| Provider | 协议 | 默认 Base URL | 推荐模型 |
+|----------|------|--------------|---------|
+| DeepSeek | openai_compatible | `https://api.deepseek.com` | `deepseek-v4-flash` |
+| 智谱 GLM | openai_compatible | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| OpenAI | openai_compatible | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Moonshot | openai_compatible | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
+| 通义千问 | openai_compatible | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| Anthropic | anthropic | `https://api.anthropic.com` | `claude-3-5-sonnet` |
 
-`config.yaml` 完整配置项：
+`config.yaml` 完整配置项（多 Provider 列表 + 故障转移）：
 
 ```yaml
-# LLM 配置
+# LLM 配置（多 Provider + 多协议）
 llm:
-  provider: deepseek                    # 模型提供商
-  api_key: ${LLM_API_KEY}              # API Key（支持环境变量引用）
-  base_url: https://api.deepseek.com   # API 地址
-  model: deepseek-v4-flash             # 模型名称
-  temperature: 0.3                     # 生成温度（0-1），测试用例建议低温
-  max_tokens: 8192                     # 最大输出 Token 数
-  timeout: 120                         # 单次请求超时（秒）
-  retry: 2                             # 失败重试次数
+  default: glm                         # 默认 provider 名字
+  providers:                           # Provider 列表（按 priority 故障转移）
+    - name: glm                         # 用户起的别名（唯一）
+      protocol: openai_compatible       # 协议：openai_compatible / anthropic / custom_http
+      api_key: ${LLM_API_KEY}          # API Key（支持环境变量引用）
+      base_url: https://open.bigmodel.cn/api/paas/v4
+      model: glm-4-flash
+      temperature: 0.3
+      max_tokens: 8192
+      timeout: 120
+      retry: 2
+      enabled: true
+      priority: 0                       # 数字越小优先级越高
+      tags: [production, 便宜]          # V3 分组标签（可选）
+    - name: deepseek
+      protocol: openai_compatible
+      api_key: ${DEEPSEEK_API_KEY}
+      base_url: https://api.deepseek.com
+      model: deepseek-v4-flash
+      enabled: true
+      priority: 1
+      tags: [备用]
+    # Anthropic 协议示例
+    - name: claude
+      protocol: anthropic
+      api_key: ${ANTHROPIC_API_KEY}
+      base_url: https://api.anthropic.com
+      model: claude-3-5-sonnet
+      enabled: false
+      priority: 2
+    # 自定义 HTTP 协议示例（自建网关）
+    - name: custom-gw
+      protocol: custom_http
+      endpoint: https://your-gateway.local/v1/infer
+      method: POST
+      headers:
+        Authorization: "Bearer ${GW_TOKEN}"
+      body_template: '{"prompt":"{{prompt}}"}'
+      response_path: text
+      model: internal-model
+      enabled: false
+      priority: 3
+
+# 旧 schema（单 provider + fallback）会在 config_loader 加载时自动迁移为 providers 列表
+# llm:
+#   provider: deepseek
+#   api_key: ...
+#   fallback: [...]
 
 # 知识库配置
 knowledge_base:
@@ -321,7 +317,19 @@ output:
   dir: ./output                        # 输出目录
 ```
 
+> **base_url 注意**：不要在 `base_url` 末尾拼接 `/chat/completions`，系统会自动拼接。若误填，`OpenAICompatibleClient` 构造时会自动剥离后缀避免路径重复（404）。
+
 生产环境部署可使用 `config.production.yaml`，额外包含 LLM Gateway 故障转移链、JWT 安全配置、速率限制、CORS 白名单、结构化日志等生产级配置。
+
+#### LLM 用量统计（V4）
+
+系统内置进程级 LLM 用量统计（重启清空，无持久化）：
+
+- **查看用量**：`GET /api/v1/usage/llm` 返回按 Provider 维度的调用次数 / Token / 成功率 / 延迟
+- **清空统计**：`POST /api/v1/usage/reset`（返回清空前快照便于审计）
+- **前端仪表盘**：Settings 页「LLM 用量仪表盘」卡片，支持手动刷新 + 二次确认清空
+
+> 统计仅在 `BaseLLMClient.chat` / `async_chat` 真实调用时埋点，`test_connection` 健康检查不计入。
 
 ### 使用示例
 
@@ -612,7 +620,6 @@ ai-test-system/
 | LLM SDK | `openai` Python SDK | 兼容 DeepSeek / GLM / OpenAI / Moonshot / 通义千问 |
 | LLM 网关 | `LLMGateway` | 多 Provider 路由 + 自动故障转移 |
 | Web 后端 | FastAPI | 异步高性能，自带 OpenAPI 文档 |
-| Web 前端 | HTMX + Jinja2 模板 | 纯 Python 栈，无需 Node.js |
 | 实时推送 | SSE (Server-Sent Events) | 15s 心跳保活，Pipeline 进度实时更新 |
 | 知识库 | Obsidian Vault + MCP 协议 | 本地文件系统，路径可配置 |
 | 持久化 | SQLAlchemy 2.0 + SQLite (WAL) + Alembic | ORM + 迁移管理 |

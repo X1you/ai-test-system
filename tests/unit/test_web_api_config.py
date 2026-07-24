@@ -45,8 +45,10 @@ class TestGetConfigMasking:
 
     def test_get_config_long_key_masked(self, client):
         """长密钥（>12 字符）→ 前 8 + ... + 后 4 掩码。"""
-        fake_cfg = {"llm": {"provider": "deepseek", "model": "m1", "base_url": "u",
-                            "api_key": "sk-1234567890abcdef", "temperature": 0.3},
+        fake_cfg = {"llm": {"providers": [
+            {"name": "p1", "provider": "deepseek", "model": "m1", "base_url": "u",
+             "api_key": "sk-1234567890abcdef", "temperature": 0.3, "enabled": True, "priority": 0}
+        ], "default": "p1"},
                     "pipeline": {"default_mode": "semi"}}
         with patch("web.api.config.load_config", return_value=fake_cfg), \
              patch("web.api.config.validate_config", return_value=[]):
@@ -61,8 +63,10 @@ class TestGetConfigMasking:
 
     def test_get_config_short_key_masked(self, client):
         """短密钥（1-12 字符）→ ***。"""
-        fake_cfg = {"llm": {"provider": "p", "model": "m", "base_url": "u",
-                            "api_key": "short", "temperature": 0.3},
+        fake_cfg = {"llm": {"providers": [
+            {"name": "p1", "provider": "p", "model": "m", "base_url": "u",
+             "api_key": "short", "temperature": 0.3, "enabled": True, "priority": 0}
+        ], "default": "p1"},
                     "pipeline": {}}
         with patch("web.api.config.load_config", return_value=fake_cfg), \
              patch("web.api.config.validate_config", return_value=[]):
@@ -76,8 +80,10 @@ class TestGetConfigMasking:
 
     def test_get_config_empty_key(self, client):
         """空密钥 → 未配置。"""
-        fake_cfg = {"llm": {"provider": "p", "model": "m", "base_url": "u",
-                            "api_key": "", "temperature": 0.3},
+        fake_cfg = {"llm": {"providers": [
+            {"name": "p1", "provider": "p", "model": "m", "base_url": "u",
+             "api_key": "", "temperature": 0.3, "enabled": True, "priority": 0}
+        ], "default": "p1"},
                     "pipeline": {}}
         with patch("web.api.config.load_config", return_value=fake_cfg), \
              patch("web.api.config.validate_config", return_value=[]):

@@ -71,7 +71,7 @@ def setup_tracing(app) -> bool:
     # 自动埋点 FastAPI（所有 HTTP 请求自动生成 span）
     FastAPIInstrumentor.instrument_app(
         app,
-        excluded_urls="/health,/metrics,/static",
+        excluded_urls="/health,/metrics",
     )
 
     _initialized = True

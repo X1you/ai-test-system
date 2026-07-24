@@ -29,9 +29,15 @@ DEFAULT_TOKEN_EXPIRE_MINUTES = 60 * 24  # 默认 24 小时
 _MIN_SECRET_LEN = 32
 _INSECURE_DEFAULT = "change-me-to-a-random-string-of-at-least-32-chars"
 
-# HTTPBearer scheme —— 从 Authorization: Bearer <token> 提取 token
+# HTTPBearer scheme —— 从 Authorization: Bearer *** 提取 token
 # auto_error=False 让 verify_token 自己控制 401 的错误格式
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+# ─── 本地工具模式开关 ───
+# AUTH_ENABLED=false（默认）时 verify_token 短路放行，前端无需 JWT token。
+# 适用于纯本地部署（如 Hermes 那样的个人工具），解决 EventSource 无法带
+# Authorization header 的 SSE 难题。设为 true 恢复完整 JWT 校验。
+_AUTH_ENABLED = os.environ.get("AUTH_ENABLED", "false").lower() == "true"
 
 
 def get_jwt_secret() -> str:
@@ -130,6 +136,10 @@ def verify_token(
     Returns:
         payload dict（含 sub/username/role/exp/iat）
     """
+    # 本地工具模式：AUTH_ENABLED=false 时短路放行，不做 JWT 校验
+    if not _AUTH_ENABLED:
+        return {"sub": "local", "username": "local", "role": "admin"}
+
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

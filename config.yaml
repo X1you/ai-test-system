@@ -1,31 +1,39 @@
-# AI 测试用例生成系统 — 配置文件
-
 llm:
-  provider: custom
-  api_key: ${LLM_API_KEY}
-  base_url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-  model: qwen3.8-max-preview
-  temperature: 0.3
-  max_tokens: 8192
-  timeout: 120
-  retry: 2
-
-# 注：知识库配置已迁移到 DB（通过知识库页面管理），不再使用 config.yaml
+  providers:
+  - provider: bigmodel
+    api_key: ${LLM_API_KEY}
+    base_url: https://open.bigmodel.cn/api/paas/v4/chat/completions
+    model: glm-4.7-flash
+    temperature: 0.3
+    max_tokens: 8192
+    timeout: 120
+    retry: 2
+    name: bigmodel
+    protocol: openai_compatible
+    enabled: true
+    priority: 0
+    tags: []
+  - provider: deepseek-fake
+    name: deepseek-fake
+    protocol: openai_compatible
+    api_key: sk-fake-1234567890abcdef-1234567890abcdef-12345
+    base_url: https://api.deepseek.com/v1
+    model: deepseek-chat
+    temperature: 0.3
+    max_tokens: 4096
+    timeout: 60
+    retry: 2
+    enabled: true
+    priority: 1
+    tags: []
+  default: bigmodel
 pipeline:
   default_mode: semi
   default_dimensions: basic
   default_formats: excel
   self_check: true
   max_concurrent: 2
-
 output:
-  dir: ./output
-
-# 安全配置（CORS 白名单 — 前后端分离部署时必需）
-# 空列表 = 不启用 CORS（默认安全）
-# 配置具体域名后才允许跨域请求
-security:
-  cors_origins: []
-  # cors_origins:
-  #   - "http://localhost:3000"
-  #   - "https://qa.example.com"
+  dir: /Users/x1you/Documents/ai-test-system/output
+integrations:
+  enabled: false

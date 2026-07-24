@@ -25,14 +25,13 @@ _load_dotenv(PROJECT_ROOT / ".env")
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from core.config_loader import load_config
 from core.errors import AppError, app_error_handler
 from web.api import config as config_api
-from web.api import knowledge, pipeline, webhooks
+from web.api import knowledge, pipeline, usage, webhooks
 from web.api.auth import router as auth_router
 from web.middleware.auth import verify_token
 from web.services.task_manager import get_task_manager
@@ -44,7 +43,7 @@ except ImportError:
     sse_api = None
 
 # 单一版本常量（与 CHANGELOG.md 保持同步）
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.3.0"
 
 # 集成服务路由（Phase 2）
 try:
@@ -81,13 +80,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 静态文件（SPA 构建产物 + favicon 等）
-# /static 挂载保留用于非 hash 资源（如 favicon.svg）；
-# /assets 在下方 SPA Fallback 中独立挂载（Vite hash 文件，可长期缓存）
-static_dir = Path(__file__).parent / "static"
-static_dir.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
 # 注册路由（Sprint 6.1：统一 /api/v1 前缀，避免重叠）
 # JWT 认证：除 auth/login（自身用于获取 token）和 webhooks（外部系统回调）外，
 # 所有 API 路由强制 require verify_token 依赖。
@@ -105,6 +97,9 @@ app.include_router(
 app.include_router(
     config_api.router, prefix="/api/v1/config", tags=["config"], dependencies=_auth_dep
 )
+app.include_router(
+    usage.router, prefix="/api/v1/usage", tags=["usage"], dependencies=_auth_dep
+)
 # webhooks 豁免认证：外部系统（CI/CD 等）回调无法携带 JWT
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 
@@ -121,17 +116,11 @@ if integrations_router is not None:
 # ─── 安全与性能中间件 ───
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """添加安全响应头 + 静态资源缓存 + CSP + HSTS"""
+    """添加安全响应头 + CSP + HSTS"""
 
     # 内容安全策略（CSP）：限制资源加载来源
-    # Vite 构建产物使用外部 <script src> 和 <link href>，无需 unsafe-inline
     CSP_POLICY = (
-        "default-src 'self'; "
-        "script-src 'self' https://unpkg.com; "
-        "style-src 'self' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data:; "
-        "connect-src 'self'; "
+        "default-src 'none'; "
         "frame-ancestors 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
@@ -139,18 +128,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
-
-        # 静态资源缓存：Vite 构建产物（/assets/）有 hash 文件名，可长期缓存；
-        # /static/ 下的非 hash 资源（favicon 等）缓存 1 小时
-        path = request.url.path
-        if path.startswith("/assets/"):
-            # Vite hash 文件 — 永久缓存
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        elif path.startswith("/static/"):
-            if path.endswith((".css", ".js")):
-                response.headers["Cache-Control"] = "public, max-age=3600"
-            elif any(path.endswith(ext) for ext in (".png", ".jpg", ".svg", ".ico", ".woff2")):
-                response.headers["Cache-Control"] = "public, max-age=604800"
 
         # 安全头
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -253,9 +230,12 @@ def _run_startup_tasks():
     logger = logging.getLogger("web")
 
     # 1. JWT 密钥校验（弱密钥/生产环境缺失会 SystemExit）
-    from web.middleware.auth import validate_secret_on_startup
+    from web.middleware.auth import _AUTH_ENABLED, validate_secret_on_startup
 
     validate_secret_on_startup()
+    logger.info(
+        "[AUTH] %s", "JWT enabled" if _AUTH_ENABLED else "local mode (no login)"
+    )
 
     # 2. 确保管理员账户存在（幂等，仅首次创建）
     try:
@@ -390,28 +370,46 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# ─── 页面路由（Sprint 6.1: 全部改为 JSON，SPA 由前端 Vue 接管）───
+# ─── 根路由 ───
 
-@app.get("/")
-async def index():
-    """根路径 — 前端已构建时返回 SPA，否则返回系统元信息"""
-    _dist_index = Path(__file__).parent / "static" / "dist" / "index.html"
-    if _dist_index.exists():
+# 本地单机模式：如果前端 dist 存在，用 StaticFiles 服务 SPA（必须在所有 API 路由注册之后）
+_dist = PROJECT_ROOT / "webui" / "dist"
+if _dist.exists() and (_dist / "index.html").exists():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/app", StaticFiles(directory=str(_dist), html=True), name="spa")
+
+    @app.get("/")
+    async def index_spa():
+        """根路径 — 返回前端 SPA"""
         from fastapi.responses import FileResponse
-        return FileResponse(str(_dist_index))
-    tm = get_task_manager()
-    return {
-        "name": "AI 测试用例生成系统",
-        "version": APP_VERSION,
-        "running_count": tm.get_running_count(),
-        "spa_hint": "前端 Vue 工程见 webui/，启动方式见 README",
-    }
+
+        return FileResponse(str(_dist / "index.html"))
+
+else:
+
+    @app.get("/")
+    async def index():
+        """根路径 — 返回系统元信息（前端未构建时的 API 模式）"""
+        tm = get_task_manager()
+        return {
+            "name": "AI 测试用例生成系统",
+            "version": APP_VERSION,
+            "running_count": tm.get_running_count(),
+            "api_docs": "/docs",
+        }
 
 
-def _check_dependencies() -> dict:
+async def _check_dependencies() -> dict:
     """依赖连通性检查（供 readiness 复用）。
 
     返回各依赖组件的状态字典。所有检查异常安全，不抛出。
+    支持多 LLM Provider（并行检查所有 provider，应用硬截止时间避免阻塞 event loop）。
+
+    实现要点：
+      - LLM provider 探测并行执行（asyncio.gather），总耗时 = max(provider_latency) 而非 sum
+      - 每个 provider 测试有独立硬截止（wait_for 8s），即使 SDK 内部 timeout 失效也保证 endpoint 不会挂死
+      - DB 探测同步执行（毫秒级），KB 探测同步执行（本地 IO）
     """
     # api 组件：能响应本端点即 ok（始终 ok，保留向后兼容）
     checks: dict = {"api": "ok"}
@@ -429,43 +427,58 @@ def _check_dependencies() -> dict:
     except Exception as e:
         checks["database"] = f"error: {e}"
 
-    # 检查 LLM 连通性（轻量 ping：max_tokens=1，缓存 30s 避免频繁调用）
+    # 检查 LLM 连通性：并行遍历所有 provider，应用硬截止
     try:
+        import asyncio
         import time as _time
+
+        from core.llm_client import create_llm_client
 
         config = load_config()
         llm_cfg = config.get("llm", {})
-        if llm_cfg.get("api_key") and llm_cfg.get("model"):
-            # 缓存检查结果 30 秒，避免每次 readiness 探测都调用 LLM API
-            cache_ts = getattr(_check_dependencies, "_llm_cache_ts", 0)
-            cache_val = getattr(_check_dependencies, "_llm_cache_val", None)
-            if cache_val is not None and (_time.monotonic() - cache_ts) < 30:
-                checks["llm"] = cache_val
-            else:
-                # 发送最小请求验证 API Key 有效性 + 网络可达性
-                from openai import OpenAI
+        providers = llm_cfg.get("providers", []) if isinstance(llm_cfg, dict) else []
 
-                ping_client = OpenAI(
-                    api_key=llm_cfg.get("api_key", ""),
-                    base_url=llm_cfg.get("base_url", ""),
-                    timeout=5,  # 严格超时，不让 readiness 卡住
-                )
-                ping_client.chat.completions.create(
-                    model=llm_cfg.get("model", ""),
-                    messages=[{"role": "user", "content": "hi"}],
-                    max_tokens=1,
-                )
-                checks["llm"] = "ok"
-                _check_dependencies._llm_cache_ts = _time.monotonic()
-                _check_dependencies._llm_cache_val = "ok"
-        else:
+        if not providers:
+            # 向后兼容旧 schema（理论上不会到这里，旧 schema 已被 config_loader 迁移）
+            if llm_cfg.get("api_key") and llm_cfg.get("model"):
+                providers = [llm_cfg]
+
+        if not providers:
             checks["llm"] = "not_configured"
+        else:
+            async def _check_one(p_cfg: dict) -> tuple[str, dict]:
+                p_name = p_cfg.get("name") or p_cfg.get("provider", "unknown")
+                try:
+                    # client 构造可能抛错（如缺 api_key）
+                    client = create_llm_client(p_cfg)
+                except Exception as e:
+                    return p_name, f"misconfigured: {str(e)[:100]}"
+                # 同步 SDK 调用包到线程池，避免阻塞 event loop
+                # wait_for 兜底：即使 SDK 内部 timeout 失效，也保证总耗时不超过硬截止
+                try:
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(client.test_connection, timeout=5.0),
+                        timeout=8.0,
+                    )
+                    return p_name, ("ok" if result.get("ok") else result.get("status", "unknown"))
+                except asyncio.TimeoutError:
+                    return p_name, "degraded: health check timeout (>8s)"
+                except Exception as e:
+                    return p_name, f"misconfigured: {str(e)[:100]}"
+
+            # 并行探测所有 provider，总耗时 ≈ 最慢的单个 provider
+            results = await asyncio.gather(
+                *(_check_one(p) for p in providers),
+                return_exceptions=False,
+            )
+            per_provider: dict[str, str] = {name: status for name, status in results}
+            any_ok = any(s == "ok" for s in per_provider.values())
+            checks["llm"] = per_provider
+            checks["llm_summary"] = "ok" if any_ok else "degraded"
     except Exception as e:
-        err_msg = str(e)[:200]  # 截断，避免过长错误信息
-        # LLM 不可用不阻塞 readiness（应用仍可提供 UI 服务，仅 Pipeline 受影响）
-        checks["llm"] = f"degraded: {err_msg}"
-        _check_dependencies._llm_cache_ts = _time.monotonic()
-        _check_dependencies._llm_cache_val = checks["llm"]
+        err_msg = str(e)[:200]
+        checks["llm"] = f"error: {err_msg}"
+        checks["llm_summary"] = "error"
 
     # 检查知识库（DB 数据源，与 /knowledge/status 同源）
     try:
@@ -496,10 +509,18 @@ def _all_dependencies_ok(checks: dict) -> bool:
     LLM 不可用标记为 degraded 而非 error — 应用仍可提供 UI 和查询服务，
     仅 Pipeline 执行受影响。数据库不可用才是真正的 readiness 失败。
     """
-    return all(
-        v == "ok" or v == "disabled" or v == "not_configured" or v.startswith("degraded")
-        for v in checks.values()
-    )
+    def _is_ok(v) -> bool:
+        if isinstance(v, dict):
+            # llm 段是 dict 时：只要有一个 provider ok 即可
+            return any(str(sub).startswith("ok") for sub in v.values()) or not v
+        return (
+            v == "ok"
+            or v == "disabled"
+            or v == "not_configured"
+            or (isinstance(v, str) and v.startswith("degraded"))
+        )
+
+    return all(_is_ok(v) for v in checks.values())
 
 
 @app.get("/health/live")
@@ -522,7 +543,7 @@ async def readiness():
     检查 DB / LLM / KB 依赖连通性。任一关键依赖不可用返回 503。
     K8s/Docker 配置：readiness 失败 → 摘除流量（不重启进程）。
     """
-    checks = _check_dependencies()
+    checks = await _check_dependencies()
     all_ok = _all_dependencies_ok(checks)
     return JSONResponse(
         status_code=200 if all_ok else 503,
@@ -540,7 +561,7 @@ async def health():
 
     新部署建议直接用 /health/live + /health/ready 分离探针。
     """
-    checks = _check_dependencies()
+    checks = await _check_dependencies()
     all_ok = _all_dependencies_ok(checks)
     return JSONResponse(
         status_code=200 if all_ok else 503,
@@ -552,57 +573,21 @@ async def health():
     )
 
 
-# ─── SPA Fallback（生产环境：将非 API 请求交给 Vue index.html）───
-# 仅当 web/static/dist/index.html 存在（前端已构建）时启用
-_dist_dir = Path(__file__).parent / "static" / "dist"
-_index_file = _dist_dir / "index.html"
+# ─── Catch-all 404 ───
 
-if _index_file.exists():
-    from fastapi.responses import FileResponse
 
-    # 挂载 Vite 构建产物中的 /assets 目录（JS/CSS/图片等）
-    _assets_dir = _dist_dir / "assets"
-    if _assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="spa-assets")
-
-    @app.get("/{catchall:path}")
-    async def serve_spa(catchall: str):
-        """SPA 回退：非 API 请求统一返回 index.html（Vue Router 接管）
-
-        catchall 已存在的精确路由（如 /health、/api/v1/...）会优先匹配，
-        此路由只兜底处理未命中的路径。
-        """
-        # 避免把 API 404 误判为 SPA 路由
-        if catchall.startswith("api/"):
-            return JSONResponse(
-                status_code=404,
-                content={"error": "API Endpoint Not Found", "path": catchall},
-            )
-        # 静态资源直接 404（不该走 SPA）
-        if catchall.startswith("static/"):
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Static Resource Not Found", "path": catchall},
-            )
-        return FileResponse(str(_index_file))
-else:
-    # 前端未构建时，根路径之外的未知路径返回 JSON 提示（开发期友好）
-    @app.get("/{catchall:path}")
-    async def spa_not_built(catchall: str):
-        if catchall.startswith("api/") or catchall.startswith("static/"):
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Not Found", "path": catchall},
-            )
+@app.get("/{catchall:path}")
+async def catchall_404(catchall: str):
+    """未匹配路由统一返回 JSON 404"""
+    if catchall.startswith("api/"):
         return JSONResponse(
-            status_code=200,
-            content={
-                "message": "Frontend not built yet. Run `npm run build` in webui/.",
-                "path": catchall,
-                "api_docs": "/docs",
-                "health": "/health",
-            },
+            status_code=404,
+            content={"error": "API Endpoint Not Found", "path": catchall},
         )
+    return JSONResponse(
+        status_code=404,
+        content={"error": "Not Found", "path": catchall},
+    )
 
 
 # ─── 入口 ───

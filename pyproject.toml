@@ -119,6 +119,24 @@ addopts = ["-m", "not slow"]
 # async 测试自动收集（event_bus / llm_gateway 等异步测试需要）
 asyncio_mode = "auto"
 
+# ─── 覆盖率衡量标准 ───
+# 门槛 65%（当前基线 66%），目标 75%，逐步提升
+# CI 中 --cov-fail-under=65 阻止覆盖率下降
+[tool.coverage.run]
+source = ["core", "web", "db"]
+branch = true
+omit = ["*/tests/*", "*/__pycache__/*", "*/migrations/*"]
+
+[tool.coverage.report]
+fail_under = 65
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100

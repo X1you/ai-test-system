@@ -2,74 +2,14 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Test System — 流畅的故事讲述者</title>
-
-  <!-- ═══ Bard Favicon (Version Four) ═══ -->
-  <!-- 现代浏览器：优先 SVG 矢量，可随主题切换颜色 -->
-  <link rel="icon" type="image/svg+xml" href="/bard-flute.svg">
-  <!-- 高 DPI / 标签页：32×32 PNG -->
-  <link rel="icon" type="image/png" sizes="32x32" href="/bard-flute-32.png">
-  <!-- 旧浏览器 / 标签页：16×16 PNG -->
-  <link rel="icon" type="image/png" sizes="16x16" href="/bard-flute-16.png">
-  <!-- 终极回退：多尺寸 ICO (16+32+48) -->
-  <link rel="shortcut icon" href="/favicon.ico">
-
-  <!-- iOS / PWA 主页图标 -->
-  <link rel="apple-touch-icon" sizes="256x256" href="/bard-flute-256.png">
-
-  <!-- Windows 磁贴 -->
-  <meta name="msapplication-TileImage" content="/bard-flute-256.png">
-  <meta name="msapplication-TileColor" content="#0a0a0a">
-
-  <!-- Open Graph / 社交分享 -->
-  <meta property="og:image" content="/bard-flute-512.png">
-  <meta property="og:image:width" content="512">
-  <meta property="og:image:height" content="512">
-  <meta property="og:title" content="AI Test System — 流畅的故事讲述者">
-  <meta property="og:description" content="AI 测试用例生成系统 — 从需求到测试报告的全流程自动化">
-
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="/site.webmanifest">
-
-  <!-- ── Google Fonts（Barlow 无衬线 + Playfair Display 衬线诗意） ── -->
-  <!-- 阶段 0：display=swap 防字体加载阻塞渲染；国内不可达时由 CSS 强力回退兜底 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Bard · AI 测试效能工作台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link
-    href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,700;1,700&display=swap"
-    rel="stylesheet"
-  >
-
-  <meta name="description" content="AI 测试用例生成系统 — 从需求到测试报告的全流程自动化">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)">
-
-  <!-- ── 关键 CSS 内联（首屏 token 系统，避免 FOUC） ── -->
-  <style>
-    /* 防 FOUC：主题检测前用最安全的单色背景（与 tokens.css 一致） */
-    html { background: #ffffff; color-scheme: light; }
-    @media (prefers-color-scheme: dark) {
-      html { background: #0a0a0a; color-scheme: dark; }
-    }
-    /* Vue mount 前的最小占位，避免布局抖动 */
-    #app:empty::before {
-      content: '';
-      display: block;
-      min-height: 100vh;
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700;900&family=Playfair+Display:ital,wght@0,700;1,700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- 无 JS 兜底（SEO + 容灾） -->
-  <noscript>
-    <div style="padding:2rem;font-family:system-ui;text-align:center;">
-      <h1>AI Test System</h1>
-      <p>请开启 JavaScript 后访问本系统。</p>
-    </div>
-  </noscript>
-
   <div id="app"></div>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

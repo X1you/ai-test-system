@@ -18,13 +18,6 @@ venv/
 # Local state
 _meta.json
 
-# Node / Vue frontend
-node_modules/
-webui/node_modules/
-
-# Vue 前端构建产物（由 `npm run build` 生成，不入版本库）
-web/static/dist/
-
 # Runtime output (do not commit)
 output/
 test-run/
@@ -39,6 +32,9 @@ coverage.xml
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+# Playwright e2e 产物
+webui/playwright-report/
+webui/test-results/
 
 # Runtime uploads (keep dir, ignore files)
 uploads/*
@@ -48,6 +44,12 @@ web/uploads/*
 
 # Environment files (contain API keys)
 .env
+# 本地 LLM 配置（含明文 API key，不入库）
+config.zai.yaml
+config.*.local.yaml
+
+# Hermes 桌面应用工作目录（附件/计划，与项目无关）
+.hermes/
 
 # 业务文档暂存（防止误提交真实业务资产）
 # 忽略所有 .docx / .xlsx，但保留 demo_ 前缀的示例文件
@@ -59,9 +61,6 @@ web/uploads/*
 !examples/**
 !**/demo_*
 
-# Vue 前端本地构建产物（webui/dist，与 web/static/dist 同理）
-webui/dist/
-
 # IDE / Trae 内部目录
 .trae/
 
@@ -72,3 +71,9 @@ webui/dist/
 .codegraph/
 
 .meituan-catpaw/
+
+# 清理技术产物（日志与隔离区，集中管理，不入库）
+logs/
+
+# 无人值守清理隔离区（历史兼容，已废弃改用 logs/cleanup-quarantine-*/）
+.cleanup-quarantine-*/

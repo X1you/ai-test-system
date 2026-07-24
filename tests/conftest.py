@@ -26,6 +26,12 @@ import pytest
 _TEST_JWT_SECRET = "test-only-secret-for-pytest-fixture-32chars"
 _os.environ["JWT_SECRET"] = _TEST_JWT_SECRET
 
+# 测试环境强制开启 JWT 校验（AUTH_ENABLED=true）。
+# verify_token 在模块导入时读取此变量；必须在 web.middleware.auth 被导入前设置
+# （本 conftest 顶层早于 fixture 内的 web.app 懒导入，时序安全）。
+# 不开启会导致 verify_token 短路放行，所有 401 断言失效（既存 auth 测试已因此损坏）。
+_os.environ["AUTH_ENABLED"] = "true"
+
 # 测试环境 Webhook HMAC 签名密钥（P0-5 后所有 webhook 请求必须带签名）
 TEST_WEBHOOK_SECRET = "test-webhook-secret"
 _os.environ["WEBHOOK_SECRET"] = TEST_WEBHOOK_SECRET

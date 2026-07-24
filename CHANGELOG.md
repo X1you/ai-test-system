@@ -6,6 +6,72 @@
 
 ---
 
+## [2.3.0] — 2026-07-24
+
+### 🚀 多 LLM Provider 管理 V1-V4（高自由度多协议配置）
+
+> **背景**：原健康检查因 base_url 配置重复路径导致 404，前端却误报"连接正常"。根因在于单 Provider 硬编码协议，无法适应用户多 LLM / 多协议场景。
+> **方案**：前后端改造为多 Provider + 多协议（OpenAI 兼容 / Anthropic / 自定义 HTTP）高自由度配置，遵循产品经理调研报告 MVP + 2 期落地。
+
+#### ✨ 新功能
+
+1. **多协议 LLM 客户端抽象**（`core/llm_client.py`）
+   - OpenAI 兼容 / Anthropic / Custom HTTP 三协议统一 `BaseLLMClient` 抽象
+   - `create_llm_client(config)` 工厂按协议自动选择实现
+   - base_url 末尾 `/chat/completions` 自动剥离（防路径重复）
+
+2. **多 Provider 路由 + 故障转移**（`core/llm_gateway.py`）
+   - 按 `priority` 顺序尝试 Provider，断路器自动跳过已熔断项
+   - 主 Provider 失败自动切换备选，`failovers` 统计
+
+3. **配置自动迁移**（`core/config_loader.py`）
+   - 旧单 Provider schema 自动迁移为新 `providers` 列表（向后兼容）
+
+4. **Provider CRUD + 测试连接**（`web/api/config.py`）
+   - `GET/PUT /config`、`POST /config/test_provider`、`POST /config/set_default`
+   - `GET /config/providers`、`GET /health/ready` 多 Provider 状态报告
+
+5. **V1 拖拽排序**（故障转移顺序）
+   - 前端 HTML5 DnD，`POST /config/reorder_providers` 同步 `priority` 字段
+
+6. **V2 批量操作**（多选启用/禁用/删除）
+   - `POST /config/batch_toggle`、`POST /config/batch_delete`
+   - 默认 Provider 保护：禁用时自动切默认，删除时拒绝
+
+7. **V3 分组标签**（provider tags）
+   - Provider 配置新增 `tags` 字段，前端标签编辑（回车/逗号添加，Backspace 删除）
+   - SettingsView 标签筛选条，按标签筛选 Provider 列表
+
+8. **V4 用量仪表盘**（call count / tokens / success rate）
+   - `core/llm_usage.py` 应用级内存统计单例（线程安全，`threading.Lock`）
+   - `BaseLLMClient.chat` / `async_chat` 成功/失败埋点（不污染 `test_connection` 健康检查）
+   - `GET /api/v1/usage/llm` 聚合视图 + `POST /api/v1/usage/reset` 清空
+   - 前端 `UsageDashboard.vue` 仪表盘组件（汇总卡片 + Provider 表格 + ARIA 语义）
+   - `stores/usage.ts` staleTime 5s 缓存 + GET 请求 inflight 去重
+
+#### 🐛 关键 Bug 修复
+
+1. **base_url 路径重复致 404**：`OpenAICompatibleClient` 构造时自动剥离 `/chat/completions` 后缀
+2. **前端连接状态误报**：`testConnection` 仅当 `llm` 状态为 `ok` 才返回成功（`degraded` 不再视为成功）
+3. **后端健康检查 degraded 误判就绪**：`_all_dependencies_ok` 当 LLM 段为 dict 时，任一 provider ok 即就绪
+4. **async handler 同步调用阻塞 event loop**：`test_provider` 用 `asyncio.to_thread` 包裹同步 SDK 调用
+5. **健康检查 timeout 失效**：`_do_chat` / `_async_do_chat` 增加 `timeout` 参数透传
+6. **PUT /config providers 数组写盘失败**：检测到数组时降级为 `_write_full_yaml` 全量重写
+7. **PUT /config api_key 丢失**：空/掩码 api_key 从原配置保留
+8. **`reset()` 死锁**：`threading.Lock` 不可重入，`reset()` 持锁后调用 `snapshot()` 死锁 — 改为锁内手动构造快照
+9. **`test_fallback_recorded_on_failover` 回归**：`LLMGateway.chat` 重构为 `self.clients` 后测试未同步 `clients` 属性
+
+#### ✅ 验证
+- 后端：805 单元测试全部通过（含 12 个 V4 新增测试）
+- 前端：`npm run build` 通过，gzip 47.40KB（≤ 200KB 性能预算）
+- ARIA 语义：仪表盘表格 `role=table` + `aria-label`，按钮防重复点击
+
+#### ⚠️ 已知限制
+- 用量统计为进程级内存聚合，重启清空（无持久化，V5+ 可接入 SQLite）
+- 用量统计不含缓存命中（`temp=0` 缓存命中不计入 calls/tokens）
+
+---
+
 ## [2.2.2] — 2026-07-22
 
 ### 🩹 靶向热修复模式 [Hot-Fix] — 暗色主题系统级失效修复

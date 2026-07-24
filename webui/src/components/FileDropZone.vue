@@ -1,134 +1,117 @@
-<template>
-  <div
-    class="drop-zone"
-    :class="{ 'drop-zone--dragging': isDragging, 'drop-zone--compact': compact }"
-    role="button"
-    tabindex="0"
-    :aria-label="label"
-    @click="fileInput?.click()"
-    @keydown.enter.prevent="fileInput?.click()"
-    @keydown.space.prevent="fileInput?.click()"
-    @dragover.prevent="isDragging = true"
-    @dragleave="isDragging = false"
-    @drop.prevent="handleDrop"
-  >
-    <input
-      ref="fileInput"
-      type="file"
-      :accept="accept"
-      class="drop-zone__input"
-      :aria-label="label"
-      @change="handleSelect"
-    />
-    <slot v-if="$slots.default" />
-    <template v-else>
-      <svg class="drop-zone__icon" viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
-        <path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h5v7h7v9H6z"/>
-      </svg>
-      <p class="drop-zone__text">拖拽文件到此处，或点击选择</p>
-      <p class="drop-zone__hint">{{ hint }}</p>
-    </template>
-  </div>
-</template>
-
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
+import { useFileUpload } from '@/composables/useFileUpload'
+import { useToastStore } from '@/composables/useToast'
 
-const props = defineProps({
-  accept: { type: String, default: '.md,.txt' },
-  hint: { type: String, default: '支持 .md / .txt，最大 10 MB' },
-  label: { type: String, default: '上传文件' },
-  compact: { type: Boolean, default: false },
-})
+const emit = defineEmits<{ (e: 'file-selected', file: File): void }>()
+const toast = useToastStore()
 
-const emit = defineEmits(['file'])
+const hiddenInput = ref<HTMLInputElement | null>(null)
+const { isDragging, error, onDrop, onDragOver, onDragLeave, onInputChange, handleFile } =
+  useFileUpload({
+    extensions: ['md', 'txt'],
+    mimeTypes: ['text/plain', 'text/markdown'],
+    maxSize: 10 * 1024 * 1024,
+  })
 
-const fileInput = ref(null)
-const isDragging = ref(false)
-
-function handleSelect(e) {
-  const file = e.target.files?.[0]
-  if (file) emit('file', file)
-  e.target.value = ''
+function onFileSelected(file: File) {
+  if (handleFile(file)) {
+    emit('file-selected', file)
+  } else {
+    toast.error(error.value || '文件校验失败')
+  }
 }
 
-function handleDrop(e) {
-  isDragging.value = false
-  const file = e.dataTransfer.files?.[0]
-  if (file) emit('file', file)
+function onDropWrapper(e: DragEvent) {
+  onDrop(e)
+  // useFileUpload 内部已校验，这里需要检查是否成功
+}
+
+function openFilePicker() {
+  hiddenInput.value?.click()
+}
+
+function onChangeWrapper(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (target.files?.length) {
+    onFileSelected(target.files[0])
+  }
+  // 重置 input 值以允许重复选同一文件
+  target.value = ''
 }
 </script>
 
+<template>
+  <section
+    class="hero-dropzone"
+    :class="{ dragover: isDragging }"
+    @click="openFilePicker"
+    @dragover.prevent="onDragOver"
+    @dragleave="onDragLeave"
+    @drop.prevent="onDropWrapper"
+  >
+    <div class="hero-left">
+      <div class="hero-icon">📄 ➔ ⚡</div>
+      <div class="hero-text">
+        <div class="hero-title">开启一次 AI 测试流水线</div>
+        <div class="hero-desc">
+          拖拽需求文档 (<code>.md</code> / <code>.txt</code>) 到此处，或点击配置启动
+        </div>
+        <div v-if="error" class="hero-error">{{ error }}</div>
+      </div>
+    </div>
+    <button class="btn-primary" @click.stop="openFilePicker">+ 选择需求文件</button>
+    <input
+      ref="hiddenInput"
+      type="file"
+      accept=".md,.txt"
+      style="display: none"
+      @change="onChangeWrapper"
+    />
+  </section>
+</template>
+
 <style scoped>
-.drop-zone {
+.hero-dropzone {
+  margin: 1rem 1.25rem 0;
+  border: 1px dashed var(--border);
+  background: var(--panel-bg);
+  padding: 1.1rem 1.5rem;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-sm);
-  padding: var(--space-2xl) var(--space-xl);
-  border: 2px dashed var(--border-strong);
-  border-radius: var(--radius-lg);
+  justify-content: space-between;
   cursor: pointer;
-  text-align: center;
-  background: var(--bg-surface);
-  transition: border-color var(--duration-normal) var(--ease-out),
-              background var(--duration-normal) var(--ease-out),
-              box-shadow var(--duration-normal) var(--ease-out);
+  transition: all var(--duration-normal) var(--ease);
 }
-
-.drop-zone:hover,
-.drop-zone:focus-visible {
-  border-color: var(--accent);
-  background: var(--accent-subtle);
-  box-shadow: inset 0 0 0 1px var(--accent-glow), var(--shadow-sm);
+.hero-dropzone:hover,
+.hero-dropzone.dragover {
+  border-color: var(--fg);
+  background: var(--accent-dim);
 }
-
-.drop-zone--dragging {
-  border-color: var(--accent);
-  background: var(--accent-subtle);
-  box-shadow: inset 0 0 24px var(--accent-glow), var(--shadow-md);
-  transform: scale(1.01);
+.hero-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
-[data-theme="dark"] .drop-zone--dragging {
-  box-shadow: inset 0 0 24px hsl(0 0% 50% / 0.15), var(--shadow-md), 0 0 12px hsl(0 0% 50% / 0.2);
-  border-color: var(--accent);
+.hero-icon {
+  font-size: 1.4rem;
 }
-[data-theme="dark"] .drop-zone:hover,
-[data-theme="dark"] .drop-zone:focus-visible {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent-glow), var(--shadow-sm), 0 0 8px hsl(0 0% 50% / 0.12);
+.hero-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
-
-.drop-zone--compact {
-  padding: var(--space-lg) var(--space-md);
+.hero-desc {
+  font-size: 0.82rem;
+  color: var(--muted-fg);
 }
-
-.drop-zone__input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+.hero-desc code {
+  font-family: var(--font-mono);
 }
-
-.drop-zone__icon {
-  color: var(--text-tertiary);
-  transition: color var(--duration-normal) var(--ease-out);
-}
-.drop-zone:hover .drop-zone__icon,
-.drop-zone--dragging .drop-zone__icon {
-  color: var(--accent);
-}
-
-.drop-zone__text {
-  font-size: var(--text-base);
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-
-.drop-zone__hint {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
+.hero-error {
+  font-size: 0.75rem;
+  color: var(--fg);
+  font-weight: 600;
+  margin-top: 0.2rem;
 }
 </style>

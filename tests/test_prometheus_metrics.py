@@ -168,7 +168,7 @@ class TestGatewayMetricsIntegration:
         gateway = LLMGateway.__new__(LLMGateway)
         gateway._stats = {
             "provider_calls": {}, "total_calls": 0, "total_tokens": 0,
-            "provider_errors": {}, "failovers": 0,
+            "provider_errors": {}, "failovers": 0, "circuit_breaks": {},
         }
         gateway._circuits = {}  # 断路器状态
 
@@ -185,6 +185,9 @@ class TestGatewayMetricsIntegration:
         fallback.async_chat = AsyncMock(return_value="recovered")
         fallback.stats = {"total_tokens": 10}
 
+        # 当前 LLMGateway.chat 按 self.clients 列表顺序遍历
+        gateway.clients = [primary, fallback]
+        # 兼容属性（部分旧断言可能引用）
         gateway.primary = primary
         gateway.fallback_chain = [fallback]
 

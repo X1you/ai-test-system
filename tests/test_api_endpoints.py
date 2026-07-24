@@ -186,49 +186,40 @@ class TestWebhooksAPI:
 
 
 class TestPageRoutes:
-    """页面路由测试（Sprint 6.1: 全部改为 JSON）"""
+    """根路由与 catch-all 404 测试"""
 
     def test_index_page(self, client):
-        """首页：前端已构建时返回 SPA HTML，未构建时返回 JSON 元信息"""
+        """首页返回 JSON 系统元信息"""
         resp = client.get("/")
         assert resp.status_code == 200
-        ct = resp.headers.get("content-type", "")
-        assert "text/html" in ct or "application/json" in ct
-        if "application/json" in ct:
-            data = resp.json()
-            assert "name" in data
+        assert "application/json" in resp.headers.get("content-type", "")
+        data = resp.json()
+        assert "name" in data
 
-    def test_login_page_removed(self, client):
-        """登录页已移除（Sprint 6.0 切除 Auth）→ SPA fallback"""
+    def test_login_page_404(self, client):
+        """登录页路由不存在 → catch-all 404"""
         resp = client.get("/login")
-        assert resp.status_code == 200
-        # SPA fallback: Vue 构建后返回 text/html，未构建返回 JSON
-        ct = resp.headers.get("content-type", "")
-        assert "text/html" in ct or "application/json" in ct
+        assert resp.status_code == 404
 
-    def test_knowledge_page_spa_fallback(self, client):
-        """知识库页 → SPA fallback"""
+    def test_knowledge_page_404(self, client):
+        """知识库页路由不存在 → catch-all 404"""
         resp = client.get("/knowledge")
-        assert resp.status_code == 200
-        ct = resp.headers.get("content-type", "")
-        assert "text/html" in ct or "application/json" in ct
+        assert resp.status_code == 404
 
-    def test_pipelines_page_spa_fallback(self, client):
-        """Pipeline 列表页 → SPA fallback"""
+    def test_pipelines_page_404(self, client):
+        """Pipeline 列表页路由不存在 → catch-all 404"""
         resp = client.get("/pipelines")
-        assert resp.status_code == 200
-        ct = resp.headers.get("content-type", "")
-        assert "text/html" in ct or "application/json" in ct
+        assert resp.status_code == 404
 
-    def test_pipeline_page_spa_fallback(self, client):
-        """Pipeline 详情页 → SPA fallback"""
+    def test_pipeline_page_404(self, client):
+        """Pipeline 详情页路由不存在 → catch-all 404"""
         resp = client.get("/pipeline/nonexistent-12345")
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
-    def test_results_page_spa_fallback(self, client):
-        """结果页 → SPA fallback"""
+    def test_results_page_404(self, client):
+        """结果页路由不存在 → catch-all 404"""
         resp = client.get("/results/nonexistent-12345")
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
 
 class TestAPIContentType:
@@ -240,12 +231,11 @@ class TestAPIContentType:
         assert resp.status_code == 200
         assert "application/json" in resp.headers.get("content-type", "")
 
-    def test_page_returns_json_or_spa(self, client):
-        """页面返回 JSON（未构建）或 SPA HTML（已构建）"""
+    def test_page_returns_json(self, client):
+        """根路径返回 JSON 系统元信息"""
         resp = client.get("/")
         assert resp.status_code == 200
-        ct = resp.headers.get("content-type", "")
-        assert "application/json" in ct or "text/html" in ct
+        assert "application/json" in resp.headers.get("content-type", "")
 
 
 if __name__ == "__main__":

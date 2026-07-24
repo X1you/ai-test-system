@@ -107,3 +107,63 @@ $ grep -rn "GlobalIcons\|PageLoader" src/ --include="*.vue" --include="*.js"
 | `src/components/LogPanel.vue` | - | 需确认 | 同上 |
 
 > 验证方式：`grep -rn "from './StatusBadge'" src/ --include="*.vue"`
+
+---
+
+## 🧹 v6.4.1 — 无人值守清理（2026-07-23）
+
+> **执行脚本**：[scripts/cleanup_unattended.sh](file:///Users/x1you/Documents/ai-test-system/scripts/cleanup_unattended.sh)
+> **清理时间**：2026-07-23 22:04:54
+> **隔离区**：`logs/cleanup-quarantine-20260723-220454/`（可回滚，确认无误后可删）
+> **清理报告**：`logs/cleanup-report-20260723-220454.md`
+
+### 清理策略
+
+采用**两层处置 + 白名单保护**机制：
+- **Tier 1 直接删除**：纯临时/可重建文件（`__pycache__`、`.pyc`、`.DS_Store`、`.log`、`.pytest_cache`、`htmlcov`、`output` 等）
+- **Tier 2 隔离移动**：疑似过时但可能有价值的文档/资源，移入隔离区，可回滚
+- **保护白名单**：37 项关键路径（`.venv`、`.git`、源码目录、IDE 配置、关键文档/配置），绝不触碰
+
+### 已隔离文件（Tier 2，可回滚）
+
+| 文件 | 类型 | 大小 | 隔离原因 |
+|------|------|------|----------|
+| `BUGFIX_PIPELINE_START.md` | 失效 Bug 修复记录 | 7.36 KB | 引用的 `web/templates/index.html` 旧版 HTMX 模板已不存在，前端架构已变更，记录失效 |
+| `docs/PRR_SESSION_2025_07_22.md` | 过时会话记录 | 10.81 KB | 日期异常（2025-07-22，与项目当前 2026-07 不符），带日期的阶段性会话快照，已无追溯价值 |
+| `tests/test_error_toast_handling.js` | 失效前端测试 | 9.73 KB | 前端 HTMX 时代的错误提示测试，前端已迁 Vue 后整体移除，该 JS 测试已无运行环境 |
+
+**共计**：3 个文件，约 27.90 KB
+
+### 已直接删除（Tier 1）
+
+本次扫描时项目本身较干净，`__pycache__`/`.pyc`/`.DS_Store`/`.log`/缓存目录/运行时输出均不存在，无实际删除项。
+
+> 说明：`test_requirement.md`（.gitignore 显式忽略的临时测试需求草稿）在首次试运行时已被隔离至旧隔离区（隐藏目录），因沙箱环境对 `.gitignore` 忽略的隐藏目录有清理行为导致无法回滚。该文件为临时草稿且在 .gitignore 中，丢失不影响业务。隔离区机制已改用 `logs/` 下非隐藏目录规避此问题。
+
+### 受保护跳过项
+
+| 路径 | 原因 |
+|------|------|
+| `scripts/.DS_Store` | 落在受保护的 scripts 目录内 |
+| `webui/dist` | webui/ 前端源码目录整体受保护 |
+
+### 回滚方法
+
+```bash
+# 查看隔离区内容
+ls -la logs/cleanup-quarantine-20260723-220454/
+
+# 恢复某个文件（示例）
+mv logs/cleanup-quarantine-20260723-220454/BUGFIX_PIPELINE_START.md ./
+
+# 确认无误后彻底删除隔离区
+rm -rf logs/cleanup-quarantine-20260723-220454/
+```
+
+### 单命令重新运行清理
+
+```bash
+bash scripts/cleanup_unattended.sh
+```
+
+> 每次运行会生成带时间戳的新日志、报告与隔离区，互不冲突。

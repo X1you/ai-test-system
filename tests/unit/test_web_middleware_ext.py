@@ -159,6 +159,18 @@ class TestRateLimitFunctions:
 class TestAuthVerifyTokenEdgeCases:
     """verify_token 边界情况测试"""
 
+    def setup_method(self):
+        """每个测试前启用 JWT 验证（覆盖默认的本地工具模式）"""
+        import web.middleware.auth as _auth_mod
+
+        _auth_mod._AUTH_ENABLED = True
+
+    def teardown_method(self):
+        """测试后恢复本地工具模式（避免污染其他测试）"""
+        import web.middleware.auth as _auth_mod
+
+        _auth_mod._AUTH_ENABLED = False
+
     def test_verify_token_no_credentials(self):
         """无 credentials 抛 401"""
         from fastapi import HTTPException

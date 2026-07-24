@@ -124,6 +124,72 @@ def _expand_path(path_str: str) -> str:
     return path_str
 
 
+def _migrate_legacy_llm_config(llm: dict) -> tuple[dict, bool]:
+    """将旧版 LLM 配置（单 provider + fallback 列表）迁移为新 schema（providers 列表）。
+
+    旧 schema:
+        llm:
+          provider: deepseek
+          api_key: ...
+          base_url: ...
+          model: deepseek-chat
+          fallback: [{provider, api_key, ...}, ...]
+
+    新 schema:
+        llm:
+          default: <name>
+          providers: [{name, protocol, ...}, ...]
+
+    Returns:
+        (迁移后的 llm dict, 是否发生了迁移)
+    """
+    # 已经是新 schema（顶层有 providers 列表且非空）→ 不迁移
+    if isinstance(llm.get("providers"), list) and llm["providers"]:
+        return llm, False
+
+    # 旧 schema 特征：顶层有 provider/api_key/base_url/model 之一，且无 providers
+    has_legacy_main = any(
+        k in llm for k in ("provider", "api_key", "base_url", "model")
+    )
+    if not has_legacy_main:
+        return llm, False
+
+    providers: list[dict] = []
+
+    # 提取主 provider（去掉 fallback 字段）
+    main = {k: v for k, v in llm.items() if k != "fallback"}
+    if main.get("api_key") or main.get("base_url") or main.get("model"):
+        main.setdefault("name", main.get("provider", "default"))
+        main.setdefault("protocol", "openai_compatible")
+        main.setdefault("enabled", True)
+        main.setdefault("priority", 0)
+        providers.append(main)
+
+    # 提取 fallback 列表
+    for i, fb in enumerate(llm.get("fallback", []) or []):
+        if not isinstance(fb, dict):
+            continue
+        fb = dict(fb)
+        fb.setdefault("name", fb.get("provider", f"fallback_{i}"))
+        fb.setdefault("protocol", "openai_compatible")
+        fb.setdefault("enabled", True)
+        fb.setdefault("priority", i + 1)
+        providers.append(fb)
+
+    if not providers:
+        return llm, False
+
+    new_llm: dict = {"providers": providers}
+    if main.get("name"):
+        new_llm["default"] = main["name"]
+    # 保留其它顶层字段（如 _migrated 标记）
+    for k, v in llm.items():
+        if k not in ("fallback", "provider", "api_key", "base_url", "model", "temperature", "max_tokens", "timeout", "retry", "providers", "default"):
+            new_llm.setdefault(k, v)
+    new_llm["_migrated"] = True
+    return new_llm, True
+
+
 def load_config(config_path: str | None = None) -> dict:
     """
     加载配置
@@ -135,6 +201,10 @@ def load_config(config_path: str | None = None) -> dict:
 
     Returns:
         合并后的完整配置字典
+
+    Side effects:
+        若检测到旧版 LLM schema（单 provider + fallback 列表），
+        自动迁移为新 schema（providers 列表），并写回 config.yaml。
     """
     # 1. 加载 .env
     _load_dotenv(PROJECT_ROOT / ".env")
@@ -166,20 +236,83 @@ def load_config(config_path: str | None = None) -> dict:
     # 6. 路径展开
     config["output"]["dir"] = _expand_path(config["output"].get("dir", ""))
 
+    # 7. 旧版 LLM 配置自动迁移（单 provider → providers 列表）
+    if isinstance(config.get("llm"), dict):
+        new_llm, migrated = _migrate_legacy_llm_config(config["llm"])
+        if migrated:
+            _logger.info(
+                "llm_config_migrated",
+                message="检测到旧版 LLM 配置（单 provider 格式），已自动迁移为 providers 列表格式",
+                new_providers=[p.get("name") for p in new_llm.get("providers", [])],
+            )
+            config["llm"] = new_llm
+            # 写回 YAML（让下次启动不再触发迁移）
+            try:
+                import yaml as _yaml
+                cfg_path.write_text(
+                    _yaml.safe_dump(_strip_runtime_markers(config), allow_unicode=True, sort_keys=False),
+                    encoding="utf-8",
+                )
+                _logger.info("llm_config_migrated_written", path=str(cfg_path))
+            except Exception as e:
+                _logger.warning("llm_config_migrate_write_failed", error=str(e))
+
     return config
+
+
+def _strip_runtime_markers(config: dict) -> dict:
+    """去掉运行时标记字段（以 _ 开头），保证写回 YAML 时不含内部状态。"""
+    out = {}
+    for k, v in config.items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict):
+            out[k] = _strip_runtime_markers(v)
+        else:
+            out[k] = v
+    return out
 
 
 def validate_config(config: dict) -> list:
     """
     校验配置，返回错误消息列表（空列表 = 校验通过）
+
+    适配多 Provider schema：
+      - 新 schema（providers 列表）：每个 provider 至少一个 enable 且配置 model
+      - 旧 schema（顶层 api_key/model）：保留兼容
     """
     errors = []
 
     llm = config.get("llm", {})
-    if not llm.get("api_key"):
-        errors.append(
-            "LLM API Key 未配置。请在 .env 中设置 LLM_API_KEY，或在 config.yaml 中填写 api_key。"
-        )
+    providers = llm.get("providers", []) if isinstance(llm, dict) else []
+
+    if providers and isinstance(providers, list) and len(providers) > 0:
+        # 新 schema：校验 providers 列表
+        enabled = [p for p in providers if isinstance(p, dict) and p.get("enabled", True)]
+        if not enabled:
+            errors.append("所有 LLM provider 都被禁用（enabled=false），请至少启用一个")
+        else:
+            # 至少一个 provider 有 api_key（OpenAI 协议）或 model
+            any_usable = False
+            for p in enabled:
+                protocol = p.get("protocol", "openai_compatible")
+                has_model = bool(p.get("model"))
+                if protocol == "openai_compatible" or protocol == "anthropic":
+                    if has_model and p.get("api_key"):
+                        any_usable = True
+                        break
+                elif protocol == "custom_http":
+                    if has_model and (p.get("endpoint") or p.get("base_url")):
+                        any_usable = True
+                        break
+            if not any_usable:
+                errors.append("所有启用的 LLM provider 都缺少必要的 api_key/model 配置")
+    else:
+        # 旧 schema 兼容
+        if not llm.get("api_key"):
+            errors.append(
+                "LLM API Key 未配置。请在 .env 中设置 LLM_API_KEY，或在 config.yaml 中填写 api_key。"
+            )
     if not llm.get("base_url"):
         errors.append("LLM base_url 未配置。")
     if not llm.get("model"):
