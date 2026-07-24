@@ -22,6 +22,8 @@ const props = defineProps<{
   isDefault: boolean
   /** 最近一次测试结果（status 字段） */
   lastStatus?: string
+  /** P2-3：系统健康检查 per-provider 状态（/health/ready 的 llm.{name}） */
+  healthStatus?: string
   /** 是否可拖（V1 拖拽排序） */
   draggable?: boolean
   /** V2：是否启用选择模式（显示 checkbox 蒙层） */
@@ -54,6 +56,20 @@ const statusLabel = computed(() => {
   if (statusKind.value === 'ok') return '已联通'
   if (statusKind.value === 'degraded') return props.lastStatus.startsWith('degraded') ? '异常' : '检测失败'
   return '未配置'
+})
+
+// P2-3：系统健康检查状态指示
+const healthKind = computed<'ok' | 'degraded' | 'unknown'>(() => {
+  if (!props.healthStatus) return 'unknown'
+  if (props.healthStatus.startsWith('ok')) return 'ok'
+  if (props.healthStatus.startsWith('degraded') || props.healthStatus.startsWith('error')) return 'degraded'
+  return 'unknown'
+})
+const healthLabel = computed(() => {
+  if (!props.healthStatus) return ''
+  if (healthKind.value === 'ok') return '系统健康'
+  if (healthKind.value === 'degraded') return '系统异常'
+  return '未检测'
 })
 
 const maskedKey = computed(() => {
@@ -179,6 +195,16 @@ function onCheckboxKeydown(e: KeyboardEvent) {
       <span class="pc-status" :class="`is-${statusKind}`" :title="lastStatus || '未测试'">
         <span class="pc-status-dot" :class="`is-${statusKind}`" aria-hidden="true" />
         <span class="pc-status-text">{{ statusLabel }}</span>
+      </span>
+      <!-- P2-3：系统健康检查徽章 -->
+      <span
+        v-if="healthStatus"
+        class="pc-health"
+        :class="`is-${healthKind}`"
+        :title="`系统健康检查: ${healthLabel}`"
+      >
+        <span class="pc-health-dot" :class="`is-${healthKind}`" aria-hidden="true" />
+        {{ healthLabel }}
       </span>
     </div>
 
@@ -389,6 +415,39 @@ function onCheckboxKeydown(e: KeyboardEvent) {
 .pc-status-dot.is-unknown { background: var(--muted-fg); }
 .pc-status.is-ok { color: #10b981; }
 .pc-status.is-degraded { color: #f59e0b; }
+
+/* P2-3：系统健康检查徽章 */
+.pc-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted-fg);
+}
+.pc-health.is-ok {
+  color: #10b981;
+  border-color: #10b98140;
+  background: #10b9810d;
+}
+.pc-health.is-degraded {
+  color: #f59e0b;
+  border-color: #f59e0b40;
+  background: #f59e0b0d;
+}
+.pc-health-dot {
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--muted-fg);
+}
+.pc-health-dot.is-ok { background: #10b981; }
+.pc-health-dot.is-degraded { background: #f59e0b; }
 
 .pc-body {
   display: flex;

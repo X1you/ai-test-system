@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Zap, ListTodo, BookOpen, Settings, Sun, Moon } from 'lucide-vue-next'
+import { Zap, BookOpen, Settings, Sun, Moon } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
 import { usePipelineStore } from '@/stores/pipeline'
 import { useToastStore } from '@/composables/useToast'
@@ -21,15 +21,16 @@ const activeActionCount = computed(
 )
 
 // lucide 图标组件映射（替换原 emoji，符合标杆图标体系）
+// 「待处理队列」入口已移除：与工作台默认 Tab 视图完全冗余，
+// 且 ?filter=action 参数从未被 TaskList 消费（死链）。
+// 待处理计数通过「测试工作台」项的 badge 体现。
 const navItems = [
-  { path: '/workbench', label: '测试工作台', icon: Zap, group: 'core' },
-  { path: '/workbench?filter=action', label: '待处理队列', icon: ListTodo, group: 'core', badge: true },
+  { path: '/workbench', label: '测试工作台', icon: Zap, group: 'core', badge: true },
   { path: '/knowledge', label: '知识库 (RAG)', icon: BookOpen, group: 'secondary' },
   { path: '/settings', label: '偏好设置', icon: Settings, group: 'secondary' },
 ]
 
 function isActive(item: typeof navItems[0]): boolean {
-  if (item.path.includes('?')) return route.path === item.path.split('?')[0] && route.query.filter === 'action'
   return route.path === item.path
 }
 

@@ -2,12 +2,10 @@
 /**
  * SettingsView — 系统配置页（多 LLM × 多协议版本）
  *
- * 布局：
- *  - 顶部：页面标题
- *  - ① LLM Provider 卡片网格（新增 / 编辑 / 删除 / 测试 / 设默认 / 启用停用）
- *  - ② Pipeline 默认配置
- *  - ③ 知识库配置（保留旧 UI 不变，向后兼容）
- *  - ④ 主题切换
+ * P2.1 Tab 三分化（对齐行业 IA）：
+ *   Tab 1「模型 Provider」— Provider 卡片网格 + 用量仪表盘
+ *   Tab 2「流水线默认」— Pipeline 配置
+ *   Tab 3「集成」— Webhook 管理 + 知识库配置入口
  *
  * 抽屉：ProviderDrawer 复用组件
  */
@@ -16,35 +14,34 @@ import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import { useToastStore } from '@/composables/useToast'
-import { useTheme } from '@/composables/useTheme'
 import { useConfigStore } from '@/stores/config'
-import { ApiError, apiGet } from '@/composables/useApi'
-import { API } from '@/types/api'
+import { ApiError } from '@/composables/useApi'
 import type { LLMProvider, LLMProtocol } from '@/types/config'
 import type { Dimensions, Formats, Mode } from '@/types/pipeline'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ProviderCard from '@/components/ProviderCard.vue'
 import ProviderDrawer from '@/components/ProviderDrawer.vue'
 import UsageDashboard from '@/components/UsageDashboard.vue'
+import WebhookPanel from '@/components/WebhookPanel.vue'
 
 const configStore = useConfigStore()
 const toast = useToastStore()
-const { currentTheme, toggleTheme } = useTheme()
 
 // 解构 ref / reactive 字段 — 避免在 setup script 里到处写 .value
 const {
   providers,
   defaultName,
-  protocols: protocolsRef,
   validation,
   pipeline: pipelineStore,
   lastCheckResults,
+  healthStatus,
   saving,
   loading,
 } = storeToRefs(configStore)
 
-// 给模板用的 protocols 列表
-const _unused_protocols = computed<LLMProtocol[]>(() => protocolsRef.value)
+// P2-1：Tab 状态
+type SettingsTab = 'providers' | 'pipeline' | 'integrations'
+const activeTab = ref<SettingsTab>('providers')
 
 // ─── 抽屉状态 ───
 const drawerOpen = ref(false)
@@ -106,25 +103,11 @@ const pipeline = ref({
 })
 const savingPipeline = ref(false)
 
-// ─── KB 配置（保留旧 UI） ───
-const kb = ref({
-  provider_type: 'mcp_filesystem',
-  connection_url: '',
-  auth_token: '',
-  vault_path: '',
-})
-const savingKB = ref(false)
-
 onMounted(async () => {
   await configStore.fetchConfig()
   Object.assign(pipeline.value, pipelineStore.value)
-  // 加载 KB
-  try {
-    const kbCfg: any = await apiGet(API.KNOWLEDGE.CURRENT_CONFIG)
-    if (kbCfg) Object.assign(kb.value, kbCfg)
-  } catch {
-    /* 忽略：未配置 KB 时端点可能 404 */
-  }
+  // P2-3：后台拉取系统健康检查 per-provider 状态（静默，不阻塞页面渲染）
+  configStore.fetchHealthStatus()
 })
 
 // ─── Provider CRUD ───
@@ -367,20 +350,6 @@ async function savePipeline() {
   }
 }
 
-// ─── KB（保留） ───
-
-async function saveKB() {
-  savingKB.value = true
-  try {
-    await apiGet(API.KNOWLEDGE.UPDATE_CONFIG) // placeholder: 实际走 POST
-    toast.success('知识库配置已热切换')
-  } catch (e: any) {
-    toast.error(e instanceof ApiError ? e.message : '保存失败')
-  } finally {
-    savingKB.value = false
-  }
-}
-
 const protocols = computed<LLMProtocol[]>(() => configStore.protocols)
 </script>
 
@@ -388,229 +357,243 @@ const protocols = computed<LLMProtocol[]>(() => configStore.protocols)
   <div class="settings-view">
     <h2 class="page-title">系统部署与配置</h2>
 
-    <!-- ① LLM Provider 卡片网格 -->
-    <section class="config-section">
-      <header class="section-header">
-        <h3 class="section-title">大模型 (LLM) Provider</h3>
-        <div class="section-header-actions">
-          <button
-            v-if="!batchMode && providers.length > 0"
-            class="btn-secondary"
-            aria-label="进入批量管理模式"
-            @click="enterBatchMode"
-          >
-            ☑ 批量管理
-          </button>
-          <button class="btn-primary" @click="openCreate" aria-label="新增 Provider">
-            + 新增 Provider
-          </button>
-        </div>
-      </header>
-      <p class="section-desc">
-        支持多 Provider 列表 + 多协议（OpenAI 兼容 / Anthropic / 自定义 HTTP）。
-        点击「测试」会立即验证连通性；「设为默认」会更新 LLM Gateway 主路由。
-        拖拽卡片可调整故障转移顺序（上方靠前）。API Key 在列表中脱敏显示（<code>sk-xxx...yyy</code>）。
-      </p>
-
-      <!-- V2: 批量操作工具栏 -->
-      <div v-if="batchMode" class="batch-toolbar" role="toolbar" aria-label="批量操作工具栏">
-        <div class="batch-info">
-          <span class="batch-count" aria-live="polite">
-            已选 <strong>{{ selectedCount }}</strong> / {{ providers.length }} 个
-            <template v-if="selectedCount > 0">
-              <span class="batch-meta">
-                （启用 {{ selectedEnabledCount }} · 禁用 {{ selectedDisabledCount }}）
-              </span>
-            </template>
-          </span>
-        </div>
-        <div class="batch-actions">
-          <button
-            type="button"
-            class="btn-secondary"
-            :aria-pressed="isAllSelected"
-            :disabled="providers.length === 0"
-            @click="toggleSelectAll"
-          >
-            {{ isAllSelected ? '☐ 取消全选' : '☑ 全选' }}
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="selectedCount === 0"
-            @click="handleBatchEnable"
-          >
-            批量启用
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="selectedCount === 0"
-            :title="containsDefault ? '默认 Provider 不能直接禁用' : '批量禁用所选'"
-            @click="handleBatchDisable"
-          >
-            批量禁用
-          </button>
-          <button
-            type="button"
-            class="btn-danger"
-            :disabled="selectedCount === 0"
-            :title="containsDefault ? '默认 Provider 不能直接删除' : '批量删除所选'"
-            @click="requestBatchDelete"
-          >
-            批量删除
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            @click="exitBatchMode"
-          >
-            退出批量
-          </button>
-        </div>
-      </div>
-
-      <!-- V3: 标签筛选条 -->
-      <div v-if="allTags.length > 0" class="tag-filter-bar" role="group" aria-label="按标签筛选">
-        <button
-          type="button"
-          class="tag-filter-chip"
-          :class="{ 'is-active': !activeTag }"
-          :aria-pressed="!activeTag"
-          @click="activeTag = null"
-        >
-          全部 ({{ providers.length }})
-        </button>
-        <button
-          v-for="t in allTags"
-          :key="t"
-          type="button"
-          class="tag-filter-chip"
-          :class="{ 'is-active': activeTag === t }"
-          :aria-pressed="activeTag === t"
-          @click="activeTag = activeTag === t ? null : t"
-        >
-          {{ t }}
-        </button>
-      </div>
-
-      <div v-if="loading" class="loading-row">加载中…</div>
-
-      <div
-        v-else-if="providers.length === 0"
-        class="empty-row"
+    <!-- P2-1：Tab 导航（三分法，对齐行业 IA） -->
+    <nav class="settings-tabs" role="tablist" aria-label="设置分类">
+      <button
+        role="tab"
+        :aria-selected="activeTab === 'providers'"
+        :class="{ 'is-active': activeTab === 'providers' }"
+        @click="activeTab = 'providers'"
       >
-        <EmptyState
-          message="尚未配置任何 LLM Provider。点击「+ 新增 Provider」开始配置。"
+        模型 Provider
+      </button>
+      <button
+        role="tab"
+        :aria-selected="activeTab === 'pipeline'"
+        :class="{ 'is-active': activeTab === 'pipeline' }"
+        @click="activeTab = 'pipeline'"
+      >
+        流水线默认
+      </button>
+      <button
+        role="tab"
+        :aria-selected="activeTab === 'integrations'"
+        :class="{ 'is-active': activeTab === 'integrations' }"
+        @click="activeTab = 'integrations'"
+      >
+        集成与 Webhook
+      </button>
+    </nav>
+
+    <!-- ═══ Tab 1：模型 Provider ═══ -->
+    <template v-if="activeTab === 'providers'">
+      <section class="config-section">
+        <header class="section-header">
+          <h3 class="section-title">大模型 (LLM) Provider</h3>
+          <div class="section-header-actions">
+            <button
+              v-if="!batchMode && providers.length > 0"
+              class="btn-secondary"
+              aria-label="进入批量管理模式"
+              @click="enterBatchMode"
+            >
+              ☑ 批量管理
+            </button>
+            <button class="btn-primary" @click="openCreate" aria-label="新增 Provider">
+              + 新增 Provider
+            </button>
+          </div>
+        </header>
+        <p class="section-desc">
+          支持多 Provider 列表 + 多协议（OpenAI 兼容 / Anthropic / 自定义 HTTP）。
+          拖拽卡片可调整故障转移顺序（上方靠前）。API Key 在列表中脱敏显示（<code>sk-xxx...yyy</code>）。
+        </p>
+
+        <!-- V2: 批量操作工具栏 -->
+        <div v-if="batchMode" class="batch-toolbar" role="toolbar" aria-label="批量操作工具栏">
+          <div class="batch-info">
+            <span class="batch-count" aria-live="polite">
+              已选 <strong>{{ selectedCount }}</strong> / {{ providers.length }} 个
+              <template v-if="selectedCount > 0">
+                <span class="batch-meta">
+                  （启用 {{ selectedEnabledCount }} · 禁用 {{ selectedDisabledCount }}）
+                </span>
+              </template>
+            </span>
+          </div>
+          <div class="batch-actions">
+            <button
+              type="button"
+              class="btn-secondary"
+              :aria-pressed="isAllSelected"
+              :disabled="providers.length === 0"
+              @click="toggleSelectAll"
+            >
+              {{ isAllSelected ? '☐ 取消全选' : '☑ 全选' }}
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="selectedCount === 0"
+              @click="handleBatchEnable"
+            >
+              批量启用
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="selectedCount === 0"
+              :title="containsDefault ? '默认 Provider 不能直接禁用' : '批量禁用所选'"
+              @click="handleBatchDisable"
+            >
+              批量禁用
+            </button>
+            <button
+              type="button"
+              class="btn-danger"
+              :disabled="selectedCount === 0"
+              :title="containsDefault ? '默认 Provider 不能直接删除' : '批量删除所选'"
+              @click="requestBatchDelete"
+            >
+              批量删除
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              @click="exitBatchMode"
+            >
+              退出批量
+            </button>
+          </div>
+        </div>
+
+        <!-- V3: 标签筛选条 -->
+        <div v-if="allTags.length > 0" class="tag-filter-bar" role="group" aria-label="按标签筛选">
+          <button
+            type="button"
+            class="tag-filter-chip"
+            :class="{ 'is-active': !activeTag }"
+            :aria-pressed="!activeTag"
+            @click="activeTag = null"
+          >
+            全部 ({{ providers.length }})
+          </button>
+          <button
+            v-for="t in allTags"
+            :key="t"
+            type="button"
+            class="tag-filter-chip"
+            :class="{ 'is-active': activeTag === t }"
+            :aria-pressed="activeTag === t"
+            @click="activeTag = activeTag === t ? null : t"
+          >
+            {{ t }}
+          </button>
+        </div>
+
+        <div v-if="loading" class="loading-row">加载中…</div>
+
+        <div
+          v-else-if="providers.length === 0"
+          class="empty-row"
         >
-          <button class="btn-primary" @click="openCreate">+ 新增 Provider</button>
-        </EmptyState>
-      </div>
+          <EmptyState
+            message="尚未配置任何 LLM Provider。点击「+ 新增 Provider」开始配置。"
+          >
+            <button class="btn-primary" @click="openCreate">+ 新增 Provider</button>
+          </EmptyState>
+        </div>
 
-      <div v-else-if="filteredProviders.length === 0" class="empty-row">
-        <EmptyState :message="`没有带标签「${activeTag}」的 Provider。`">
-          <button class="btn-secondary" @click="activeTag = null">清除筛选</button>
-        </EmptyState>
-      </div>
+        <div v-else-if="filteredProviders.length === 0" class="empty-row">
+          <EmptyState :message="`没有带标签「${activeTag}」的 Provider。`">
+            <button class="btn-secondary" @click="activeTag = null">清除筛选</button>
+          </EmptyState>
+        </div>
 
-      <div v-else class="provider-grid">
-        <ProviderCard
-          v-for="p in filteredProviders"
-          :key="p.name"
-          :provider="p"
-          :is-default="p.name === defaultName"
-          :last-status="lastCheckResults[p.name]?.status"
-          :draggable="!batchMode"
-          :selectable="batchMode"
-          :selected="selectedNames.has(p.name)"
-          @edit="openEdit"
-          @delete="requestDelete"
-          @set-default="handleSetDefault"
-          @test="handleTestProvider"
-          @toggle-enabled="handleToggleEnabled"
-          @reorder-insert="handleReorderInsert"
-          @select-change="toggleSelectOne"
-        />
-      </div>
-    </section>
+        <div v-else class="provider-grid">
+          <ProviderCard
+            v-for="p in filteredProviders"
+            :key="p.name"
+            :provider="p"
+            :is-default="p.name === defaultName"
+            :last-status="lastCheckResults[p.name]?.status"
+            :health-status="healthStatus[p.name]"
+            :draggable="!batchMode"
+            :selectable="batchMode"
+            :selected="selectedNames.has(p.name)"
+            @edit="openEdit"
+            @delete="requestDelete"
+            @set-default="handleSetDefault"
+            @test="handleTestProvider"
+            @toggle-enabled="handleToggleEnabled"
+            @reorder-insert="handleReorderInsert"
+            @select-change="toggleSelectOne"
+          />
+        </div>
+      </section>
 
-    <!-- V4: LLM 用量仪表盘 -->
-    <section class="config-section">
-      <UsageDashboard />
-    </section>
+      <!-- V4: LLM 用量仪表盘 -->
+      <section class="config-section">
+        <UsageDashboard />
+      </section>
+    </template>
 
-    <!-- ② Pipeline 默认配置 -->
-    <section class="config-section">
-      <h3 class="section-title">流水线 (Pipeline) 默认配置</h3>
-      <div class="form-grid">
-        <label class="form-label">默认执行模式</label>
-        <select v-model="pipeline.default_mode" class="form-select">
-          <option v-for="opt in modeOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+    <!-- ═══ Tab 2：流水线默认 ═══ -->
+    <template v-if="activeTab === 'pipeline'">
+      <section class="config-section">
+        <h3 class="section-title">流水线 (Pipeline) 默认配置</h3>
+        <div class="form-grid">
+          <label class="form-label">默认执行模式</label>
+          <select v-model="pipeline.default_mode" class="form-select">
+            <option v-for="opt in modeOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
 
-        <label class="form-label">默认测试维度</label>
-        <select v-model="pipeline.default_dimensions" class="form-select">
-          <option v-for="opt in dimOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+          <label class="form-label">默认测试维度</label>
+          <select v-model="pipeline.default_dimensions" class="form-select">
+            <option v-for="opt in dimOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
 
-        <label class="form-label">默认输出格式</label>
-        <select v-model="pipeline.default_formats" class="form-select">
-          <option v-for="opt in fmtOptions" :key="opt.value" :value="opt.value">
-            {{ opt.label }}
-          </option>
-        </select>
+          <label class="form-label">默认输出格式</label>
+          <select v-model="pipeline.default_formats" class="form-select">
+            <option v-for="opt in fmtOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
 
-        <label class="form-label">AI 自检 (Self Check)</label>
-        <label class="switch-label">
-          <input v-model="pipeline.self_check" type="checkbox" />
-          <span>启用生成后自检</span>
-        </label>
-      </div>
-      <div class="section-actions">
-        <button class="btn-primary" :disabled="savingPipeline" @click="savePipeline">
-          {{ savingPipeline ? '保存中…' : '保存配置' }}
-        </button>
-      </div>
-    </section>
+          <label class="form-label">AI 自检 (Self Check)</label>
+          <label class="switch-label">
+            <input v-model="pipeline.self_check" type="checkbox" />
+            <span>启用生成后自检</span>
+          </label>
+        </div>
+        <div class="section-actions">
+          <button class="btn-primary" :disabled="savingPipeline" @click="savePipeline">
+            {{ savingPipeline ? '保存中…' : '保存配置' }}
+          </button>
+        </div>
+      </section>
+    </template>
 
-    <!-- ③ 知识库（保留旧 UI） -->
-    <section class="config-section">
-      <h3 class="section-title">知识库 (RAG) 配置</h3>
-      <div class="form-grid">
-        <label class="form-label">Provider 类型</label>
-        <select v-model="kb.provider_type" class="form-select">
-          <option value="mcp_filesystem">MCP Filesystem (本地 Vault)</option>
-          <option value="obsidian_api">Obsidian Local REST API</option>
-        </select>
+    <!-- ═══ Tab 3：集成与 Webhook ═══ -->
+    <template v-if="activeTab === 'integrations'">
+      <section class="config-section">
+        <WebhookPanel />
+      </section>
 
-        <label class="form-label">Vault 路径</label>
-        <input v-model="kb.vault_path" class="form-input" placeholder="/Users/xxx/Documents/notes" />
-
-        <label class="form-label">Connection URL</label>
-        <input v-model="kb.connection_url" class="form-input" placeholder="https://127.0.0.1:27124" />
-
-        <label class="form-label">Auth Token</label>
-        <input v-model="kb.auth_token" type="password" class="form-input" placeholder="Bearer token" />
-      </div>
-      <div class="section-actions">
-        <button class="btn-primary" :disabled="savingKB" @click="saveKB">
-          {{ savingKB ? '保存中…' : '保存并热切换' }}
-        </button>
-      </div>
-    </section>
-
-    <!-- ④ 主题 -->
-    <section class="config-section">
-      <h3 class="section-title">主题与外观</h3>
-      <div class="theme-row">
-        <span>当前主题：{{ currentTheme === 'dark' ? '深色' : '浅色' }}</span>
-        <button class="btn-secondary" @click="toggleTheme">切换主题</button>
-      </div>
-    </section>
+      <section class="config-section">
+        <h3 class="section-title">知识库 (RAG) 配置</h3>
+        <p class="section-desc">
+          知识库配置已统一至「知识库 (RAG)」页面管理，请通过左侧导航前往该页面进行 Vault 路径、连接地址与令牌的配置。
+        </p>
+        <div class="section-actions">
+          <router-link to="/knowledge" class="btn-secondary">前往知识库配置 →</router-link>
+        </div>
+      </section>
+    </template>
 
     <!-- 抽屉 -->
     <ProviderDrawer
@@ -681,6 +664,33 @@ const protocols = computed<LLMProtocol[]>(() => configStore.protocols)
   font-size: var(--text-lg);
   font-weight: 800;
   margin: 0;
+}
+
+/* P2-1：Tab 导航 */
+.settings-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+.settings-tabs button {
+  padding: 0.55rem 1.1rem;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--muted-fg);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease);
+}
+.settings-tabs button:hover {
+  color: var(--fg);
+}
+.settings-tabs button.is-active {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
 }
 .config-section {
   border: 1px solid var(--border);
@@ -839,12 +849,6 @@ const protocols = computed<LLMProtocol[]>(() => configStore.protocols)
   display: flex;
   gap: 0.6rem;
   justify-content: flex-end;
-}
-.theme-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-sm);
 }
 
 /* 通用按钮 */

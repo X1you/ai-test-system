@@ -88,7 +88,11 @@ export const PROTOCOL_META: Record<
 
 /** 后端返回的 config 顶层结构（GET /api/v1/config） */
 export interface ConfigResponse {
-  /** 旧 schema 兼容字段（默认 provider 信息） */
+  /**
+   * @deprecated 旧 schema 兼容字段（默认 provider 信息）。
+   * 后端已通过 Deprecation/Sunset 头预告下线（计划 2026-08-26 移除）。
+   * 前端 store 已不消费，请改用 llm_providers / llm_default。
+   */
   llm: {
     provider: string
     model: string

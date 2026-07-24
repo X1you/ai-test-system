@@ -53,4 +53,8 @@ export const API = {
     LIVE: '/health/live',
     READY: '/health/ready',
   },
+  /** Webhook 集成管理（GET 需鉴权，POST 豁免） */
+  WEBHOOKS: {
+    STATUS: '/webhooks',
+  },
 } as const

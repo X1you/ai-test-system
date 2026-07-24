@@ -54,6 +54,9 @@ export const useConfigStore = defineStore('config', () => {
   // 测试结果缓存（key=provider.name）
   const lastCheckResults = reactive<Record<string, LLMServerCheck | null>>({})
 
+  // P2-3：系统健康检查 per-provider 状态（key=provider.name，value=ok/degraded/error）
+  const healthStatus = reactive<Record<string, string>>({})
+
   // ─── Getters ───
   const defaultProvider = computed<LLMProvider | null>(() => {
     if (!defaultName.value) return providers.value[0] || null
@@ -236,6 +239,21 @@ export const useConfigStore = defineStore('config', () => {
     return { ...LLM_PROVIDER_EMPTY, protocol }
   }
 
+  // P2-3：拉取系统健康检查 per-provider 状态（GET /health/ready，无鉴权，根路径）
+  async function fetchHealthStatus(): Promise<void> {
+    try {
+      const resp = await apiGet(API.HEALTH.READY, { absolute: true })
+      const llmChecks = resp?.checks?.llm
+      if (llmChecks && typeof llmChecks === 'object') {
+        for (const [name, status] of Object.entries(llmChecks)) {
+          healthStatus[name] = String(status)
+        }
+      }
+    } catch {
+      // 静默失败：健康检查不可用时不影响主流程
+    }
+  }
+
   return {
     // state
     loading,
@@ -248,6 +266,7 @@ export const useConfigStore = defineStore('config', () => {
     pipeline,
     knowledgeBase,
     lastCheckResults,
+    healthStatus,
     // getters
     defaultProvider,
     enabledProviders,
@@ -260,6 +279,7 @@ export const useConfigStore = defineStore('config', () => {
     batchToggleEnabled,
     batchDeleteProviders,
     blankProvider,
+    fetchHealthStatus,
     // utils
     parseStatus,
   }

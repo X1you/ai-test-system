@@ -116,7 +116,7 @@ if integrations_router is not None:
 # ─── 安全与性能中间件 ───
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """添加安全响应头 + CSP + HSTS"""
+    """添加安全响应头 + CSP + HSTS + 弃用预告头"""
 
     # 内容安全策略（CSP）：限制资源加载来源
     CSP_POLICY = (
@@ -138,7 +138,25 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
 
+        # 弃用预告头（RFC 8594 Sunset + Deprecation）— 按路径统一注入。
+        # 不在路由层用 response 参数设置：中间件链重建响应时会丢弃路由层自定义头，
+        # 在最外层中间件设置可保证头到达客户端（与 X-Frame-Options 同路径）。
+        deprecation = _DEPRECATION_MAP.get(request.url.path)
+        if deprecation:
+            successor, sunset = deprecation
+            response.headers["Deprecation"] = "true"
+            response.headers["Sunset"] = sunset
+            response.headers["Link"] = f'<{successor}>; rel="successor-version"'
+
         return response
+
+
+# 弃用端点预告：路径 → (后继端点, Sunset 日期)。
+# 与 get_config / health 的 docstring 预告保持同步，计划 2026-08-26 物理移除 legacy 字段与 /health 端点。
+_DEPRECATION_MAP = {
+    "/health": ("/health/ready", "Wed, 26 Aug 2026 00:00:00 GMT"),
+    "/api/v1/config": ("/api/v1/config/providers", "Wed, 26 Aug 2026 00:00:00 GMT"),
+}
 
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -557,9 +575,10 @@ async def readiness():
 
 @app.get("/health")
 async def health():
-    """健康检查（向后兼容）— 等价于 /health/ready。
+    """健康检查（已废弃）— 等价于 /health/ready，预告下线。
 
-    新部署建议直接用 /health/live + /health/ready 分离探针。
+    新部署请直接用 /health/live + /health/ready 分离探针。
+    Deprecation/Sunset/Link 响应头由 SecurityHeadersMiddleware 按路径统一注入，计划 2026-08-26 移除。
     """
     checks = await _check_dependencies()
     all_ok = _all_dependencies_ok(checks)

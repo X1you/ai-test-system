@@ -213,7 +213,13 @@ class ConfigUpdate(BaseModel):
 
 @router.get("")
 async def get_config():
-    """查看当前配置（API Key 脱敏）"""
+    """查看当前配置（API Key 脱敏）
+
+    Deprecation 预告：响应中的 `llm` 字段（legacy_llm：provider/model/base_url/
+    api_key/temperature）为旧 schema 兼容字段，前端已迁移至 `llm_providers` 列表。
+    计划于 Sunset 日期后移除。请改用 `llm_providers` / `llm_default` / GET /config/providers。
+    Deprecation/Sunset/Link 响应头由 SecurityHeadersMiddleware 按路径统一注入。
+    """
     config = load_config()
     llm = config.get("llm", {})
     providers = _get_providers_from_config(llm)
@@ -235,7 +241,8 @@ async def get_config():
     pipe = config.get("pipeline", {})
     errors = validate_config(config)
 
-    # 向后兼容字段：取默认 provider 的 LLMConfig（如旧前端期望的 llm.provider / llm.model / llm.base_url / llm.api_key）
+    # @deprecated legacy_llm：旧 schema 兼容字段，前端 store 已无消费（fetchConfig 仅读
+    # llm_providers/llm_default）。已通过响应头 Deprecation/Sunset 预告下线，计划 2026-08-26 移除。
     legacy_llm = {
         "provider": "N/A",
         "model": "N/A",

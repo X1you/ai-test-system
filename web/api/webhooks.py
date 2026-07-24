@@ -2,7 +2,9 @@
 """
 Webhook Receiver — 接收外部测试管理平台的事件推送
 
-路由: POST /api/webhooks/{platform}
+路由:
+  GET  /api/v1/webhooks         — 查看 webhook 状态与已注册平台
+  POST /api/v1/webhooks/{platform} — 接收外部平台事件推送
 
 安全：双层签名验证
   1. 全局 HMAC-SHA256 验证（WEBHOOK_SECRET 环境变量，所有 webhook 必须携带）
@@ -13,10 +15,11 @@ import hashlib
 import hmac
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from integrations.base import AdapterConfig
 from integrations.registry import AdapterRegistry
+from web.middleware.auth import verify_token
 
 router = APIRouter(tags=["webhooks"])
 
@@ -79,3 +82,25 @@ async def receive_webhook(platform: str, request: Request):
     result = adapter.handle_webhook(event)
 
     return {"status": "ok", "result": result}
+
+
+@router.get("", dependencies=[Depends(verify_token)])
+async def get_webhook_status():
+    """查看 webhook 配置状态与已注册平台。
+
+    返回：
+      - secret_configured: WEBHOOK_SECRET 是否已配置
+      - platforms: 已注册的适配器平台列表
+      - webhook_url_template: 外部平台应推送到的 URL 模板
+    """
+    secret_configured = bool(os.environ.get("WEBHOOK_SECRET", ""))
+    try:
+        platforms = AdapterRegistry.list_platforms()
+    except Exception:
+        platforms = []
+
+    return {
+        "secret_configured": secret_configured,
+        "platforms": platforms,
+        "webhook_url_template": "/api/v1/webhooks/{platform}",
+    }
